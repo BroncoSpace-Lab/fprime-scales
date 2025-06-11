@@ -1,42 +1,35 @@
-module components {
+module SCALES {
 
   # Defining types needed for this component
-  enum SystemState: U8 {
-    STANDBY = 0 @< System in standby mode
-    NORMAL = 1 @< System in normal operation
-    SAFE = 2 @< System in safe mode
-    CRITICAL = 3 @< System in critical mode
-    UNKNOWN = 4 @< System state not determined
-  }
   
-  struct PowerReading {
-    voltage: F32 @< Voltage reading in volts
-    current: F32 @< Current reading in amps
-    power: F32 @< Power consumption in watts
-    sourceId: U8 @< ID of the power source/sensor
-    timestamp: U32 @< Timestamp of reading
-  }
+  # struct PowerReading {
+  #   voltage: F32 @< Voltage reading in volts
+  #   current: F32 @< Current reading in amps
+  #   power: F32 @< Power consumption in watts
+  #   sourceId: U8 @< ID of the power source/sensor
+  #   timestamp: U32 @< Timestamp of reading
+  # }
   
-  struct ThermalReading {
-    temperature: F32 @< Temperature in degrees Celsius
-    sensorId: U8 @< ID of the thermal sensor
-    location: string size 32 @< Description of sensor location
-    timestamp: U32 @< Timestamp of reading
-  }
+  # struct ThermalReading {
+  #   temperature: F32 @< Temperature in degrees Celsius
+  #   sensorId: U8 @< ID of the thermal sensor
+  #   location: string size 32 @< Description of sensor location
+  #   timestamp: U32 @< Timestamp of reading
+  # }
   
-  struct SystemStateData {
-    state: SystemState @< Current spacecraft state
-    timestamp: U32 @< Timestamp of state update
-    modeDescription: string size 64 @< Optional detailed mode description
-  }
+  # struct SystemStateData {
+  #   $state: SystemState @< Current spacecraft state
+  #   timestamp: U32 @< Timestamp of state update
+  #   modeDescription: string size 64 @< Optional detailed mode description
+  # }
   
-  struct PowerThermalStatus {
-    powerReadings: PowerReading @< Power readings
-    thermalReadings: ThermalReading @< Thermal readings
-    systemRecommendation: SystemState @< Recommended system state based on power/thermal
-    criticalFlag: bool @< Flag indicating if any readings are in critical range
-    timestamp: U32 @< Timestamp of status update
-  }
+  # struct PowerThermalStatus {
+  #   powerReadings: PowerReading @< Power readings
+  #   thermalReadings: ThermalReading @< Thermal readings
+  #   systemRecommendation: SystemState @< Recommended system state based on power/thermal
+  #   criticalFlag: bool @< Flag indicating if any readings are in critical range
+  #   timestamp: U32 @< Timestamp of status update
+  # }
 
   @ Component to manage and monitor power and thermal conditions of the system
   active component PowerThermalManager {
@@ -45,20 +38,20 @@ module components {
     #                                 General Ports                               #
     ###############################################################################
     
-    @ Port for receiving power data
-    async input port powerData: components.PowerReading
+    # @ Port for receiving power data
+    # async input port powerData: components.PowerReading
     
-    @ Port for receiving thermal data
-    async input port thermalData: components.ThermalReading
+    # @ Port for receiving thermal data
+    # async input port thermalData: components.ThermalReading
     
-    @ Input port for receiving system state information
-    async input port systemStateIn: components.SystemStateData
+    # @ Input port for receiving system state information
+    # async input port systemStateIn: components.SystemStateData
     
-    @ Output port for all power and thermal telemetry data
-    output port dataOut: components.PowerThermalStatus
+    # @ Output port for all power and thermal telemetry data
+    # output port dataOut: components.PowerThermalStatus
     
-    @ Output port for sending power/thermal status to SystemResources component
-    output port systemResourcesOut: components.PowerThermalStatus
+    # @ Output port for sending power/thermal status to SystemResources component
+    # output port systemResourcesOut: components.PowerThermalStatus
     
     ###############################################################################
     # Standard AC Ports: Required for Channels, Events, Commands, and Parameters  #
@@ -123,7 +116,7 @@ module components {
       temperature: F32 @< Current temperature
       threshold: F32 @< Warning threshold
       location: string size 32 @< Sensor location
-    ) severity warning high id 0 format "High thermal warning: {} at {} is {°C} (threshold: {°C})"
+    ) severity warning high id 0 format "High thermal warning: {} at {} is {}°C (threshold: {}°C)"
     
     @ Event indicating thermal warning threshold exceeded (lower)
     event THERMAL_WARNING_LOW(
@@ -131,7 +124,7 @@ module components {
       temperature: F32 @< Current temperature
       threshold: F32 @< Warning threshold
       location: string size 32 @< Sensor location
-    ) severity warning high id 11 format "Low thermal warning: {} at {} is {°C} (threshold: {°C})"
+    ) severity warning high id 11 format "Low thermal warning: {} at {} is {}°C (threshold: {}°C)"
     
     @ Event indicating thermal critical threshold exceeded (upper)
     event THERMAL_CRITICAL_HIGH(
@@ -139,7 +132,7 @@ module components {
       temperature: F32 @< Current temperature
       threshold: F32 @< Critical threshold
       location: string size 32 @< Sensor location
-    ) severity warning high id 1 format "CRITICAL HIGH THERMAL: {} at {} is {°C} (threshold: {°C})"
+    ) severity warning high id 1 format "CRITICAL HIGH THERMAL: {} at {} is {}°C (threshold: {}°C)"
     
     @ Event indicating thermal critical threshold exceeded (lower)
     event THERMAL_CRITICAL_LOW(
@@ -147,39 +140,39 @@ module components {
       temperature: F32 @< Current temperature
       threshold: F32 @< Critical threshold
       location: string size 32 @< Sensor location
-    ) severity warning high id 12 format "CRITICAL LOW THERMAL: {} at {} is {°C} (threshold: {°C})"
+    ) severity warning high id 12 format "CRITICAL LOW THERMAL: {} at {} is {}°C (threshold: {}°C)"
     
     @ Event indicating power warning threshold exceeded (upper)
     event POWER_WARNING_HIGH(
       sourceId: U8 @< ID of the power source
       power: F32 @< Current power consumption
       threshold: F32 @< Warning threshold
-    ) severity warning high id 2 format "High power warning: Source {} at {W} (threshold: {W})"
+    ) severity warning high id 2 format "High power warning: Source {} at {}W (threshold: {}W)"
     
     @ Event indicating power warning threshold exceeded (lower)
     event POWER_WARNING_LOW(
       sourceId: U8 @< ID of the power source
       power: F32 @< Current power consumption
       threshold: F32 @< Warning threshold
-    ) severity warning high id 13 format "Low power warning: Source {} at {W} (threshold: {W})"
+    ) severity warning high id 13 format "Low power warning: Source {} at {}W (threshold: {}W)"
     
     @ Event indicating power critical threshold exceeded (upper)
     event POWER_CRITICAL_HIGH(
       sourceId: U8 @< ID of the power source
       power: F32 @< Current power consumption
       threshold: F32 @< Critical threshold
-    ) severity warning high id 3 format "CRITICAL HIGH POWER: Source {} at {W} (threshold: {W})"
+    ) severity warning high id 3 format "CRITICAL HIGH POWER: Source {} at {}W (threshold: {}W)"
     
     @ Event indicating power critical threshold exceeded (lower)
     event POWER_CRITICAL_LOW(
       sourceId: U8 @< ID of the power source
       power: F32 @< Current power consumption
       threshold: F32 @< Critical threshold
-    ) severity warning high id 14 format "CRITICAL LOW POWER: Source {} at {W} (threshold: {W})"
+    ) severity warning high id 14 format "CRITICAL LOW POWER: Source {} at {}W (threshold: {}W)"
     
     @ Event indicating limits updated
     event LIMITS_UPDATED(
-      type: string size 16 @< Type of limit updated (THERMAL or POWER)
+      $type: string size 16 @< Type of limit updated (THERMAL or POWER)
       lowerWarning: F32 @< New lower warning threshold
       upperWarning: F32 @< New upper warning threshold
       lowerCritical: F32 @< New lower critical threshold
@@ -192,7 +185,7 @@ module components {
       power: F32 @< Current power consumption
       lowerLimit: F32 @< Lower limit
       upperLimit: F32 @< Upper limit
-    ) severity warning high id 8 format "Power out of range: Source {} at {W} (limits: {W}-{W})"
+    ) severity warning high id 8 format "Power out of range: Source {} at {}W (limits: {}W-{}W)"
     
     @ Event indicating thermal is out of range
     event THERMAL_OUT_OF_RANGE(
@@ -201,14 +194,14 @@ module components {
       lowerLimit: F32 @< Lower limit
       upperLimit: F32 @< Upper limit
       location: string size 32 @< Sensor location
-    ) severity warning high id 9 format "Thermal out of range: {} at {} is {°C} (limits: {°C}-{°C})"
+    ) severity warning high id 9 format "Thermal out of range: {} at {} is {}°C (limits: {}°C-{}°C)"
     
     @ Event indicating power transition due to state change
     event POWER_TRANSITION(
-      previousState: components.SystemState @< Previous system state
-      newState: components.SystemState @< New system state
+      previousState: SystemState @< Previous system state
+      newState: SystemState @< New system state
       powerChange: F32 @< Change in power consumption
-    ) severity activity high id 10 format "Power transition from {} to {}: {W} change"
+    ) severity activity high id 10 format "Power transition from {} to {}: {}W change"
     
     ###############################################################################
     #                                 Telemetry                                   #
@@ -251,6 +244,6 @@ module components {
     telemetry PowerLowerCriticalThreshold: F32
     
     @ Current system state
-    telemetry CurrentSystemState: components.SystemState
+    telemetry CurrentSystemState: SystemState
   }
 }

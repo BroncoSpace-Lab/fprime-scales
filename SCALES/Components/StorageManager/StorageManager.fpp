@@ -1,56 +1,35 @@
-module components {
+module SCALES {
 
   # Defining types needed for this component
   
   # Storage status information
-  struct StorageStatus {
-    totalCapacityMB: U32 @< Total storage capacity in MB
-    availableSpaceMB: U32 @< Available storage space in MB
-    usedSpaceMB: U32 @< Used storage space in MB
-    utilizationPercent: F32 @< Storage utilization percentage
-    writeRateKBps: F32 @< Current write rate in KB/s
-    readRateKBps: F32 @< Current read rate in KB/s
-    healthStatus: string size 32 @< Storage health status description
-    timestamp: U32 @< Timestamp of status update
-  }
+  
   
   # System state data from SpacecraftStateManager
-  struct SystemStateData {
-    state: SystemState @< Current spacecraft state
-    timestamp: U32 @< Timestamp of state update
-    availablePowerForStorage: F32 @< Available power allocation for storage operations (Watts)
-    priorityLevel: U8 @< Current priority level for storage operations
-    modeDescription: string size 64 @< Optional detailed mode description
-  }
+
   
   # Enum for system states
-  enum SystemState: U8 {
-    STANDBY = 0 @< System in standby mode
-    NORMAL = 1 @< System in normal operation
-    SAFE = 2 @< System in safe mode
-    CRITICAL = 3 @< System in critical mode
-    UNKNOWN = 4 @< System state not determined
-  }
+  # removed/restructured
   
   # Data structure for component data storage/retrieval
-  struct StorageData {
-    componentId: U8 @< ID of the source/destination component
-    dataType: string size 32 @< Type of data being stored/retrieved
-    dataSize: U32 @< Size of data in bytes
-    priority: U8 @< Priority level of this data (0-255)
-    timestamp: U32 @< Timestamp of data
-    data: Fw.Buffer @< The actual data payload
-  }
+  # struct StorageData {
+  #   componentId: U8 @< ID of the source/destination component
+  #   dataType: string size 32 @< Type of data being stored/retrieved
+  #   dataSize: U32 @< Size of data in bytes
+  #   $priority: U8 @< Priority level of this data (0-255)
+  #   timestamp: U32 @< Timestamp of data
+  #   data: Fw.Buffer @< The actual data payload
+  # }
   
   # Structure for data transfer requests
-  struct DataTransferRequest {
-    sourceComponentId: U8 @< Source component ID
-    destinationComponentId: U8 @< Destination component ID
-    dataType: string size 32 @< Type of data to transfer
-    priority: U8 @< Priority of transfer
-    maxSizeMB: U32 @< Maximum size to transfer in MB
-    timestamp: U32 @< Timestamp of request
-  }
+  # struct DataTransferRequest {
+  #   sourceComponentId: U8 @< Source component ID
+  #   destinationComponentId: U8 @< Destination component ID
+  #   dataType: string size 32 @< Type of data to transfer
+  #   $priority: U8 @< Priority of transfer
+  #   maxSizeMB: U32 @< Maximum size to transfer in MB
+  #   timestamp: U32 @< Timestamp of request
+  # }
 
   @ Component to manage and monitor system storage resources
   active component StorageManager {
@@ -59,17 +38,17 @@ module components {
     #                                 General Ports                               #
     ###############################################################################
     
-    @ Array of input ports for receiving data from multiple components
-    async input port dataInput: [10] components.StorageData
+    # @ Array of input ports for receiving data from multiple components
+    # async input port dataInput: [10] components.StorageData
     
-    @ Input port for receiving spacecraft state information
-    async input port spacecraftStateIn: components.SystemStateData
+    # @ Input port for receiving spacecraft state information
+    # async input port spacecraftStateIn: components.SystemStateData
     
-    @ Output port for reporting storage status information
-    output port storageStatus: components.StorageStatus
+    # @ Output port for reporting storage status information
+    # output port storageStatus: components.StorageStatus
     
-    @ Array of output ports for sending data to multiple components
-    output port dataOutput: [10] components.StorageData
+    # @ Array of output ports for sending data to multiple components
+    # output port dataOutput: [10] components.StorageData
     
     ###############################################################################
     # Standard AC Ports: Required for Channels, Events, Commands, and Parameters  #
@@ -211,14 +190,14 @@ module components {
     
     @ Event indicating automatic data management action
     event AUTO_MANAGEMENT_ACTION(
-      action: string size 32 @< Type of action taken
+      $action: string size 32 @< Type of action taken
       description: string size 64 @< Description of action
     ) severity activity high id 7 format "Auto management: {} - {}"
     
     @ Event indicating storage health issue
     event STORAGE_HEALTH_ISSUE(
       issue: string size 64 @< Description of health issue
-      severity: string size 16 @< Severity of issue
+      $severity: string size 16 @< Severity of issue
     ) severity warning high id 8 format "Storage health issue detected: {} ({})"
     
     ###############################################################################
