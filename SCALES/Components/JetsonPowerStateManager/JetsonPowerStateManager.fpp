@@ -1,17 +1,4 @@
 module SCALES {
-  # Defining types needed for this component
-  # enum PowerLevel: U8 {
-  #   WATTS_15 = 0 @< 15 Watts power state
-  #   WATTS_30 = 1 @< 30 Watts power state
-  #   WATTS_50 = 2 @< 50 Watts power state
-  #   UNKNOWN = 3 @< Power state not determined
-  # }
-  
-  # struct PowerState {
-  #   level: PowerLevel @< Current power level
-  #   timestamp: U32 @< Timestamp of state
-  #   textFilePath: string size 128 @< Path to power state config file
-  # }
 
   @ Controls configuration, enabling state transitions and power cycle operations
   active component JetsonPowerStateManager {
@@ -27,11 +14,11 @@ module SCALES {
     @ Port for sending ping responses 
     output port pingSend: Svc.Ping
     
-    # @ Port for receiving power state change requests (e.g., 15W, 30W, 50W)
-    # async input port powerStateReceive: components.PowerState
+    @ Port for receiving power state change requests (e.g., 15W, 30W, 50W)
+    async input port powerStateRecieve: PowerStateRecieve
     
-    # @ Port for sending current power state information
-    # output port powerStateSend: components.PowerState
+    @ Port for sending current power state information
+    output port powerStateSend: PowerStateSend
 
     @ Port that receives the rate group "tick" for ping intervals
     async input port schedIn: Svc.Sched

@@ -61,6 +61,6 @@ Add requirements in the chart below
 |---|---|---|
 
 ## Change Log
-| Date | Description |
-|---|---|
-|---| Initial Draft |
+| Date | Description | Author |
+|---|---|---|
+| May 7, 2025 | Initial Draft | Janelle Tran |

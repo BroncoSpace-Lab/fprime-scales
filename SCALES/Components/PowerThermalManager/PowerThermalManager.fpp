@@ -1,36 +1,5 @@
 module SCALES {
 
-  # Defining types needed for this component
-  
-  # struct PowerReading {
-  #   voltage: F32 @< Voltage reading in volts
-  #   current: F32 @< Current reading in amps
-  #   power: F32 @< Power consumption in watts
-  #   sourceId: U8 @< ID of the power source/sensor
-  #   timestamp: U32 @< Timestamp of reading
-  # }
-  
-  # struct ThermalReading {
-  #   temperature: F32 @< Temperature in degrees Celsius
-  #   sensorId: U8 @< ID of the thermal sensor
-  #   location: string size 32 @< Description of sensor location
-  #   timestamp: U32 @< Timestamp of reading
-  # }
-  
-  # struct SystemStateData {
-  #   $state: SystemState @< Current spacecraft state
-  #   timestamp: U32 @< Timestamp of state update
-  #   modeDescription: string size 64 @< Optional detailed mode description
-  # }
-  
-  # struct PowerThermalStatus {
-  #   powerReadings: PowerReading @< Power readings
-  #   thermalReadings: ThermalReading @< Thermal readings
-  #   systemRecommendation: SystemState @< Recommended system state based on power/thermal
-  #   criticalFlag: bool @< Flag indicating if any readings are in critical range
-  #   timestamp: U32 @< Timestamp of status update
-  # }
-
   @ Component to manage and monitor power and thermal conditions of the system
   active component PowerThermalManager {
     
@@ -38,20 +7,20 @@ module SCALES {
     #                                 General Ports                               #
     ###############################################################################
     
-    # @ Port for receiving power data
-    # async input port powerData: components.PowerReading
+    @ Port for receiving power data
+    async input port powerData: PowerData
     
-    # @ Port for receiving thermal data
-    # async input port thermalData: components.ThermalReading
+    @ Port for receiving thermal data
+    async input port thermalData: ThermalData
     
-    # @ Input port for receiving system state information
-    # async input port systemStateIn: components.SystemStateData
+    @ Input port for receiving system state information
+    async input port systemStateIn: SystemStateIn
     
-    # @ Output port for all power and thermal telemetry data
-    # output port dataOut: components.PowerThermalStatus
+    @ Output port for all power and thermal telemetry data
+    output port dataOut: ThermalDataOut
     
-    # @ Output port for sending power/thermal status to SystemResources component
-    # output port systemResourcesOut: components.PowerThermalStatus
+    @ Output port for sending power/thermal status to SystemResources component
+    output port systemResourcesOut: ThermalStatus
     
     ###############################################################################
     # Standard AC Ports: Required for Channels, Events, Commands, and Parameters  #

@@ -1,7 +1,4 @@
 module SCALES{
     @ Port for receiving power data
-    port powerData(
-        reading: PowerReading
-    )
-    # async input port powerData: components.PowerReading
+    port PowerData(reading: PowerReading)
 }

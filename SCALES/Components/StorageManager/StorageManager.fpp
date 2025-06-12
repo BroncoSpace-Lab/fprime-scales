@@ -1,36 +1,5 @@
 module SCALES {
 
-  # Defining types needed for this component
-  
-  # Storage status information
-  
-  
-  # System state data from SpacecraftStateManager
-
-  
-  # Enum for system states
-  # removed/restructured
-  
-  # Data structure for component data storage/retrieval
-  # struct StorageData {
-  #   componentId: U8 @< ID of the source/destination component
-  #   dataType: string size 32 @< Type of data being stored/retrieved
-  #   dataSize: U32 @< Size of data in bytes
-  #   $priority: U8 @< Priority level of this data (0-255)
-  #   timestamp: U32 @< Timestamp of data
-  #   data: Fw.Buffer @< The actual data payload
-  # }
-  
-  # Structure for data transfer requests
-  # struct DataTransferRequest {
-  #   sourceComponentId: U8 @< Source component ID
-  #   destinationComponentId: U8 @< Destination component ID
-  #   dataType: string size 32 @< Type of data to transfer
-  #   $priority: U8 @< Priority of transfer
-  #   maxSizeMB: U32 @< Maximum size to transfer in MB
-  #   timestamp: U32 @< Timestamp of request
-  # }
-
   @ Component to manage and monitor system storage resources
   active component StorageManager {
     
@@ -38,17 +7,17 @@ module SCALES {
     #                                 General Ports                               #
     ###############################################################################
     
-    # @ Array of input ports for receiving data from multiple components
-    # async input port dataInput: [10] components.StorageData
+    @ Array of input ports for receiving data from multiple components
+    async input port dataInput: [10] DataInput
     
-    # @ Input port for receiving spacecraft state information
-    # async input port spacecraftStateIn: components.SystemStateData
+    @ Input port for receiving spacecraft state information
+    async input port spacecraftStateIn: SpacecraftStateIn
     
-    # @ Output port for reporting storage status information
-    # output port storageStatus: components.StorageStatus
+    @ Output port for reporting storage status information
+    output port storageStatus: StorageReport
     
-    # @ Array of output ports for sending data to multiple components
-    # output port dataOutput: [10] components.StorageData
+    @ Array of output ports for sending data to multiple components
+    output port dataOutput: [10] DataOutput
     
     ###############################################################################
     # Standard AC Ports: Required for Channels, Events, Commands, and Parameters  #
