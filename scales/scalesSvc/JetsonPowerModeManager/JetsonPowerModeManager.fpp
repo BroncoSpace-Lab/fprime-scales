@@ -1,7 +1,7 @@
 module scalesSvc {
 
-  @ Controls configuration, enabling state transitions and power cycle operations
-  active component JetsonPowerStateManager {
+  @ Controls configuration, enabling mode transitions and power cycle operations
+  active component JetsonPowerModeManager {
     # One async command/port is required for active components
     
     ###############################################################################
@@ -14,11 +14,11 @@ module scalesSvc {
     @ Port for sending ping responses 
     output port pingSend: Svc.Ping
     
-    @ Port for receiving power state change requests (e.g., 15W, 30W, 50W)
-    async input port powerStateRecieve: PowerStateRecieve
+    @ Port for receiving power mode change requests (e.g., 15W, 30W, 50W)
+    async input port powerStateRecieve: PowerModeRecieve
     
-    @ Port for sending current power state information
-    output port powerStateSend: PowerStateSend
+    @ Port for sending current power mode information
+    output port powerStateSend: PowerModeSend
 
     @ Port that receives the rate group "tick" for ping intervals
     async input port schedIn: Svc.Sched
@@ -57,13 +57,13 @@ module scalesSvc {
     #                                  Commands                                   #
     ###############################################################################
     
-    @ Command to set the Jetson power state
-    async command SET_POWER_STATE(
-      $state: PowerLevel @< Power level to set (15W, 30W, or 50W)
+    @ Command to set the Jetson power mode
+    async command SET_POWER_MODE(
+      $state: PowerModeID @< Power mode to set (15W, 30W, or 50W)
     )
     
-    @ Command to request current power state
-    async command GET_POWER_STATE
+    @ Command to request current power mode
+    async command GET_POWER_MODE
     
     @ Command to check if Jetson is awake
     async command CHECK_AWAKE
@@ -72,16 +72,16 @@ module scalesSvc {
     #                                   Events                                    #
     ###############################################################################
     
-    @ Event indicating power state change successful
-    event POWER_STATE_CHANGED(
-      level: PowerLevel @< The new power level
-    ) severity activity high id 0 format "Jetson power state changed to {}"
+    @ Event indicating power mode change successful
+    event POWER_MODE_CHANGED(
+      level: PowerModeID @< The new power mode
+    ) severity activity high id 0 format "Jetson power mode changed to {}"
     
-    @ Event indicating power state change failed
+    @ Event indicating power mode change failed
     event POWER_STATE_CHANGE_FAILED(
-      requested: PowerLevel @< The requested power level
+      requested: PowerMode @< The requested power mode
       reason: string size 64 @< Reason for failure
-    ) severity warning high id 1 format "Failed to change Jetson power state to {}: {}"
+    ) severity warning high id 1 format "Failed to change Jetson power mode to {}: {}"
     
     @ Event indicating Jetson is awake
     event JETSON_AWAKE severity activity high id 2 format "Jetson is awake and responding"
@@ -91,22 +91,22 @@ module scalesSvc {
       attempts: U32 @< Number of ping attempts
     ) severity warning high id 3 format "Jetson not responding after {} ping attempts"
 
-    @ Event indicating successful write to power state file
-    event POWER_STATE_FILE_WRITE_SUCCESS(
+    @ Event indicating successful write to power mode file
+    event POWER_MODE_FILE_WRITE_SUCCESS(
       path: string size 128 @< Path to the file written
-    ) severity activity high id 4 format "Successfully wrote power state to file: {}"
+    ) severity activity high id 4 format "Successfully wrote power mode to file: {}"
 
-    @ Event indicating failed write to power state file
+    @ Event indicating failed write to power mode file
     event POWER_STATE_FILE_WRITE_FAILED(
       path: string size 128 @< Path to the file that failed to write
-    ) severity warning high id 5 format "Failed to write power state to file: {}"
+    ) severity warning high id 5 format "Failed to write power mode to file: {}"
     
     ###############################################################################
     #                                 Telemetry                                   #
     ###############################################################################
     
-    @ Current power state of Jetson
-    telemetry CurrentPowerState: PowerLevel
+    @ Current power mode of Jetson
+    telemetry CurrentPowerState: PowerMode
     
     @ Number of successful ping operations
     telemetry PingSuccessCount: U32

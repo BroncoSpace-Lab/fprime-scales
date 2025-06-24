@@ -1,6 +1,6 @@
 set(SOURCE_FILES
   "${CMAKE_CURRENT_LIST_DIR}/PowerReading.fpp"
-  "${CMAKE_CURRENT_LIST_DIR}/PowerState.fpp"
+  "${CMAKE_CURRENT_LIST_DIR}/PowerMode.fpp"
   "${CMAKE_CURRENT_LIST_DIR}/PowerThermalStatus.fpp"
   "${CMAKE_CURRENT_LIST_DIR}/StorageData.fpp"
   "${CMAKE_CURRENT_LIST_DIR}/StorageStatus.fpp"

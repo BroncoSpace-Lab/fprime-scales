@@ -11,8 +11,8 @@
 ####
 
 set(SOURCE_FILES
-  "${CMAKE_CURRENT_LIST_DIR}/JetsonPowerStateManager.fpp"
-  "${CMAKE_CURRENT_LIST_DIR}/JetsonPowerStateManager.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/JetsonPowerModeManager.fpp"
+  "${CMAKE_CURRENT_LIST_DIR}/JetsonPowerModeManager.cpp"
 )
 
 # Uncomment and add any modules that this component depends on, else
