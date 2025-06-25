@@ -43,10 +43,10 @@ namespace scalesSvc {
           U32 key //!< Value to return to pinger
       ) override;
 
-      //! Handler implementation for powerStateRecieve
+      //! Handler implementation for powerModeRecieve
       //!
       //! Port for receiving power mode change requests (e.g., 15W, 30W, 50W)
-      void powerStateRecieve_handler(
+      void powerModeRecieve_handler(
           FwIndexType portNum, //!< The port number
           const scalesSvc::PowerModeID& recieve
       ) override;
@@ -71,7 +71,7 @@ namespace scalesSvc {
       void SET_POWER_MODE_cmdHandler(
           FwOpcodeType opCode, //!< The opcode
           U32 cmdSeq, //!< The command sequence number
-          scalesSvc::PowerModeID state //!< Power mode to set (15W, 30W, or 50W)
+          scalesSvc::PowerModeID mode //!< Power mode to set (15W, 30W, or 50W)
       ) override;
 
       //! Handler implementation for command GET_POWER_MODE
@@ -89,6 +89,7 @@ namespace scalesSvc {
           FwOpcodeType opCode, //!< The opcode
           U32 cmdSeq //!< The command sequence number
       ) override;
+
 
   };
 
