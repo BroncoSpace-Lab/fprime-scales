@@ -4,4 +4,7 @@ module scalesSvc{
 
     @ Port for sending current power mode information
     port PowerModeSend(modeNow: PowerModeID)
+
+    @ Port for receiving power data
+    port PowerData(reading: PowerReading)
 }

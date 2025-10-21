@@ -65,13 +65,15 @@ namespace scalesSvc {
       // Handler implementations for commands
       // ----------------------------------------------------------------------
 
+      void parameterUpdated(FwPrmIdType id);
+
       //! Handler implementation for command SET_POWER_MODE
       //!
       //! Command to set the Jetson power mode
       void SET_POWER_MODE_cmdHandler(
           FwOpcodeType opCode, //!< The opcode
           U32 cmdSeq, //!< The command sequence number
-          scalesSvc::PowerModeID mode //!< Power mode to set (15W, 30W, or 50W)
+          scalesSvc::PowerModeID //!< The requested power mode
       ) override;
 
       //! Handler implementation for command GET_POWER_MODE

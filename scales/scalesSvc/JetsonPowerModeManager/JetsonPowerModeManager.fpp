@@ -50,9 +50,16 @@ module scalesSvc {
     @ Port to return the value of a parameter
     param get port prmGetOut
     
-    @Port to set the value of a parameter
+    @ Port to set the value of a parameter
     param set port prmSetOut
-    
+
+    ###############################################################################
+    #                                 Parameters                                  #
+    ###############################################################################
+
+    @ Requested power mode parameter
+    param PWR_MODE_REQ: U8 default 0 id 0
+
     ###############################################################################
     #                                  Commands                                   #
     ###############################################################################

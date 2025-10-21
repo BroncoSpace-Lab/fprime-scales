@@ -67,6 +67,26 @@ namespace scalesSvc {
   // ----------------------------------------------------------------------
 
   void JetsonPowerModeManager ::
+    parameterUpdated(FwPrmIdType id)
+  {
+      switch (id) {
+          case PARAMID_PWR_MODE_REQ: {
+              Fw::ParamValid valid;
+              F32 val = this->paramGet_PWR_MODE_REQ(valid);
+              FW_ASSERT(
+                  valid.e == Fw::ParamValid::VALID || valid.e == Fw::ParamValid::DEFAULT,
+                  valid.e
+              );
+              this->log_ACTIVITY_HI_JETSON_AWAKE(); //need to change this later
+              break;
+          }
+          default:
+              FW_ASSERT(0, id);
+              break;
+      }
+  }
+
+  void JetsonPowerModeManager ::
     SET_POWER_MODE_cmdHandler(
         FwOpcodeType opCode,
         U32 cmdSeq,
@@ -74,6 +94,11 @@ namespace scalesSvc {
     )
   {
     // TODO
+    U8 modeNow = get_nvp_mode();
+    if(mode != modeNow)
+    { //if the jetson's mode does not match the requested mode
+
+    }
     std::system("yes | /usr/sbin/nvpmodel -m "+mode); // executes the NVIDIA power mode control command
     // sets the next power mode to specified mode after reset
     // answers "yes" to request to reset prompt
@@ -87,16 +112,14 @@ namespace scalesSvc {
     )
   {
     // TODO
-    char modeNow = get_nvp_mode();
-    if (modeNow == 'e')
+    U8 pwr_mode = get_nvp_mode();
+    if (pwr_mode == 4)
     {//error getting power mode from jetson
-
+      this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::VALIDATION_ERROR);
     }
     else{//return jetson power mode
-      this->
+        this->powerModeSend_out(0, pwr_mode);
     }
-    
-    
   }
 
   void JetsonPowerModeManager ::
@@ -113,9 +136,9 @@ namespace scalesSvc {
   // Private functions
   // ----------------------------------------------------------------------
 
-  char get_nvp_mode()
+  int get_nvp_mode()
   {
-    char nvpMode = 0;
+    int nvpMode;
     std::string mode_str = "";
 
     FILE *mode_file = popen("/usr/sbin/nvpmodel -q", "r");
@@ -127,13 +150,14 @@ namespace scalesSvc {
     }
     if(!mode_str.empty())
     {//if mode_str is not empty (we got output)
-      nvpMode = mode_str.back(); //save mode identifier number
+      char nvpMode_char = mode_str.back(); //save mode identifier number
       mode_str.pop_back(); //delete mode number from string
       mode_str.erase(0,15); //deletes irrelevant output
-      return nvpMode;
+      nvpMode = nvpMode_char - '0'; //convert char num to int
+      return nvpMode; //return mode as int
     }
     else{//mode_str is empty (no output)
-      return 'e';
+      return 4;
     }
   }
 
