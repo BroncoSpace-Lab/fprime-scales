@@ -1,7 +1,7 @@
 module scalesSvc{
     @ Input port for receiving spacecraft state information
-    port SpacecraftStateIn(rxSpace: SystemStateData)
+    port SCALESstate(rxSpace: SystemStateData)
 
     @ Input port for receiving system state information
-    port SystemStateIn(rxSystem: SystemStateData)
+    port RequestedState(rxSystem: SystemStateData)
 }

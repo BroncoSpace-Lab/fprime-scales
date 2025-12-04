@@ -23,6 +23,9 @@ module scalesSvc {
         # @ Example port: receiving calls from the rate group
         # sync input port run: Svc.Sched
 
+        @Port sending calls to the GPIO driver
+        output port gpioSet: Drv.GpioWrite
+
         # @ Example parameter
         # param PARAMETER_NAME: U32
 

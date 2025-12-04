@@ -17,6 +17,9 @@ module scalesSvc {
 
         # @ Example port: receiving calls from the rate group
         # sync input port run: Svc.Sched
+        async input port stateReq: SCALESstate
+
+        output port stateNow: SCALESstate
 
         # @ Example parameter
         # param PARAMETER_NAME: U32

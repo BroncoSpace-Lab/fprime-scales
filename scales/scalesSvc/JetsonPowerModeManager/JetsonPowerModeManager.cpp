@@ -10,7 +10,7 @@
 #include <string>
 #include <iostream>
 
-char get_nvp_mode();
+int get_nvp_mode();
 
 namespace scalesSvc {
 

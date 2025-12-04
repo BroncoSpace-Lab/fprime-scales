@@ -8,20 +8,11 @@ module scalesSvc {
     #                                 General Ports                               #
     ###############################################################################
     
-    @ Port for receiving ping requests to check if Jetson is awake
-    async input port pingReceive: Svc.Ping
-    
-    @ Port for sending ping responses 
-    output port pingSend: Svc.Ping
-    
     @ Port for receiving power mode change requests (e.g., 15W, 30W, 50W)
-    async input port powerModeRecieve: PowerModeRecieve
+    async input port reqPwrMode: PowerModeRecieve
     
     @ Port for sending current power mode information
-    output port powerModeSend: PowerModeSend
-
-    @ Port that receives the rate group "tick" for ping intervals
-    async input port schedIn: Svc.Sched
+    output port currentPwrMode: PowerModeSend
     
     ###############################################################################
     # Standard AC Ports: Required for Channels, Events, Commands, and Parameters  #
@@ -64,33 +55,30 @@ module scalesSvc {
     #                                  Commands                                   #
     ###############################################################################
     
-    @ Command to set the Jetson power mode
-    async command SET_POWER_MODE(
-      $state: PowerModeID @< Power mode to set (15W, 30W, or 50W)
-    )
+    # @ Command to set the Jetson power mode
+    # async command SET_POWER_MODE(
+    #   $state: PowerModeID @< Power mode to set (15W, 30W, or 50W)
+    # )
     
     @ Command to request current power mode
     async command GET_POWER_MODE
-    
-    @ Command to check if Jetson is awake
-    async command CHECK_AWAKE
     
     ###############################################################################
     #                                   Events                                    #
     ###############################################################################
     
     @ Event indicating power mode change successful
-    event POWER_MODE_CHANGED(
-      level: PowerModeID @< The new power mode
-    ) severity activity high id 0 format "Jetson power mode changed to {}"
+    # event POWER_MODE_CHANGED(
+    #   level: PowerModeID @< The new power mode
+    # ) severity activity high id 0 format "Jetson power mode changed to {}"
     
-    @ Event indicating power mode change failed
-    event POWER_MODE_CHANGE_FAILED(
-      requested: PowerMode @< The requested power mode
-      reason: string size 64 @< Reason for failure
-    ) severity warning high id 1 format "Failed to change Jetson power mode to {}: {}"
+    # @ Event indicating power mode change failed
+    # event POWER_MODE_CHANGE_FAILED(
+    #   requested: PowerMode @< The requested power mode
+    #   reason: string size 64 @< Reason for failure
+    # ) severity warning high id 1 format "Failed to change Jetson power mode to {}: {}"
     
-    @ Event indicating Jetson is awake
+    # @ Event indicating Jetson is awake
     event JETSON_AWAKE severity activity high id 2 format "Jetson is awake and responding"
     
     @ Event indicating Jetson is not responding
@@ -113,15 +101,6 @@ module scalesSvc {
     ###############################################################################
     
     @ Current power mode of Jetson
-    telemetry CurrentPowerMode: PowerModeID
-    
-    @ Number of successful ping operations
-    telemetry PingSuccessCount: U32
-    
-    @ Number of failed ping operations
-    telemetry PingFailureCount: U32
-    
-    @ Time since last successful ping (milliseconds)
-    telemetry TimeSinceLastPing: U32
+    # telemetry CurrentPowerMode: PowerModeID
   }
 }

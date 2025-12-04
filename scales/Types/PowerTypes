@@ -6,4 +6,13 @@ module scalesSvc{
     sourceId: U8 @< ID of the power source/sensor
     timestamp: U32 @< Timestamp of reading
   }
+  enum PowerModeID: U8 {
+    MAXN = 0 @< Unlimited power mode
+    WATTS_15 = 1 @< 15 Watts power mode
+    WATTS_30 = 2 @< 30 Watts power mode
+    WATTS_50 = 3 @< 50 Watts power mode
+  }
+  struct PowerMode {
+    mode: PowerModeID @< Current power mode
+  }
 }
