@@ -9,10 +9,13 @@ module scalesSvc {
     ###############################################################################
     
     @ Port for receiving power mode change requests (e.g., 15W, 30W, 50W)
-    async input port reqPwrMode: PowerModeRecieve
-    
+    async input port powerModeRecieve: PowerModeRecieve
+
     @ Port for sending current power mode information
-    output port currentPwrMode: PowerModeSend
+    output port powerModeSend: PowerModeSend
+
+    @ Port that receives the rate group tick
+    sync input port schedIn: Svc.Sched
     
     ###############################################################################
     # Standard AC Ports: Required for Channels, Events, Commands, and Parameters  #
@@ -55,11 +58,11 @@ module scalesSvc {
     #                                  Commands                                   #
     ###############################################################################
     
-    # @ Command to set the Jetson power mode
-    # async command SET_POWER_MODE(
-    #   $state: PowerModeID @< Power mode to set (15W, 30W, or 50W)
-    # )
-    
+    @ Command to set the Jetson power mode
+    async command SET_POWER_MODE(
+      mode: PowerModeID @< Power mode to set (15W, 30W, or 50W)
+    )
+
     @ Command to request current power mode
     async command GET_POWER_MODE
     
@@ -68,39 +71,21 @@ module scalesSvc {
     ###############################################################################
     
     @ Event indicating power mode change successful
-    # event POWER_MODE_CHANGED(
-    #   level: PowerModeID @< The new power mode
-    # ) severity activity high id 0 format "Jetson power mode changed to {}"
+    event POWER_MODE_CHANGED(
+      level: PowerModeID @< The new power mode
+    ) severity activity high id 0 format "Jetson power mode changed to {}"
     
-    # @ Event indicating power mode change failed
-    # event POWER_MODE_CHANGE_FAILED(
-    #   requested: PowerMode @< The requested power mode
-    #   reason: string size 64 @< Reason for failure
-    # ) severity warning high id 1 format "Failed to change Jetson power mode to {}: {}"
-    
-    # @ Event indicating Jetson is awake
-    event JETSON_AWAKE severity activity high id 2 format "Jetson is awake and responding"
-    
-    @ Event indicating Jetson is not responding
-    event JETSON_NOT_RESPONDING(
-      attempts: U32 @< Number of ping attempts
-    ) severity warning high id 3 format "Jetson not responding after {} ping attempts"
-
-    # @ Event indicating successful write to power mode file
-    # event POWER_MODE_FILE_WRITE_SUCCESS(
-    #   path: string size 128 @< Path to the file written
-    # ) severity activity high id 4 format "Successfully wrote power mode to file: {}"
-
-    # @ Event indicating failed write to power mode file
-    # event POWER_MODE_FILE_WRITE_FAILED(
-    #   path: string size 128 @< Path to the file that failed to write
-    # ) severity warning high id 5 format "Failed to write power mode to file: {}"
+    @ Event indicating power mode change failed
+    event POWER_MODE_CHANGE_FAILED(
+      requested: PowerModeID @< The requested power mode
+      reason: string size 64 @< Reason for failure
+    ) severity warning high id 1 format "Failed to change Jetson power mode to {}: {}"
     
     ###############################################################################
     #                                 Telemetry                                   #
     ###############################################################################
     
     @ Current power mode of Jetson
-    # telemetry CurrentPowerMode: PowerModeID
+    telemetry CurrentPowerMode: PowerModeID
   }
 }

@@ -2,32 +2,21 @@ module scalesSvc {
     @ Component to manage and monitor system power distribution.
     active component PowerManager {
 
-        # One async command/port is required for active components
-        # This should be overridden by the developers with a useful command/port
-        @ TODO
-        async command TODO opcode 0
+        ###############################################################################
+        #                                 General Ports                               #
+        ###############################################################################
 
-        ##############################################################################
-        #### Uncomment the following examples to start customizing your component ####
-        ##############################################################################
+        @ Port for sending power mode change requests to JetsonPowerModeManager
+        output port reqPwrMode: PowerModeRecieve
 
-        # @ Example async command
-        # async command COMMAND_NAME(param_name: U32)
+        @ Port for receiving current power mode from JetsonPowerModeManager
+        async input port currentPwrMode: PowerModeSend
 
-        # @ Example telemetry counter
-        # telemetry ExampleCounter: U64
-
-        # @ Example event
-        # event ExampleStateEvent(example_state: Fw.On) severity activity high id 0 format "State set to {}"
-
-        # @ Example port: receiving calls from the rate group
-        # sync input port run: Svc.Sched
-
-        @Port sending calls to the GPIO driver
+        @ Port for driving GPIO to control hardware power
         output port gpioSet: Drv.GpioWrite
 
-        # @ Example parameter
-        # param PARAMETER_NAME: U32
+        @ Port that receives the rate group tick
+        sync input port schedIn: Svc.Sched
 
         ###############################################################################
         # Standard AC Ports: Required for Channels, Events, Commands, and Parameters  #
@@ -56,8 +45,38 @@ module scalesSvc {
         @ Port to return the value of a parameter
         param get port prmGetOut
 
-        @Port to set the value of a parameter
+        @ Port to set the value of a parameter
         param set port prmSetOut
+
+        ###############################################################################
+        #                                  Commands                                   #
+        ###############################################################################
+
+        @ Command to request a power mode change on the Jetson
+        async command REQUEST_POWER_MODE(
+            mode: PowerModeID @< Requested power mode
+        )
+
+        ###############################################################################
+        #                                   Events                                    #
+        ###############################################################################
+
+        @ Event indicating a power mode change was requested
+        event POWER_MODE_REQUESTED(
+            mode: PowerModeID @< The requested power mode
+        ) severity activity high id 0 format "PowerManager requested Jetson power mode {}"
+
+        @ Event indicating the current power mode was received
+        event POWER_MODE_RECEIVED(
+            mode: PowerModeID @< The current power mode reported by Jetson
+        ) severity activity low id 1 format "PowerManager received Jetson power mode {}"
+
+        ###############################################################################
+        #                                 Telemetry                                   #
+        ###############################################################################
+
+        @ Current power mode of the Jetson as reported by JetsonPowerModeManager
+        telemetry JetsonPowerMode: PowerModeID
 
     }
 }

@@ -35,25 +35,17 @@ namespace scalesSvc {
       // Handler implementations for typed input ports
       // ----------------------------------------------------------------------
 
-      //! Handler implementation for pingReceive
-      //!
-      //! Port for receiving ping requests to check if Jetson is awake
-      void pingReceive_handler(
-          FwIndexType portNum, //!< The port number
-          U32 key //!< Value to return to pinger
-      ) override;
-
       //! Handler implementation for powerModeRecieve
       //!
       //! Port for receiving power mode change requests (e.g., 15W, 30W, 50W)
       void powerModeRecieve_handler(
           FwIndexType portNum, //!< The port number
-          const scalesSvc::PowerModeID& recieve
+          const scalesSvc::PowerModeID& modeReq
       ) override;
 
       //! Handler implementation for schedIn
       //!
-      //! Port that receives the rate group "tick" for ping intervals
+      //! Port that receives the rate group tick
       void schedIn_handler(
           FwIndexType portNum, //!< The port number
           U32 context //!< The call order
@@ -65,15 +57,13 @@ namespace scalesSvc {
       // Handler implementations for commands
       // ----------------------------------------------------------------------
 
-      void parameterUpdated(FwPrmIdType id);
-
       //! Handler implementation for command SET_POWER_MODE
       //!
       //! Command to set the Jetson power mode
       void SET_POWER_MODE_cmdHandler(
           FwOpcodeType opCode, //!< The opcode
           U32 cmdSeq, //!< The command sequence number
-          scalesSvc::PowerModeID //!< The requested power mode
+          scalesSvc::PowerModeID mode //!< Power mode to set (15W, 30W, or 50W)
       ) override;
 
       //! Handler implementation for command GET_POWER_MODE
@@ -83,15 +73,6 @@ namespace scalesSvc {
           FwOpcodeType opCode, //!< The opcode
           U32 cmdSeq //!< The command sequence number
       ) override;
-
-      //! Handler implementation for command CHECK_AWAKE
-      //!
-      //! Command to check if Jetson is awake
-      void CHECK_AWAKE_cmdHandler(
-          FwOpcodeType opCode, //!< The opcode
-          U32 cmdSeq //!< The command sequence number
-      ) override;
-
 
   };
 

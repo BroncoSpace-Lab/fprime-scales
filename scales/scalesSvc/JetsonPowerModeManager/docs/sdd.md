@@ -71,9 +71,3 @@ State machine will either be implemented here or in `scalesSvc::SpacecraftStateM
 | May 7, 2025 | Initial Draft |
 | Devember 4, 2025 | Use nvpmodel to change modes |
 
-# Draft Zone
-
-Future ideas and things to change.
-
-- Switch to being an overall hardware manager for the Jetson - monitor temperature and power consumption in adddition to changing power modes. Maybe even include watchdog pinging functionality.
-- Add idle mode (This is different than the modes available in nvpmodel. These modes are for the GPU, and idling is for the CPU, so this needs to be implemented differently.)
