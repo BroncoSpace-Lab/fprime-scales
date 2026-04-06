@@ -74,6 +74,23 @@ namespace scalesSvc {
           U32 cmdSeq //!< The command sequence number
       ) override;
 
+    PRIVATE:
+
+      // ----------------------------------------------------------------------
+      // Boot-time reporting state
+      //
+      // After the Jetson reboots into a new power mode, the IMX PowerManager is
+      // waiting for a mode confirmation. schedIn_handler reports the current mode
+      // once per boot (on the first tick after initialization) so the IMX can
+      // complete its deferred REQUEST_POWER_MODE command without needing a manual
+      // GET_POWER_MODE call.
+      // ----------------------------------------------------------------------
+
+      //! False until the first schedIn tick has fired and reported the boot mode.
+      //! Reset to false each time powerModeRecieve_handler triggers a reboot so
+      //! the new boot also reports automatically.
+      bool m_modeReported;
+
   };
 
 }

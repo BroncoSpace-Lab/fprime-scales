@@ -66,6 +66,29 @@ namespace scalesSvc {
           scalesSvc::PowerModeID mode //!< Requested power mode
       ) override;
 
+    PRIVATE:
+
+      // ----------------------------------------------------------------------
+      // Deferred command state for REQUEST_POWER_MODE
+      //
+      // REQUEST_POWER_MODE cannot complete immediately because the Jetson must
+      // reboot to apply the new nvpmodel power mode. Instead, the command is
+      // held here until the Jetson reconnects and reports its current mode via
+      // the currentPwrMode port. If the reported mode matches m_requestedMode,
+      // the stored opCode/cmdSeq are used to send the deferred OK response.
+      // If the Jetson does not confirm within CMD_TIMEOUT_TICKS, schedIn sends
+      // an EXECUTION_ERROR response so the command doesn't hang forever.
+      // ----------------------------------------------------------------------
+
+      bool m_hasPendingCmd;         //!< True while waiting for Jetson confirmation
+      FwOpcodeType m_pendingOpCode; //!< Opcode of the in-flight REQUEST_POWER_MODE
+      U32 m_pendingCmdSeq;          //!< Sequence number of the in-flight command
+      PowerModeID m_requestedMode;  //!< Mode we asked the Jetson to switch to
+      U32 m_timeoutTicks;           //!< Ticks elapsed since the request was sent
+
+      //! How many schedIn ticks to wait before timing out (120 ticks ≈ 2 min at 1 Hz)
+      static const U32 CMD_TIMEOUT_TICKS = 120;
+
   };
 
 }
