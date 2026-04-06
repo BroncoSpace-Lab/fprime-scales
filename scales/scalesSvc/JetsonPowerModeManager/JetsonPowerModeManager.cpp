@@ -41,13 +41,31 @@ namespace scalesSvc {
         const scalesSvc::PowerModeID& modeReq
     )
   {
+    // This event fires as soon as the hub port call is received from the IMX.
+    // If you do NOT see this in the GDS after sending REQUEST_POWER_MODE,
+    // the hub is not delivering the port call — check TCP connectivity and
+    // that both sides were rebuilt with the updated source files.
+    this->log_ACTIVITY_HI_POWER_MODE_REQUEST_RECEIVED(modeReq);
+
     U8 modeNow = get_nvp_mode();
     if (modeReq.e != static_cast<PowerModeID::T>(modeNow)) {
       // Mode change needed: run nvpmodel. The Jetson will reboot automatically.
       // Mark m_modeReported false so when the system comes back up, the first
       // schedIn tick will report the new mode to the IMX for confirmation.
       m_modeReported = false;
-      std::system(("yes | sudo -n /usr/sbin/nvpmodel -m " + std::to_string(static_cast<U8>(modeReq.e))).c_str());
+      int ret = std::system(("yes | sudo -n /usr/sbin/nvpmodel -m " + std::to_string(static_cast<U8>(modeReq.e))).c_str());
+      if (ret != 0) {
+        // nvpmodel failed (non-zero exit) — report it so the IMX can see the error.
+        // This also prevents the IMX from waiting forever for a confirmation.
+        Fw::String reason("nvpmodel returned non-zero exit code");
+        this->log_WARNING_HI_POWER_MODE_CHANGE_FAILED(modeReq, reason);
+        // Send the current (unchanged) mode back so the IMX deferred command can
+        // detect the mismatch and time out with EXECUTION_ERROR instead of hanging.
+        PowerModeID current(static_cast<PowerModeID::T>(modeNow));
+        this->powerModeSend_out(0, current);
+      }
+      // If ret == 0, nvpmodel is rebooting — no further action here.
+      // The reboot confirmation flows through schedIn_handler on the next boot.
     } else {
       // Already in the requested mode — no reboot needed.
       // Send the current mode back immediately so the IMX can complete its

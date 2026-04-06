@@ -70,11 +70,16 @@ module scalesSvc {
     #                                   Events                                    #
     ###############################################################################
     
+    @ Event emitted when a power mode change request arrives via the hub port (from IMX PowerManager)
+    event POWER_MODE_REQUEST_RECEIVED(
+      requested: PowerModeID @< The requested power mode
+    ) severity activity high id 2 format "Jetson received power mode change request: {}"
+
     @ Event indicating power mode change successful
     event POWER_MODE_CHANGED(
       level: PowerModeID @< The new power mode
     ) severity activity high id 0 format "Jetson power mode changed to {}"
-    
+
     @ Event indicating power mode change failed
     event POWER_MODE_CHANGE_FAILED(
       requested: PowerModeID @< The requested power mode
