@@ -41,6 +41,11 @@ namespace scalesSvc {
         const scalesSvc::PowerModeID& modeReq
     )
   {
+    // Direct stdout log — appears in journalctl regardless of GDS dictionary or hub state.
+    // If this line appears but POWER_MODE_REQUEST_RECEIVED does NOT appear in the GDS,
+    // the issue is a stale GDS dictionary (re-run merger.py with the updated Jetson dict).
+    // If this line does NOT appear, the port call from the IMX is not arriving.
+    printf("JetsonPowerModeManager: Received power mode request %d on port %d\n", static_cast<int>(modeReq.e), portNum); //added by kelly for debugging PowerManager issue
     // This event fires as soon as the hub port call is received from the IMX.
     // If you do NOT see this in the GDS after sending REQUEST_POWER_MODE,
     // the hub is not delivering the port call — check TCP connectivity and
@@ -53,7 +58,7 @@ namespace scalesSvc {
       // Mark m_modeReported false so when the system comes back up, the first
       // schedIn tick will report the new mode to the IMX for confirmation.
       m_modeReported = false;
-      int ret = std::system(("yes | sudo -n /usr/sbin/nvpmodel -m " + std::to_string(static_cast<U8>(modeReq.e))).c_str());
+      int ret = std::system(("echo y | sudo -n /usr/sbin/nvpmodel -m " + std::to_string(static_cast<U8>(modeReq.e))).c_str());
       if (ret != 0) {
         // nvpmodel failed (non-zero exit) — report it so the IMX can see the error.
         // This also prevents the IMX from waiting forever for a confirmation.
@@ -110,9 +115,7 @@ namespace scalesSvc {
     U8 modeNow = get_nvp_mode();
     if(mode.e != static_cast<PowerModeID::T>(modeNow))
     { //if the jetson's mode does not match the requested mode
-      std::system(("yes | sudo -n /usr/sbin/nvpmodel -m " + std::to_string(static_cast<U8>(mode.e))).c_str()); // executes the NVIDIA power mode control command
-      // sets the next power mode to specified mode after reset
-      // answers "yes" to request to reset prompt
+      std::system(("echo y | sudo -n /usr/sbin/nvpmodel -m " + std::to_string(static_cast<U8>(mode.e))).c_str());
       this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
     }
     else{//if the jetson is already in the requested mode, do nothing
