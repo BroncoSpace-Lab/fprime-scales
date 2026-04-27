@@ -3,10 +3,11 @@
 The `scalesSvc::PowerManager` component parameters, tracks operational states, and responds to critical conditions to ensure system safety and stability. This component also manages the power for each board in the SCALES system.
 
 ## Usage Examples
-Add usage examples here
+
+The `scalesSvc::PowerManager` component will interface with the `scalesSvc::JetsonPowerModeManager` to oversee the monitoring and changing of power modes on the Jetson. Since the Jetson must reset after a new power mode has been requested, `scalesSvc::PowerModeManager` will request the power mode change, and monitor the Jetson until it wakes up to validate the successful changing of the power mode.
 
 ## Requirements
-Add requirements in the chart below
+
 | Name | Description | Validation |
 |---|---|---|
 | PM-001 | The component shall monitor power levels and consumption across the SCALES system. |---|
@@ -26,6 +27,8 @@ Add a class diagram here
 ## Port Descriptions
 | Kind | Name | Description |
 |---|---|---|
+| output | reqPwrMode | Port for sending power mode change requests to JetsonPowerModeManager |
+| async input | currentPwrMode | Port for receiving current power mode from JetsonPowerModeManager |
 | async input | powerData | Port for receiving power data |
 | async input | systemStateIn | Input port for receiving system state information |
 | output | pwrTlm | Output port for all power telemetry data |
@@ -54,17 +57,18 @@ Add sequence diagrams here
 ## Commands
 | Name | Description |
 |---|---|
-|---|---|
+| REQUEST_POWER_MODE | Command to request a power mode change from the Jetson. This command will send a request to change power modes using the `reqPwrMode` port, which will trigger `scalesSvc::JetsonPowerModeManager` to change modes. |
 
 ## Events
 | Name | Description |
 |---|---|
-|---|---|
+| POWER_MODE_REQUESTED | Event indicating a Jetson power mode change was requested. |
+| POWER_MODE_RECEIVED | Event indicating the current power mode was received. |
 
 ## Telemetry
 | Name | Description |
 |---|---|
-|---|---|
+| JetsonPowerMode | Current power mode of the Jetson as reported by `scalesSvc::JetsonPowerModeManager` |
 
 ## Unit Tests
 Add unit test descriptions in the chart below
@@ -75,4 +79,4 @@ Add unit test descriptions in the chart below
 ## Change Log
 | Date | Description |
 |---|---|
-|---| Initial Draft |
+| 4/27/2026 | JetsonPowerModeManager compatibility implementation. |

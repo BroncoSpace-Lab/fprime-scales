@@ -28,8 +28,8 @@ Add a class diagram here
 ## Port Descriptions
 | Kind | Name | Description |
 |---|---|---|
-| anync input | reqPwrMode | Port for receiving power mode change requests |
-| output | currentPwrMode | Port for sending current power mode information |
+| anync input | powerModeRecieve | Port for receiving power mode change requests |
+| output | powerModeSend | Port for sending current power mode information |
 
 
 ## Component States
@@ -51,14 +51,16 @@ State machine will either be implemented here or in `scalesSvc::SpacecraftStateM
 ## Commands
 | Name | Description |
 |---|---|
-| POWER_MODE_CHANGED | Event indicating power mode change successful |
-| POWER_MODE_CHANGE_FAILED | Event indicating power mode change failed |
+| SET_POWER_MODE | Command to set the Jetson power mode |
+| GET_POWER_MODE | Command to request current power mode |
+
 
 ## Events
 | Name | Description |
 |---|---|
-| SET_POWER_MODE | Command to set the Jetson power mode |
-| GET_POWER_MODE | Command to request current power mode |
+| POWER_MODE_REQUEST_RECEIVED | Event emitted when a power mode change request arrives via the hub port (from `scalesSvc::PowerManager`) |
+| POWER_MODE_CHANGED | Event indicating power mode change successful |
+| POWER_MODE_CHANGE_FAILED | Event indicating power mode change failed |
 
 ## Telemetry
 | Name | Description |
