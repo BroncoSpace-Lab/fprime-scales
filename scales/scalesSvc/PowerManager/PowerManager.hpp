@@ -1,0 +1,96 @@
+// ======================================================================
+// \title  PowerManager.hpp
+// \author dragon-scales
+// \brief  hpp file for PowerManager component implementation class
+// ======================================================================
+
+#ifndef scalesSvc_PowerManager_HPP
+#define scalesSvc_PowerManager_HPP
+
+#include "scales/scalesSvc/PowerManager/PowerManagerComponentAc.hpp"
+
+namespace scalesSvc {
+
+  class PowerManager :
+    public PowerManagerComponentBase
+  {
+
+    public:
+
+      // ----------------------------------------------------------------------
+      // Component construction and destruction
+      // ----------------------------------------------------------------------
+
+      //! Construct PowerManager object
+      PowerManager(
+          const char* const compName //!< The component name
+      );
+
+      //! Destroy PowerManager object
+      ~PowerManager();
+
+    PRIVATE:
+
+      // ----------------------------------------------------------------------
+      // Handler implementations for typed input ports
+      // ----------------------------------------------------------------------
+
+      //! Handler implementation for currentPwrMode
+      //!
+      //! Port for receiving current power mode from JetsonPowerModeManager
+      void currentPwrMode_handler(
+          FwIndexType portNum, //!< The port number
+          const scalesSvc::PowerModeID& modeNow
+      ) override;
+
+      //! Handler implementation for schedIn
+      //!
+      //! Port that receives the rate group tick
+      void schedIn_handler(
+          FwIndexType portNum, //!< The port number
+          U32 context //!< The call order
+      ) override;
+
+    PRIVATE:
+
+      // ----------------------------------------------------------------------
+      // Handler implementations for commands
+      // ----------------------------------------------------------------------
+
+      //! Handler implementation for command REQUEST_POWER_MODE
+      //!
+      //! Command to request a power mode change on the Jetson
+      void REQUEST_POWER_MODE_cmdHandler(
+          FwOpcodeType opCode, //!< The opcode
+          U32 cmdSeq, //!< The command sequence number
+          scalesSvc::PowerModeID mode //!< Requested power mode
+      ) override;
+
+    PRIVATE:
+
+      // ----------------------------------------------------------------------
+      // Deferred command state for REQUEST_POWER_MODE
+      //
+      // REQUEST_POWER_MODE cannot complete immediately because the Jetson must
+      // reboot to apply the new nvpmodel power mode. Instead, the command is
+      // held here until the Jetson reconnects and reports its current mode via
+      // the currentPwrMode port. If the reported mode matches m_requestedMode,
+      // the stored opCode/cmdSeq are used to send the deferred OK response.
+      // If the Jetson does not confirm within CMD_TIMEOUT_TICKS, schedIn sends
+      // an EXECUTION_ERROR response so the command doesn't hang forever.
+      // ----------------------------------------------------------------------
+
+      bool m_hasPendingCmd;         //!< True while waiting for Jetson confirmation
+      FwOpcodeType m_pendingOpCode; //!< Opcode of the in-flight REQUEST_POWER_MODE
+      U32 m_pendingCmdSeq;          //!< Sequence number of the in-flight command
+      PowerModeID m_requestedMode;  //!< Mode we asked the Jetson to switch to
+      U32 m_timeoutTicks;           //!< Ticks elapsed since the request was sent
+
+      //! How many schedIn ticks to wait before timing out (120 ticks ≈ 2 min at 1 Hz)
+      static const U32 CMD_TIMEOUT_TICKS = 120;
+
+  };
+
+}
+
+#endif

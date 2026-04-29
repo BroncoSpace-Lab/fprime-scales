@@ -1,11 +1,10 @@
 set(SOURCE_FILES
-  "${CMAKE_CURRENT_LIST_DIR}/PowerReading.fpp"
-  "${CMAKE_CURRENT_LIST_DIR}/PowerState.fpp"
-  "${CMAKE_CURRENT_LIST_DIR}/PowerThermalStatus.fpp"
-  "${CMAKE_CURRENT_LIST_DIR}/StorageData.fpp"
-  "${CMAKE_CURRENT_LIST_DIR}/StorageStatus.fpp"
+  "${CMAKE_CURRENT_LIST_DIR}/PowerPorts.fpp"
   "${CMAKE_CURRENT_LIST_DIR}/SystemStateData.fpp"
-  "${CMAKE_CURRENT_LIST_DIR}/ThermalReading.fpp"
+)
+
+set(MOD_DEPS
+  scales_Types
 )
 
 register_fprime_module()

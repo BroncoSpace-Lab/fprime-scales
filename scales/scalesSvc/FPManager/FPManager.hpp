@@ -1,0 +1,4 @@
+// ======================================================================
+// \title  FPManager.hpp
+// \brief  Fault Protection Manager for the SCALES system. placeholder. Use fprime-util impl
+// ======================================================================
