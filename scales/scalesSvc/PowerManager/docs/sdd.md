@@ -1,6 +1,6 @@
 # scalesSvc::PowerManager
 
-The `scalesSvc::PowerManager` component parameters, tracks operational states, and responds to critical conditions to ensure system safety and stability. This component also manages the power for each board in the SCALES system.
+The `scalesSvc::PowerManager` monitors system parameters, tracks operational states, and responds to critical conditions to ensure system safety and stability. This component also manages the power for each board in the SCALES system.
 
 ## Usage Examples
 
