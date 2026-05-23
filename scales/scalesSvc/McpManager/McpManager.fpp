@@ -2,29 +2,20 @@ module scalesSvc {
     @ Device Manger to poll temperature data from on board MCP9808 temp sensors
     active component McpManager {
 
-        # One async command/port is required for active components
-        # This should be overridden by the developers with a useful command/port
-        @ TODO
-        async command TODO opcode 0
+        @ Output port allowing to connect to an I2c bus driver for writeRead operations to the mcp9808 temp sensors
+        output port mcpWriteRead: Drv.I2cWriteRead
 
-        ##############################################################################
-        #### Uncomment the following examples to start customizing your component ####
-        ##############################################################################
+        @ Async scheduler input port to poll temp data from the sensors
+        async input port pollTempData: Svc.Sched
 
-        # @ Example async command
-        # async command COMMAND_NAME(param_name: U32)
+        @ Telemetry to log imx_temp data
+        telemetry IMX_TEMP: ThermalReading id 0
 
-        # @ Example telemetry counter
-        # telemetry ExampleCounter: U64
+        @ Telemetry to log periferal temp data
+        telemetry PERIPHERAL_TEMP: ThermalReading id 1
 
-        # @ Example event
-        # event ExampleStateEvent(example_state: Fw.On) severity activity high id 0 format "State set to {}"
-
-        # @ Example port: receiving calls from the rate group
-        # sync input port run: Svc.Sched
-
-        # @ Example parameter
-        # param PARAMETER_NAME: U32
+        @ Telemetry to log Jetson temp data
+        telemetry JETSON_TEMP: ThermalReading id 2
 
         ###############################################################################
         # Standard AC Ports: Required for Channels, Events, Commands, and Parameters  #
