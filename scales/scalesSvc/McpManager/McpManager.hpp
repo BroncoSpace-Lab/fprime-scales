@@ -1,6 +1,6 @@
 // ======================================================================
 // \title  McpManager.hpp
-// \author luquitolanzi
+// \author bidat
 // \brief  hpp file for McpManager component implementation class
 // ======================================================================
 
@@ -11,50 +11,57 @@
 
 namespace scalesSvc {
 
-class McpManager : public McpManagerComponentBase {
-  public:
-    // Device addresses
-    static const U8 IMXMCP_ADDR = 0x19;
-    static const U8 PERIFMCP_ADDR = 0x1A;
-    static const U8 JETSONMCP_ADDR = 0x1B;
+  class McpManager : public McpManagerComponentBase {
 
-    // Write to temperature register
-    static const U8 TEMP_WRITE = 0x05;
+    // Device Address and Target Register Addresses for MCP9808
+    public:
+    
+      static constexpr U8 IMX_TEMP_ADDR = 0x19; //!< I2C address for IMX temperature sensor
+      static constexpr U8 PERIPHERAL_TEMP_ADDR = 0x1A; //!< I2C address for peripheral temperature sensor
+      static constexpr U8 JETSON_TEMP_ADDR = 0x1B; //!< I2C address for Jetson temperature sensor
+      U8 deviceAddrs[3]; //!< Array of device addresses for iterating through sensors
+      
+      static constexpr U8 TEMP_REG_ADDR = 0x05; //!< Register address for temperature data    
 
-    // Temperature variables
-    F32 IMX_MCP_TEMP;
-    F32 PERIF_MCP_TEMP;
-    F32 JETSON_MCP_TEMP;
-  
+    public:
 
-    // ----------------------------------------------------------------------
-    // Component construction and destruction
-    // ----------------------------------------------------------------------
+      // ----------------------------------------------------------------------
+      // Component construction and destruction
+      // ----------------------------------------------------------------------
 
-    //! Construct McpManager object
-    McpManager(const char* const compName  //!< The component name
-    );
+      //! Construct McpManager object
+      McpManager(
+          const char* const compName //!< The component name
+      );
 
-    //! Destroy McpManager object
-    ~McpManager();
+      //! Destroy McpManager object
+      ~McpManager();
 
-  PRIVATE:
-    // ----------------------------------------------------------------------
-    // Handler implementations for typed input ports
-    // ----------------------------------------------------------------------
+      F32 readTemp(U8 deviceAddr); //!< Function to read temperature from a given I2C device address
 
-    //! Handler implementation for McpRead
-    //!
-    //! Input port that will poll the sensors for temperature logging
-    void McpRead_handler(FwIndexType portNum,  //!< The port number
-                         U32 context           //!< The call order
-                         ) override;
-    scalesSvc::ThermalReading mcp_imx_read;
-    scalesSvc::ThermalReading mcp_perif_read;
-    scalesSvc::ThermalReading mcp_jetson_read; 
-    //Calling the ThermalReading struct for each mcp to be called in the CPP file
-};
+    PRIVATE:
 
-}  // namespace scalesSvc
+      // ----------------------------------------------------------------------
+      // Handler implementations for typed input ports
+      // ----------------------------------------------------------------------
+
+      //! Handler implementation for pollTempData
+      //!
+      //! Async scheduler input port to poll temp data from the sensors
+      void pollTempData_handler(
+          FwIndexType portNum, //!< The port number
+          U32 context //!< The call order
+      ) override;
+
+    private:
+      /* Implementation-specific members */
+      scalesSvc::ThermalReading m_thermalReadings[3]; //!< The 3 thermal readings to be logged to telemetry 
+      scalesSvc::ThermalReading imx_thermalReadings;
+      scalesSvc::ThermalReading peripheral_thermalReadings;
+      scalesSvc::ThermalReading jetson_thermalReadings;
+
+  };
+
+}
 
 #endif

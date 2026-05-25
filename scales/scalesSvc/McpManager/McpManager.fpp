@@ -1,23 +1,21 @@
 module scalesSvc {
-    @ Component that will read temperature data from MCP sensors on the SCALES Merger Board
+    @ Device Manger to poll temperature data from on board MCP9808 temp sensors
     active component McpManager {
 
-        @Input port that will poll the sensors for temperature logging
-        async input port McpRead: Svc.Sched
+        @ Output port allowing to connect to an I2c bus driver for writeRead operations to the mcp9808 temp sensors
+        output port mcpWriteRead: Drv.I2cWriteRead
 
-        @Output port that will send a request to the LinuxI2cdriver from the McpManager component
-        output port McpWriteRead: Drv.I2cWriteRead
-        # Note that since the command is a writeread, the output can technically act as an input and output
+        @ Async scheduler input port to poll temp data from the sensors
+        async input port pollTempData: Svc.Sched
 
-        telemetry mcp_imx: ThermalReading \
-            id 0x00
+        @ Telemetry to log imx_temp data
+        telemetry IMX_TEMP: ThermalReading id 0
 
-        telemetry mcp_perif: ThermalReading \
-            id 0x01
-        
-        telemetry mcp_jetson: ThermalReading \
-            id 0x02
+        @ Telemetry to log periferal temp data
+        telemetry PERIPHERAL_TEMP: ThermalReading id 1
 
+        @ Telemetry to log Jetson temp data
+        telemetry JETSON_TEMP: ThermalReading id 2
 
         ###############################################################################
         # Standard AC Ports: Required for Channels, Events, Commands, and Parameters  #
