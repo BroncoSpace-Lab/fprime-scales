@@ -16,7 +16,7 @@ namespace scalesSvc {
     // Device Address and Target Register Addresses for MCP9808
     public:
     
-      static constexpr U8 IMX_TEMP_ADDR = 0x18; //!< I2C address for IMX temperature sensor
+      static constexpr U8 IMX_TEMP_ADDR = 0x19; //!< I2C address for IMX temperature sensor
       static constexpr U8 PERIPHERAL_TEMP_ADDR = 0x1A; //!< I2C address for peripheral temperature sensor
       static constexpr U8 JETSON_TEMP_ADDR = 0x1B; //!< I2C address for Jetson temperature sensor
       U8 deviceAddrs[3]; //!< Array of device addresses for iterating through sensors
