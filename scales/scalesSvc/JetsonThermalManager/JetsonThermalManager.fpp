@@ -5,23 +5,39 @@ module scalesSvc {
          @ Synchronous input port to handle incoming jetson temp readings
         async input port jetsonTempRead: Svc.Sched
 
-         @ telemetry channels for Jetson thermal data
+        @ telemetry channel for Jetson CPU temp data
         telemetry jetson_cpu_temp_read: ThermalReading \
             id 0x00
+
+        @ telemetry channel for Jetson GPU temp data
         telemetry jetson_gpu_temp_read: ThermalReading \
             id 0x01
+
+        @ telemetry channel for Jetson CV0 temp data
         telemetry jetson_cv0_temp_read: ThermalReading \
             id 0x02
+        
+        @ telemetry channel for Jetson CV1 temp data
         telemetry jetson_cv1_temp_read: ThermalReading \   
             id 0x03
+
+        @ telemetry channel for Jetson CV2 temp data
         telemetry jetson_cv2_temp_read: ThermalReading \   
             id 0x04
+
+        @ telemetry channel for Jetson SOC0 temp data
         telemetry jetson_soc0_temp_read: ThermalReading \
             id 0x05
+
+        @ telemetry channel for Jetson SOC1 temp data
         telemetry jetson_soc1_temp_read: ThermalReading \
             id 0x06
+        
+        # telemetry channel for Jetson SOC2 temp data
         telemetry jetson_soc2_temp_read: ThermalReading \
             id 0x07
+
+        # telemetry channel for Jetson TJ temp data
         telemetry jetson_tj_temp_read: ThermalReading \
             id 0x08
 
