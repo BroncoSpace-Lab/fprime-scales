@@ -1,6 +1,6 @@
 # scalesSvc::McpManager
 
-Component that will read temperature data from MCP sensors on the SCALES Merger Board
+Device Manger to poll temperature data from on board MCP9808 temp sensors
 
 ## Usage Examples
 Add usage examples here
