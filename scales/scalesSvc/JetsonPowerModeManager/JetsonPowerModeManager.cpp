@@ -20,7 +20,8 @@ namespace scalesSvc {
   JetsonPowerModeManager ::
     JetsonPowerModeManager(const char* const compName) :
       JetsonPowerModeManagerComponentBase(compName),
-      m_modeReported(false)
+      m_modeReported(false),
+      m_powerStateReported(false)
   {
 
   }
@@ -36,7 +37,7 @@ namespace scalesSvc {
   // ----------------------------------------------------------------------
 
   void JetsonPowerModeManager ::
-    powerModeRecieve_handler(
+    powerModeReceive_handler(
         FwIndexType portNum,
         const scalesSvc::PowerModeID& modeReq
     )
@@ -81,11 +82,65 @@ namespace scalesSvc {
   }
 
   void JetsonPowerModeManager ::
+    jetsonPowerStateReceive_handler(
+        FwIndexType portNum,
+        const scalesSvc::JetsonPowerStateID& stateReq
+    )
+    {
+      printf(
+          "JetsonPowerModeManager: Received jetson power state request %d on port %d\n",
+          static_cast<int>(stateReq.e),
+          portNum
+      );
+
+      this->log_ACTIVITY_HI_JETSON_POWER_STATE_REQUEST_RECEIVED(stateReq);
+
+      if (stateReq.e == JetsonPowerStateID::OFF) {
+        // If this handler is running, the Jetson is already on
+        this->jetsonPowerStateSend_out(0, JetsonPowerStateID::ON);
+        this->tlmWrite_CurrentJetsonPowerState(JetsonPowerStateID::ON);
+        return;
+      }
+
+      if (stateReq.e == JetsonPowerStateID::ON) {
+        // Acknowldege OFF to the IMX before shutting down. The IMX can then
+        // wait a few ticks and cut the Jetson power rail using GPIO.
+        this->jetsonPowerStateSend_out(0, JetsonPowerStateID::OFF);
+        this->tlmWrite_CurrentJetsonPowerState(JetsonPowerStateID::OFF);
+        this->log_ACTIVITY_HI_JETSON_SHUTDOWN_STARTED(stateReq);
+        
+        int ret = std::system("sudo -n /sbin/shutdown -h now");
+
+        if (ret != 0) {
+          Fw::String reason("shutdown command returned non-zero exit code");
+          this->log_WARNING_HI_JETSON_POWER_STATE_CHANGE_FAILED(stateReq, reason);
+
+          // Report ON because shutdown failed and the Jetson is still alive.
+          this->jetsonPowerStateSend_out(0, JetsonPowerStateID::ON);
+          this->tlmWrite_CurrentJetsonPowerState(JetsonPowerStateID::ON);
+        }
+
+        return;
+      }
+
+      Fw::String reason("Invalid Jetson power state");
+      this->log_WARNING_HI_JETSON_POWER_STATE_CHANGE_FAILED(stateReq, reason);
+    }
+
+  void JetsonPowerModeManager ::
     schedIn_handler(
         FwIndexType portNum,
         U32 context
     )
   {
+    // Report power state once after boot. This is how the IMX confirms that
+    // a previous REQUEST_JETSON_POWER(ON) command succeeded.
+    if (!m_powerStateReported) {
+      this->jetsonPowerStateSend_out(0, JetsonPowerStateID::ON);
+      this->tlmWrite_CurrentJetsonPowerState(JetsonPowerStateID::ON);
+      m_powerStateReported = true;
+    }
+
     // On the first schedIn tick after boot (m_modeReported == false), read and
     // report the current power mode. This is how the IMX knows the Jetson has
     // finished rebooting and can confirm the REQUEST_POWER_MODE command.
@@ -141,6 +196,40 @@ namespace scalesSvc {
     }
   }
 
+  void JetsonPowerModeManager ::
+    SET_JETSON_POWER_STATE_cmdHandler(
+        FwOpcodeType opCode,
+        U32 cmdSeq,
+        scalesSvc::JetsonPowerStateID state
+    )
+  {
+    if (state.e == JetsonPowerStateID::OFF) {
+      // If this command is running locally on the Jetson, the Jetson is already on.
+      this->jetsonPowerStateSend_out(0, JetsonPowerStateID::ON);
+      this->tlmWrite_CurrentJetsonPowerState(JetsonPowerStateID::ON);
+      this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
+      return;
+    }
+
+    if (state.e == JetsonPowerStateID::ON) {
+      this->jetsonPowerStateSend_out(0, JetsonPowerStateID::OFF);
+      this->tlmWrite_CurrentJetsonPowerState(JetsonPowerStateID::OFF);
+      this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
+
+      int ret = std::system("sudo -n /sbin/shutdown -h now");
+
+      if (ret ==0) {
+        this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
+      } else {
+        this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::EXECUTION_ERROR);
+      }
+
+      return;
+    }
+
+    this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::VALIDATION_ERROR);
+  }
+  
 } // namespace scalesSvc
 
 // ----------------------------------------------------------------------
