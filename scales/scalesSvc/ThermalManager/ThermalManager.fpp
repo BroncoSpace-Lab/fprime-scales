@@ -2,15 +2,10 @@ module scalesSvc {
     @ Component to manage and monitor thermals in the SCALES system.
     active component ThermalManager {
 
-        # Synchronous input port to handle incoming imx cpu temp
+        # asynchronous input port to handle incoming imx cpu temp
         async input port imxCpuTemp: Svc.Sched
 
-        # Event to send data to GDS. Using ThermalReading struct within theh scalesSVC module
-        @ event for temp read of IMX_CPU
-        event IMXCPUTEMPREAD(
-            imx_thermal: ThermalReading
-        )  severity activity low format "IMX CPU temp Data {}"
-
+        # telemetry channel to imxcputemp
         @ telemetry channel for IMXCPUTEMP read
         telemetry imx_cpu_temp_read: ThermalReading \
             id 0x00
