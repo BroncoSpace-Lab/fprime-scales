@@ -2,6 +2,9 @@ module scalesSvc {
     @ Device Manger to poll temperature data from on board MCP9808 temp sensors
     active component McpManager {
 
+        @ Bind the ThermalStateMachine to McpManager
+        state machine instance thermalStateMachine: ThermalStateMachine
+
         @ Output port allowing to connect to an I2c bus driver for writeRead operations to the mcp9808 temp sensors
         output port mcpWriteRead: Drv.I2cWriteRead
 

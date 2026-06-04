@@ -71,6 +71,55 @@ namespace scalesSvc {
     return -67.0; // Return an error value if the device address is unrecognized 
   }
 
+  // ----------------------------------------------------------------------
+  // Implementations for internal state machine actions
+  // ----------------------------------------------------------------------
+
+  void McpManager ::
+    scalesSvc_ThermalStateMachine_action_doReset(
+        SmId smId,
+        scalesSvc_ThermalStateMachine::Signal signal
+    )
+  {
+    // TODO
+  }
+
+  void McpManager ::
+    scalesSvc_ThermalStateMachine_action_doReadTemp(
+        SmId smId,
+        scalesSvc_ThermalStateMachine::Signal signal
+    )
+  {
+    // TODO
+  }
+
+  void McpManager ::
+    scalesSvc_ThermalStateMachine_action_doIdle(
+        SmId smId,
+        scalesSvc_ThermalStateMachine::Signal signal
+    )
+  {
+    // TODO
+  }
+
+  void McpManager ::
+    scalesSvc_ThermalStateMachine_action_doWarning(
+        SmId smId,
+        scalesSvc_ThermalStateMachine::Signal signal
+    )
+  {
+    // TODO
+  }
+
+  void McpManager ::
+    scalesSvc_ThermalStateMachine_action_doFault(
+        SmId smId,
+        scalesSvc_ThermalStateMachine::Signal signal
+    )
+  {
+    // TODO
+  }
+
 }
 
 // Helper function to convert raw 2-byte data from MCP9808 into a temperature value in Celsius
@@ -93,5 +142,4 @@ F32 convertRawTemp(U8 *rawData){
     tempCelsius = ((rawData[0] * 16.0) + (rawData[1] / 16.0)); // Calculate positive temperature according to datasheet
     return tempCelsius;
   }
-
 }

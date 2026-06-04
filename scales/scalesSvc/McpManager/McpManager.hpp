@@ -53,12 +53,48 @@ namespace scalesSvc {
           U32 context //!< The call order
       ) override;
 
-    private:
+    PRIVATE:
       /* Implementation-specific members */
       scalesSvc::ThermalReading m_thermalReadings[3]; //!< The 3 thermal readings to be logged to telemetry 
       scalesSvc::ThermalReading imx_thermalReadings;
       scalesSvc::ThermalReading peripheral_thermalReadings;
       scalesSvc::ThermalReading jetson_thermalReadings;
+    
+
+    PRIVATE:
+      // ----------------------------------------------------------------------
+      // Implementations for internal state machine actions
+      // ----------------------------------------------------------------------
+
+      //! Implementation for action doReset of state machine scalesSvc_ThermalStateMachine
+      void scalesSvc_ThermalStateMachine_action_doReset(
+          SmId smId, //!< The state machine id
+          scalesSvc_ThermalStateMachine::Signal signal //!< The signal
+      ) override;
+
+      //! Implementation for action doReadTemp of state machine scalesSvc_ThermalStateMachine
+      void scalesSvc_ThermalStateMachine_action_doReadTemp(
+          SmId smId, //!< The state machine id
+          scalesSvc_ThermalStateMachine::Signal signal //!< The signal
+      ) override;
+
+      //! Implementation for action doIdle of state machine scalesSvc_ThermalStateMachine
+      void scalesSvc_ThermalStateMachine_action_doIdle(
+          SmId smId, //!< The state machine id
+          scalesSvc_ThermalStateMachine::Signal signal //!< The signal
+      ) override;
+
+      //! Implementation for action doWarning of state machine scalesSvc_ThermalStateMachine
+      void scalesSvc_ThermalStateMachine_action_doWarning(
+          SmId smId, //!< The state machine id
+          scalesSvc_ThermalStateMachine::Signal signal //!< The signal
+      ) override;
+
+      //! Implementation for action doFault of state machine scalesSvc_ThermalStateMachine
+      void scalesSvc_ThermalStateMachine_action_doFault(
+          SmId smId, //!< The state machine id
+          scalesSvc_ThermalStateMachine::Signal signal //!< The signal
+      ) override;
 
   };
 
