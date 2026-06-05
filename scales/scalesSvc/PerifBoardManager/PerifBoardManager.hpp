@@ -1,6 +1,6 @@
 // ======================================================================
 // \title  PerifBoardManager.hpp
-// \author luquitolanzi
+// \author lucal
 // \brief  hpp file for PerifBoardManager component implementation class
 // ======================================================================
 
@@ -11,32 +11,59 @@
 
 namespace scalesSvc {
 
-class PerifBoardManager : public PerifBoardManagerComponentBase {
-  public:
-    // ----------------------------------------------------------------------
-    // Component construction and destruction
-    // ----------------------------------------------------------------------
+  class PerifBoardManager :
+    public PerifBoardManagerComponentBase
+  {
 
-    //! Construct PerifBoardManager object
-    PerifBoardManager(const char* const compName  //!< The component name
-    );
+    public:
 
-    //! Destroy PerifBoardManager object
-    ~PerifBoardManager();
+      // ----------------------------------------------------------------------
+      // Component construction and destruction
+      // ----------------------------------------------------------------------
 
-  PRIVATE:
-    // ----------------------------------------------------------------------
-    // Handler implementations for typed input ports
-    // ----------------------------------------------------------------------
+      //! Construct PerifBoardManager object
+      PerifBoardManager(
+          const char* const compName //!< The component name
+      );
 
-    //! Handler implementation for perifBoardManager
-    //!
-    //! input port tied to a rate group that keeps the GPIO toggling the ethernet switch load switch Enabled
-    void perifBoardManager_handler(FwIndexType portNum,  //!< The port number
-                                   U32 context           //!< The call order
-                                   ) override;
-};
+      //! Destroy PerifBoardManager object
+      ~PerifBoardManager();
 
-}  // namespace scalesSvc
+    PRIVATE:
+
+      // ----------------------------------------------------------------------
+      // Handler implementations for typed input ports
+      // ----------------------------------------------------------------------
+      Fw::ParamValid m_isValid = Fw::ParamValid::VALID; //instantiate valid type for paramget
+      Fw::On m_powerMode = Fw::On::ON; //!< Power mode of the board, default to ON
+      U32 m_startTimeSec;
+      Fw::On m_onOff = Fw::On::ON; //instantiate on type for command handler
+      //! Handler implementation for run
+      //!
+      //! input port to run the manager
+      void run_handler(
+          FwIndexType portNum, //!< The port number
+          U32 context //!< The call order
+      ) override;
+
+    PRIVATE:
+
+      // ----------------------------------------------------------------------
+      // Handler implementations for commands
+      // ----------------------------------------------------------------------
+
+      //! Handler implementation for command powerOn
+      //!
+      //! command to set the state of the gpio
+      //! Sets the state of the GPIO to high
+      void powerOn_cmdHandler(
+          FwOpcodeType opCode, //!< The opcode
+          U32 cmdSeq, //!< The command sequence number
+          Fw::On highLow
+      ) override;
+
+  };
+
+}
 
 #endif

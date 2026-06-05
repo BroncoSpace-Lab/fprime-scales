@@ -3,25 +3,42 @@ module scalesSvc {
     active component PerifBoardManager {
 
         # One async command/port is required for active components
-        # This should be overridden by the developers with a useful command/port
-        @ input port tied to a rate group that keeps the GPIO toggling the ethernet switch load switch Enabled
-        async input port perifBoardManager: Svc.Sched
+    
+        @ input port to run the manager
+        async input port run: Svc.Sched
 
-        @ output port to send calls to the GPIO driver
+        @ output port sending calls to the GPIO driver
         output port gpioSet: Drv.GpioWrite
 
-        @ output port call to get GPIO state
-        output port gpioGet: Drv.GpioRead
+        @ command to set the state of the gpio
+        async command powerOn(
+            highLow: Fw.On
+        )   @< Sets the state of the GPIO to high
 
-        @ telemetry channel to hold status for ethernet switch state
-        telemetry perif_board_state: Drv.GpioStatus \
-            id 0x00
+        @ event to report the state of the gpio
+        event gpioOn($state: Fw.On) \
+            severity activity high \
+            format "Peripheral Board is {}"
+
+        telemetry gpioState: Fw.Logic @< telemetry channel to report the state of the GPIO
+
+        param offTimeSec: U32 default 2 @< Parameter to set the time to wait before re-powering on the board
+
 
         ###############################################################################
         # Standard AC Ports: Required for Channels, Events, Commands, and Parameters  #
         ###############################################################################
         @ Port for requesting the current time
         time get port timeCaller
+
+        @ Port for sending command registrations
+        command reg port cmdRegOut
+
+        @ Port for receiving commands
+        command recv port cmdIn
+
+        @ Port for sending command responses
+        command resp port cmdResponseOut
 
         @ Port for sending textual representation of events
         text event port logTextOut
@@ -37,6 +54,5 @@ module scalesSvc {
 
         @Port to set the value of a parameter
         param set port prmSetOut
-
     }
 }
