@@ -85,8 +85,9 @@ namespace scalesSvc {
     jetsonPowerStateReceive_handler(
         FwIndexType portNum,
         const scalesSvc::JetsonPowerStateID& stateReq
-    )
+      )
     {
+      // Line for debugging 
       printf(
           "JetsonPowerModeManager: Received jetson power state request %d on port %d\n",
           static_cast<int>(stateReq.e),
@@ -95,14 +96,14 @@ namespace scalesSvc {
 
       this->log_ACTIVITY_HI_JETSON_POWER_STATE_REQUEST_RECEIVED(stateReq);
 
-      if (stateReq.e == JetsonPowerStateID::OFF) {
+      if (stateReq.e == JetsonPowerStateID::ON) {
         // If this handler is running, the Jetson is already on
         this->jetsonPowerStateSend_out(0, JetsonPowerStateID::ON);
         this->tlmWrite_CurrentJetsonPowerState(JetsonPowerStateID::ON);
         return;
       }
 
-      if (stateReq.e == JetsonPowerStateID::ON) {
+      if (stateReq.e == JetsonPowerStateID::OFF) {
         // Acknowldege OFF to the IMX before shutting down. The IMX can then
         // wait a few ticks and cut the Jetson power rail using GPIO.
         this->jetsonPowerStateSend_out(0, JetsonPowerStateID::OFF);
@@ -203,7 +204,7 @@ namespace scalesSvc {
         scalesSvc::JetsonPowerStateID state
     )
   {
-    if (state.e == JetsonPowerStateID::OFF) {
+    if (state.e == JetsonPowerStateID::ON) {
       // If this command is running locally on the Jetson, the Jetson is already on.
       this->jetsonPowerStateSend_out(0, JetsonPowerStateID::ON);
       this->tlmWrite_CurrentJetsonPowerState(JetsonPowerStateID::ON);
@@ -211,7 +212,7 @@ namespace scalesSvc {
       return;
     }
 
-    if (state.e == JetsonPowerStateID::ON) {
+    if (state.e == JetsonPowerStateID::OFF) {
       this->jetsonPowerStateSend_out(0, JetsonPowerStateID::OFF);
       this->tlmWrite_CurrentJetsonPowerState(JetsonPowerStateID::OFF);
       this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
