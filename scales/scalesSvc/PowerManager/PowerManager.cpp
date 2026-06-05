@@ -147,7 +147,7 @@ namespace scalesSvc {
         this->cmdResponse_out(
           m_pendingPowerOpCode,
           m_pendingPowerCmdSeq,
-          Fw::CmdResponse::EXECUTION_ERROR
+          Fw::CmdResponse::OK
         );
 
         m_hasPendingPowerCmd = false;
@@ -221,6 +221,7 @@ namespace scalesSvc {
       } else if (jetsonState.e == JetsonPowerStateID::OFF) {
         // Jetson is currently on, so ask it to shut down
         // After it acknowledges OFF, this component will cut power with GPIO
+        this->gpioSet_out(0, JETSON_POWER_GPIO_OFF);
         this->reqJetsonPwrState_out(0, jetsonState);
       } else {
         this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::VALIDATION_ERROR);
