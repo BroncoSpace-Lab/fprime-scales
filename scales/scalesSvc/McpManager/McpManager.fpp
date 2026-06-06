@@ -9,7 +9,7 @@ module scalesSvc {
         output port mcpWriteRead: Drv.I2cWriteRead
 
         @ Async scheduler input port to poll temp data from the sensors
-        async input port pollTempData: Svc.Sched
+        async input port run: Svc.Sched
 
         @ Telemetry to log imx_temp data
         telemetry IMX_TEMP: ThermalReading id 0
@@ -19,6 +19,9 @@ module scalesSvc {
 
         @ Telemetry to log Jetson temp data
         telemetry JETSON_TEMP: ThermalReading id 2
+
+        @ Telemetry to log the state of the manager
+        telemetry MCP_THERMAL_STATE: string id 3
 
         ###############################################################################
         # Standard AC Ports: Required for Channels, Events, Commands, and Parameters  #

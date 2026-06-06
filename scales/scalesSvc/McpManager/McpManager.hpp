@@ -39,16 +39,18 @@ namespace scalesSvc {
 
       F32 readTemp(U8 deviceAddr); //!< Function to read temperature from a given I2C device address
 
+      U8 determineTempState(F32 tempCelsius); //!< Function to determine the temperature state (IDLE, WARNING, FAULT) based on the temperature in Celsius
+
     PRIVATE:
 
       // ----------------------------------------------------------------------
       // Handler implementations for typed input ports
       // ----------------------------------------------------------------------
 
-      //! Handler implementation for pollTempData
+      //! Handler implementation for run input port
       //!
-      //! Async scheduler input port to poll temp data from the sensors
-      void pollTempData_handler(
+      //! Async scheduler input port to poll temp data from the sensors 
+      void run_handler(
           FwIndexType portNum, //!< The port number
           U32 context //!< The call order
       ) override;
@@ -59,7 +61,10 @@ namespace scalesSvc {
       scalesSvc::ThermalReading imx_thermalReadings;
       scalesSvc::ThermalReading peripheral_thermalReadings;
       scalesSvc::ThermalReading jetson_thermalReadings;
-    
+
+      /* Determines whether the device has just booted */
+      bool m_justBooted;
+      U8 m_currentState;
 
     PRIVATE:
       // ----------------------------------------------------------------------
