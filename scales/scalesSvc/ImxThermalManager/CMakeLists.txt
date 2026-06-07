@@ -11,8 +11,8 @@
 ####
 
 set(SOURCE_FILES
-  "${CMAKE_CURRENT_LIST_DIR}/ThermalManager.fpp"
-  "${CMAKE_CURRENT_LIST_DIR}/ThermalManager.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/ImxThermalManager.fpp"
+  "${CMAKE_CURRENT_LIST_DIR}/ImxThermalManager.cpp"
 )
 
 # Uncomment and add any modules that this component depends on, else
@@ -32,9 +32,9 @@ register_fprime_module()
 
 ### Unit Tests ###
 # set(UT_SOURCE_FILES
-#   "${CMAKE_CURRENT_LIST_DIR}/ThermalManager.fpp"
-#   "${CMAKE_CURRENT_LIST_DIR}/test/ut/ThermalManagerTestMain.cpp"
-#   "${CMAKE_CURRENT_LIST_DIR}/test/ut/ThermalManagerTester.cpp"
+#   "${CMAKE_CURRENT_LIST_DIR}/ImxThermalManager.fpp"
+#   "${CMAKE_CURRENT_LIST_DIR}/test/ut/ImxThermalManagerTestMain.cpp"
+#   "${CMAKE_CURRENT_LIST_DIR}/test/ut/ImxThermalManagerTester.cpp"
 # )
 # set(UT_MOD_DEPS
 #   STest

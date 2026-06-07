@@ -1,11 +1,11 @@
 module scalesSvc {
-    @ Component to manage and monitor thermals in the SCALES system.
-    active component ThermalManager {
+    @ ImxThermalManager to hold parameters and display IMX thermal data
+    active component ImxThermalManager {
 
+  
         # asynchronous input port to handle incoming imx cpu temp
         async input port imxCpuTemp: Svc.Sched
-
-        # telemetry channel to imxcputemp
+       
         @ telemetry channel for IMXCPUTEMP read
         telemetry imx_cpu_temp_read: ThermalReading \
             id 0x00
@@ -53,8 +53,7 @@ module scalesSvc {
             set opcode 0x11 \
             save opcode 0x12
 
-        
-        ############################################
+        ###############################################################################
         # Standard AC Ports: Required for Channels, Events, Commands, and Parameters  #
         ###############################################################################
         @ Port for requesting the current time
