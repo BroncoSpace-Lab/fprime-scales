@@ -38,16 +38,13 @@ namespace scalesSvc {
     switch (m_powerMode) { //switch case for gpio state
       case Fw::On::ON:
           this->gpioSet_out(0, Fw::Logic::HIGH); //keep on
-          this->log_ACTIVITY_HI_gpioOn(m_onOff); //log event
           this->tlmWrite_gpioState(Fw::Logic::HIGH); //emit telemetry
         break;
       case Fw::On::OFF:
           this->tlmWrite_gpioState(Fw::Logic::LOW); //emit telemetry before we lose connection
-          m_startTimeSec = this->getTime().getSeconds(); //record the time we turned off
           this->gpioSet_out(0, Fw::Logic::LOW); //turn off temporarily
-          
           if(this->getTime().getSeconds() - m_startTimeSec >= paramGet_offTimeSec(m_isValid)){ //check if it's time to turn back on
-            m_powerMode = Fw::On::ON;
+            m_powerMode = Fw::On::ON; //turn to m_powermode to ON to go in ON case.
           }
         break;
       default:
@@ -69,12 +66,14 @@ namespace scalesSvc {
   {
     if (highLow == Fw::On::ON){
       m_powerMode = Fw::On::ON;
-      gpioSet_out(0, Fw::Logic::HIGH);
+      m_onOff = Fw::On::ON; //record the state we set for telemetry
+      this->log_ACTIVITY_HI_gpioOn(m_onOff); 
     }
     else if (highLow == Fw::On::OFF){
-      m_powerMode = Fw::On::OFF;
-      gpioSet_out(0, Fw::Logic::LOW);
-      m_startTimeSec = this->getTime().getSeconds();
+      m_powerMode = Fw::On::OFF; //set power mode to false to go into OFF case in run handler
+      m_onOff = Fw::On::OFF; //record the state we set for telemetry
+      this->log_ACTIVITY_HI_gpioOn(m_onOff); //log that we are not turning off the board
+      m_startTimeSec = this->getTime().getSeconds(); //record the time we are turning off
     }
     else {
       FW_ASSERT(0, opCode);

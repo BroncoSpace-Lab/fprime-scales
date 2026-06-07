@@ -7,7 +7,7 @@ module scalesSvc {
         @ input port to run the manager
         async input port run: Svc.Sched
 
-        @ output port sending calls to the GPIO driver
+        @ output port  sending calls to the GPIO driver
         output port gpioSet: Drv.GpioWrite
 
         @ command to set the state of the gpio

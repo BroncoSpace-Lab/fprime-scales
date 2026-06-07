@@ -1,4 +1,4 @@
-####
+  ####
 # FPrime CMakeLists.txt:
 #
 # SOURCE_FILES: combined list of source and autocoding files
@@ -31,13 +31,13 @@ register_fprime_module()
 
 
 ### Unit Tests ###
-# set(UT_SOURCE_FILES
-#   "${CMAKE_CURRENT_LIST_DIR}/PerifBoardManager.fpp"
-#   "${CMAKE_CURRENT_LIST_DIR}/test/ut/PerifBoardManagerTestMain.cpp"
-#   "${CMAKE_CURRENT_LIST_DIR}/test/ut/PerifBoardManagerTester.cpp"
-# )
-# set(UT_MOD_DEPS
-#   STest
-# )
-# set(UT_AUTO_HELPERS ON)
-# register_fprime_ut()
+set(UT_SOURCE_FILES
+  "${CMAKE_CURRENT_LIST_DIR}/PerifBoardManager.fpp"
+  "${CMAKE_CURRENT_LIST_DIR}/test/ut/PerifBoardManagerTestMain.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/test/ut/PerifBoardManagerTester.cpp"
+)
+set(UT_MOD_DEPS
+  STest
+)
+set(UT_AUTO_HELPERS ON)
+register_fprime_ut()
