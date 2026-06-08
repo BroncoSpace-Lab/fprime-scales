@@ -11,8 +11,8 @@
 ####
 
 set(SOURCE_FILES
-  "${CMAKE_CURRENT_LIST_DIR}/PowerManager.fpp"
-  "${CMAKE_CURRENT_LIST_DIR}/PowerManager.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/JetsonManager.fpp"
+  "${CMAKE_CURRENT_LIST_DIR}/JetsonManager.cpp"
 )
 
 # Uncomment and add any modules that this component depends on, else
@@ -23,19 +23,18 @@ set(SOURCE_FILES
 # `Ref/SignalGen/CMakeLists.txt` will be named `Ref_SignalGen`.  `Ref/SignalGen`
 # is an acceptable alternative and will be internally converted to `Ref_SignalGen`.
 #
-set(MOD_DEPS
-  scales_Types
-  scales_Ports
-)
+# set(MOD_DEPS
+#   MyPackage_MyOtherModule
+# )
 
 register_fprime_module()
 
 
 ### Unit Tests ###
 # set(UT_SOURCE_FILES
-#   "${CMAKE_CURRENT_LIST_DIR}/PowerManager.fpp"
-#   "${CMAKE_CURRENT_LIST_DIR}/test/ut/PowerManagerTestMain.cpp"
-#   "${CMAKE_CURRENT_LIST_DIR}/test/ut/PowerManagerTester.cpp"
+#   "${CMAKE_CURRENT_LIST_DIR}/JetsonManager.fpp"
+#   "${CMAKE_CURRENT_LIST_DIR}/test/ut/JetsonManagerTestMain.cpp"
+#   "${CMAKE_CURRENT_LIST_DIR}/test/ut/JetsonManagerTester.cpp"
 # )
 # set(UT_MOD_DEPS
 #   STest

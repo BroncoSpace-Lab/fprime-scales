@@ -1,18 +1,18 @@
 // ======================================================================
-// \title  PowerManager.hpp
-// \author dragon-scales
-// \brief  hpp file for PowerManager component implementation class
+// \title  JetsonManager.hpp
+// \author lucal
+// \brief  hpp file for JetsonManager component implementation class
 // ======================================================================
 
-#ifndef scalesSvc_PowerManager_HPP
-#define scalesSvc_PowerManager_HPP
+#ifndef scalesSvc_JetsonManager_HPP
+#define scalesSvc_JetsonManager_HPP
 
-#include "scales/scalesSvc/PowerManager/PowerManagerComponentAc.hpp"
+#include "scales/scalesSvc/JetsonManager/JetsonManagerComponentAc.hpp"
 
 namespace scalesSvc {
 
-  class PowerManager :
-    public PowerManagerComponentBase
+  class JetsonManager :
+    public JetsonManagerComponentBase
   {
 
     public:
@@ -21,19 +21,27 @@ namespace scalesSvc {
       // Component construction and destruction
       // ----------------------------------------------------------------------
 
-      //! Construct PowerManager object
-      PowerManager(
+      //! Construct JetsonManager object
+      JetsonManager(
           const char* const compName //!< The component name
       );
 
-      //! Destroy PowerManager object
-      ~PowerManager();
+      //! Destroy JetsonManager object
+      ~JetsonManager();
 
     PRIVATE:
 
       // ----------------------------------------------------------------------
       // Handler implementations for typed input ports
       // ----------------------------------------------------------------------
+
+      //! Handler implementation for currentJetsonPwrState
+      //!
+      //! Port for receiving current Jetson power state from JetsonPowerModeManager
+      void currentJetsonPwrState_handler(
+          FwIndexType portNum, //!< The port number
+          const scalesSvc::JetsonPowerStateID& stateNow
+      ) override;
 
       //! Handler implementation for currentPwrMode
       //!
@@ -57,6 +65,9 @@ namespace scalesSvc {
       // Handler implementations for commands
       // ----------------------------------------------------------------------
 
+      //! Handler implementation for command TODO
+     
+
       //! Handler implementation for command REQUEST_POWER_MODE
       //!
       //! Command to request a power mode change on the Jetson
@@ -66,9 +77,18 @@ namespace scalesSvc {
           scalesSvc::PowerModeID mode //!< Requested power mode
       ) override;
 
-    PRIVATE:
+      //! Handler implementation for command REQUEST_JETSON_POWER_STATE
+      //!
+      //! Command to request a power state change (on/off) for the Jetson
+      void REQUEST_JETSON_POWER_STATE_cmdHandler(
+          FwOpcodeType opCode, //!< The opcode
+          U32 cmdSeq, //!< The command sequence number
+          scalesSvc::JetsonPowerStateID jetsonState //!< Requested power state (on/off)
+      ) override;
 
-      // ----------------------------------------------------------------------
+      PRIVATE:
+
+       // ----------------------------------------------------------------------
       // Deferred command state for REQUEST_POWER_MODE
       //
       // REQUEST_POWER_MODE cannot complete immediately because the Jetson must
@@ -88,6 +108,14 @@ namespace scalesSvc {
 
       //! How many schedIn ticks to wait before timing out (120 ticks ≈ 2 min at 1 Hz)
       static const U32 CMD_TIMEOUT_TICKS = 120;
+
+      bool m_hasPendingPowerCmd; //!< True while waiting for Jetson power state change confirmation
+      FwOpcodeType m_pendingPowerOpCode; //!< Opcode of the in-flight REQUEST_JETSON_POWER_STATE
+      U32 m_pendingPowerCmdSeq; //!< Sequence number of the in-flight REQUEST_JETSON_POWER_STATE command
+      scalesSvc::JetsonPowerStateID m_requestedPowerState; //!< Power state we asked the Jetson to switch to
+      U32 m_powerTimeoutTicks;  //!< Ticks elapsed since the power state change request was sent
+      bool m_waitingToCutJetsonPower; //!< True if we've sent a shutdown command and are waiting to cut power after a delay
+      U32 m_powerOffDelayTicks; //!< Ticks elapsed since sending the shutdown command, used to delay cutting power to allow for graceful shutdown
 
   };
 

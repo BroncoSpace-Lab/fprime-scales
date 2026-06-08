@@ -1,5 +1,4 @@
 add_fprime_subdirectory("${CMAKE_CURRENT_LIST_DIR}/JetsonPowerModeManager")
-add_fprime_subdirectory("${CMAKE_CURRENT_LIST_DIR}/PowerManager/")
 add_fprime_subdirectory("${CMAKE_CURRENT_LIST_DIR}/McpManager/")
 # add_fprime_subdirectory("${CMAKE_CURRENT_LIST_DIR}/FPManager/")
 # add_fprime_subdirectory("${CMAKE_CURRENT_LIST_DIR}/WatchdogManager/")
@@ -7,3 +6,5 @@ add_fprime_subdirectory("${CMAKE_CURRENT_LIST_DIR}/McpManager/")
 add_fprime_subdirectory("${CMAKE_CURRENT_LIST_DIR}/JetsonThermalManager/")
 add_fprime_subdirectory("${CMAKE_CURRENT_LIST_DIR}/PerifBoardManager/")
 add_fprime_subdirectory("${CMAKE_CURRENT_LIST_DIR}/ImxThermalManager/")
+add_fprime_subdirectory("${CMAKE_CURRENT_LIST_DIR}/JetsonManager/")
+
