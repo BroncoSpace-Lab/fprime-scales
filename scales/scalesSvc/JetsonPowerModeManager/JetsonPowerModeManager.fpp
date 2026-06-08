@@ -9,7 +9,7 @@ module scalesSvc {
     ###############################################################################
     
     @ Port for receiving power mode change requests (e.g., 15W, 30W, 50W)
-    async input port powerModeRecieve: PowerModeRecieve
+    async input port powerModeRecieve: PowerModeReceive
 
     @ Port for sending current power mode information
     output port powerModeSend: PowerModeSend

@@ -1,12 +1,6 @@
 module scalesSvc {
     @ Component that manages the Jetson On/Off state, and interacts with the JetsonPowerModeManager to pass the previous power mode for the next boot cycle
     active component JetsonManager {
-
-        # One async command/port is required for active components
-        # This should be overridden by the developers with a useful command/port
-        @ TODO
-        async command TODO opcode 0
-
         ###############################################################################
         #                                 General Ports                               #
         ###############################################################################
