@@ -21,7 +21,14 @@ namespace scalesSvc {
   McpManager :: McpManager(const char* const compName) :
     McpManagerComponentBase(compName), 
     m_justBooted(true),
-    m_currentState(0)
+    m_currentState(0),
+    // Default threshold values, can be updated by sending commands
+    IDLE_LOW_THR(this->paramGet_MCP_IDLE_LOW(m_paramIsValid)), 
+    IDLE_HIGH_THR(this->paramGet_MCP_IDLE_HIGH(m_paramIsValid)),
+    WARN_LOW_THR(this->paramGet_MCP_WARN_LOW(m_paramIsValid)),
+    WARN_HIGH_THR(this->paramGet_MCP_WARN_HIGH(m_paramIsValid)),
+    FAULT_LOW_THR(this->paramGet_MCP_FAULT_LOW(m_paramIsValid)),
+    FAULT_HIGH_THR(this->paramGet_MCP_FAULT_HIGH(m_paramIsValid))
   {
     m_thermalReadings[0] = imx_thermalReadings;
     m_thermalReadings[1] = peripheral_thermalReadings;
@@ -41,6 +48,12 @@ namespace scalesSvc {
   // ----------------------------------------------------------------------
 
   void McpManager :: run_handler( FwIndexType portNum, U32 context) {
+    this->tlmWrite_MCP_IDLE_LOW(this->IDLE_LOW_THR);
+    this->tlmWrite_MCP_IDLE_HIGH(this->IDLE_HIGH_THR);
+    this->tlmWrite_MCP_WARN_LOW(this->WARN_LOW_THR);
+    this->tlmWrite_MCP_WARN_HIGH(this->WARN_HIGH_THR);
+    this->tlmWrite_MCP_FAULT_LOW(this->FAULT_LOW_THR);
+    this->tlmWrite_MCP_FAULT_HIGH(this->FAULT_HIGH_THR);
     this->thermalStateMachine_sendSignal_tick(); // Send tick signal to trigger thermal state machine to read temp data and log telemetry
   }
 
@@ -135,6 +148,39 @@ namespace scalesSvc {
 
 
   // ----------------------------------------------------------------------
+  // Handler implementations for parameters update
+  // ----------------------------------------------------------------------
+
+  void McpManager :: parameterUpdated(FwPrmIdType id){
+    // Update threshold values based on parameter updates
+    printf("Parameter with ID 0x%X has been updated. Updating threshold values...\n", id);
+    switch(id){
+      case PARAMID_MCP_IDLE_LOW:
+        this->IDLE_LOW_THR = this->paramGet_MCP_IDLE_LOW(m_paramIsValid);
+        break;
+      case PARAMID_MCP_IDLE_HIGH:
+        this->IDLE_HIGH_THR = this->paramGet_MCP_IDLE_HIGH(m_paramIsValid);
+        break;
+      case PARAMID_MCP_WARN_LOW:
+        this->WARN_LOW_THR = this->paramGet_MCP_WARN_LOW(m_paramIsValid);
+        break;
+      case PARAMID_MCP_WARN_HIGH:
+        this->WARN_HIGH_THR = this->paramGet_MCP_WARN_HIGH(m_paramIsValid);
+        break;
+      case PARAMID_MCP_FAULT_LOW:
+        this->FAULT_LOW_THR = this->paramGet_MCP_FAULT_LOW(m_paramIsValid);
+        break;
+      case PARAMID_MCP_FAULT_HIGH:
+        this->FAULT_HIGH_THR = this->paramGet_MCP_FAULT_HIGH(m_paramIsValid);
+        break;
+      default:
+        // Handle unexpected parameter ID
+        printf("Warning: Received update for unrecognized parameter ID 0x%X. No threshold values were updated.\n", id);
+        break;
+    }
+  }
+
+  // ----------------------------------------------------------------------
   // Helper functions
   // ----------------------------------------------------------------------
 
@@ -158,9 +204,9 @@ namespace scalesSvc {
   }
   
   U8 McpManager :: determineTempState(F32 tempCelsius){
-    if (10 < tempCelsius && tempCelsius < 60.0){
+    if (this->IDLE_LOW_THR <= tempCelsius && tempCelsius <= this->IDLE_HIGH_THR){
       return IDLE;
-    } else if ((60.0 <= tempCelsius && tempCelsius < 80.0) || (-20 < tempCelsius && tempCelsius <= 10.0)){
+    } else if ((this->WARN_LOW_THR <= tempCelsius && tempCelsius < this->IDLE_LOW_THR) || (this->IDLE_HIGH_THR < tempCelsius && tempCelsius <= this->WARN_HIGH_THR)){
       return WARNING;
     } else {
       return FAULT;

@@ -65,6 +65,15 @@ namespace scalesSvc {
       /* Determines whether the device has just booted */
       bool m_justBooted;
       U8 m_currentState;
+      Fw::ParamValid m_paramIsValid = Fw::ParamValid::VALID;
+
+      /* Telemetry values for temperature thresholds */
+      F32 IDLE_LOW_THR;
+      F32 IDLE_HIGH_THR;
+      F32 WARN_LOW_THR;
+      F32 WARN_HIGH_THR;
+      F32 FAULT_LOW_THR;
+      F32 FAULT_HIGH_THR;
 
     PRIVATE:
       // ----------------------------------------------------------------------
@@ -100,6 +109,11 @@ namespace scalesSvc {
           SmId smId, //!< The state machine id
           scalesSvc_ThermalStateMachine::Signal signal //!< The signal
       ) override;
+
+      // ----------------------------------------------------------------------
+      // Implementations for parameters update
+      // ----------------------------------------------------------------------
+      void parameterUpdated(FwPrmIdType id) override;  
 
   };
 
