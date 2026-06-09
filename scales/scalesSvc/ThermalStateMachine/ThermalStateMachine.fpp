@@ -1,78 +1,44 @@
 module scalesSvc {
-    @ Define the ThermalStateMachine component which manages the thermal states of the system based on temperature readings
     state machine ThermalStateMachine {
-        
-        # Initial state
-        @ Initial state: reset the device when on boot up, when temperature readings are not avilabl, or when the system is in a fault state
-        initial enter RESET
 
+        @ Enter Initial state on component startup
+        initial enter INIT                  # Start the state machine
 
-        # Signal to change state or do actions
-        @ Rate-group driven tick signal
+        @ Tick signal driven by a rate group
         signal tick
+        
+        @ Fail tick to transition to FAIL state
+        signal fail
 
-        @ Current state passed successfully
+        @ Success signal to transition to next state
         signal success
 
-        @ Current state erred
-        signal error
+        @ Read the temp values from the device
+        action doRead
 
-        @ Idle state signal
-        signal idle
+        @ Evaluate the temp values against thresholds and update telemetry
+        action doEvaluate
 
-        @ Warning state signal
-        signal warn
+        @ Log a read failure event
+        action doReadFail
 
-        @ Fault state signal
-        signal fault
-
-        # defined actions for each state
-        action doReset
-
-        action doReadTemp
-
-        action doIdle
-
-        action doWarning
-
-        action doFault
-
-        # State definitions and behaviorss
-        @ State: Reset Device
-        state RESET {
-            on success enter READ_TEMP
-            on tick do { doReset }
-
+        state INIT {
+            on tick do {doRead}             # Read the thermal data from the device
+            on success enter EVALUATE          # Next step
+            on fail enter FAIL              # couldnt evaluate for some reason
+        }
+        
+        state EVALUATE {
+            on tick do {doEvaluate}      # Evaluate the thermal data against thresholds
+            on success enter INIT              # Loop back to the beginning
+            on fail enter FAIL              # read error from device
         }
 
-        @ State: Read temperature data and determine thermal state
-        state READ_TEMP {
-            on idle enter IDLE 
-            on warn enter WARNING
-            on fault enter FAULT
-            on error enter RESET
-            on tick do { doReadTemp }
+        state FAIL {
+            on tick do {doReadFail}           # Log a read failure
+            on success enter INIT              # Loop back to the beginning
         }
-
-        @ State: Idle state when temperatures are within normal operating range
-        state IDLE {
-            on success enter READ_TEMP
-            on error enter RESET
-            on tick do { doIdle }
-        }
-
-        @ State: Warning state when temperatures are approaching critical thresholds
-        state WARNING {
-            on success enter READ_TEMP
-            on error enter RESET
-            on tick do { doWarning }
-        }
-        @ State: Fault state when temperatures exceed critical thresholds
-        state FAULT {
-            on error enter RESET
-            on tick do { doFault }
-        }
-
+    
 
     }
 }

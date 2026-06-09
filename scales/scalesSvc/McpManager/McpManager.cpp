@@ -1,15 +1,29 @@
 // ======================================================================
 // \title  McpManager.cpp
-// \author Luca, Dat, and Jabob
+// \author scales
 // \brief  cpp file for McpManager component implementation class
 // ======================================================================
 
 #include "scales/scalesSvc/McpManager/McpManager.hpp"
-#include <algorithm> // Required for std::max
+#include <unordered_map> // Required header for hashmap
+#include <string>
 
 F32 convertRawTemp(U8 *rawData); // Forward decleration 
 
 enum temp_state{IDLE = 1, WARNING = 2, FAULT = 3}; 
+
+std::unordered_map<U8, std::string> indexToLocation = {
+    {0, "OBC"},
+    {1, "PERIPHERAL"},
+    {2, "JETSON"}
+};
+
+std::unordered_map<U8, std::string> tempStateToStr = {
+    {IDLE, "IDLE"},
+    {WARNING, "WARNING"},
+    {FAULT, "FAULT"}
+};
+
 
 
 namespace scalesSvc {
@@ -40,25 +54,32 @@ namespace scalesSvc {
   // Handler implementations for typed input ports
   // ----------------------------------------------------------------------
 
-  void McpManager :: run_handler( FwIndexType portNum, U32 context) {
+  void McpManager :: run_handler(FwIndexType portNum, U32 context)
+  { 
+
+    // Log temperature threshold values to telemetry on each run, in case they were updated by a command
     this->tlmWrite_MCP_IDLE_LOW(this->IDLE_LOW_THR);
     this->tlmWrite_MCP_IDLE_HIGH(this->IDLE_HIGH_THR);
     this->tlmWrite_MCP_WARN_LOW(this->WARN_LOW_THR);
     this->tlmWrite_MCP_WARN_HIGH(this->WARN_HIGH_THR);
     this->tlmWrite_MCP_FAULT_LOW(this->FAULT_LOW_THR);
     this->tlmWrite_MCP_FAULT_HIGH(this->FAULT_HIGH_THR);
-    this->thermalStateMachine_sendSignal_tick(); // Send tick signal to trigger thermal state machine to read temp data and log telemetry
+
+    this->mcp_thermalStateMachine_sendSignal_tick(); // Trigger state machine tick 
   }
 
   // ----------------------------------------------------------------------
   // Implementations for internal state machine actions
   // ----------------------------------------------------------------------
 
-  void McpManager :: scalesSvc_ThermalStateMachine_action_doReset( SmId smId, scalesSvc_ThermalStateMachine::Signal signal) {
-    // If the device just booted, set up the parameters and move to READ_TEMP
+  void McpManager :: scalesSvc_ThermalStateMachine_action_doRead(SmId smId, scalesSvc_ThermalStateMachine::Signal signal
+    )
+  {
+    // If the device just booted, set up the parameters. If not, then start reading temp
     if (m_justBooted) {
       m_justBooted = false;
-
+      
+      printf("Device just booted. Setting up parameters...\n");
       // Default threshold values, can be updated by sending commands
       this->IDLE_LOW_THR = this->paramGet_MCP_IDLE_LOW(m_paramIsValid); 
       this->IDLE_HIGH_THR = this->paramGet_MCP_IDLE_HIGH(m_paramIsValid);
@@ -66,85 +87,51 @@ namespace scalesSvc {
       this->WARN_HIGH_THR = this->paramGet_MCP_WARN_HIGH(m_paramIsValid);
       this->FAULT_LOW_THR = this->paramGet_MCP_FAULT_LOW(m_paramIsValid);
       this->FAULT_HIGH_THR = this->paramGet_MCP_FAULT_HIGH(m_paramIsValid);
+    } else {
+        printf("Reading temperature data from sensors...\n");
+        // Read temp data from sensors and log to telemetry
+        for (int i = 0; i < 3; i++){
+          this->m_thermalReadings[i].settemperature(this->readTemp(deviceAddrs[i])); 
+          this->m_thermalReadings[i].setsensorId(i + 1);
+          this->m_thermalReadings[i].settimestamp(this->getTime().getSeconds());
+          this->m_thermalReadings[i].setlocation(Fw::String(indexToLocation[i].c_str()));
+        }
 
-      this->thermalStateMachine_sendSignal_success(); // Send success signal to transition to READ_TEMP
-    } else { // Else Reset now
-      m_currentState = 0; // Reset current state
+        // Logs to each sensor's respective telemetry channel
+        this->tlmWrite_IMX_TEMP(m_thermalReadings[0]);
+        this->tlmWrite_PERIPHERAL_TEMP(m_thermalReadings[1]);
+        this->tlmWrite_JETSON_TEMP(m_thermalReadings[2]);
+
+        // Transition to next state to evaluate the readings
+        this->mcp_thermalStateMachine_sendSignal_success();
     }
-    
   }
-   
-  void McpManager :: scalesSvc_ThermalStateMachine_action_doReadTemp( SmId smId, scalesSvc_ThermalStateMachine::Signal signal)
+
+
+  void McpManager :: scalesSvc_ThermalStateMachine_action_doEvaluate(SmId smId, scalesSvc_ThermalStateMachine::Signal signal)
   {
-    // Read temp data from sensors and log to telemetry
+    printf("Evaluating thermal readings against thresholds...\n");
     for (int i = 0; i < 3; i++){
-      this->m_thermalReadings[i].settemperature(this->readTemp(deviceAddrs[i])); 
-      this->m_thermalReadings[i].setsensorId(i + 1);
-      this->m_thermalReadings[i].settimestamp(this->getTime().getSeconds());
-      this->m_thermalReadings[i].setlocation(Fw::String("On board MCP9808 sensor"));
-    }
-
-    // Logs to each sensor's respective telemetry channel
-    this->tlmWrite_IMX_TEMP(m_thermalReadings[0]);
-    this->tlmWrite_PERIPHERAL_TEMP(m_thermalReadings[1]);
-    this->tlmWrite_JETSON_TEMP(m_thermalReadings[2]);
-
-    // Determine worst temp state among the 3 sensors
-    U8 worse_state = std::max({this->determineTempState(m_thermalReadings[0].gettemperature()), this->determineTempState(m_thermalReadings[1].gettemperature()), this->determineTempState(m_thermalReadings[2].gettemperature())});
-
-    switch (worse_state) {
-      case IDLE:
-        if (m_currentState != IDLE){
-          m_currentState = IDLE;
-          this->thermalStateMachine_sendSignal_idle();    
+      U8 tempState = this->determineTempState(this->m_thermalReadings[i].gettemperature());
+        switch(i){
+          case 0:
+            this->tlmWrite_OCB_THERMAL_STATE(Fw::String(tempStateToStr[tempState].c_str()));
+            break;
+          case 1:
+            this->tlmWrite_PERIPHERAL_THERMAL_STATE(Fw::String(tempStateToStr[tempState].c_str()));
+            break;
+          case 2:
+            this->tlmWrite_JETSON_THERMAL_STATE(Fw::String(tempStateToStr[tempState].c_str()));
+            break;
         }
-        break;
-      case WARNING:
-        if (m_currentState != WARNING){
-          m_currentState = WARNING;
-          this->thermalStateMachine_sendSignal_warn();
-        }
-        break;
-      case FAULT:
-        if (m_currentState != FAULT){
-          m_currentState = FAULT;
-          this->thermalStateMachine_sendSignal_fault();
-        }
-        break;
-      default:
-        // Handle unexpected state
-        this->thermalStateMachine_sendSignal_error();
-        break;
-    }
-
-
-
-    // Transition to IDLE after reading temp
+      }
+    this->mcp_thermalStateMachine_sendSignal_success(); // Transition back to initial state to read temp again on next tick
   }
 
-  void McpManager :: scalesSvc_ThermalStateMachine_action_doIdle(SmId smId, scalesSvc_ThermalStateMachine::Signal signal)
+  void McpManager :: scalesSvc_ThermalStateMachine_action_doReadFail(SmId smId, scalesSvc_ThermalStateMachine::Signal signal)
   {
-    // Log temeletry to show that the system has switched state and is curretly in IDLE
-    printf("System is in IDLE state. Temperatures are within normal operating range.\n");
-    this->tlmWrite_MCP_THERMAL_STATE(Fw::String("IDLE"));
-    this->thermalStateMachine_sendSignal_success(); // Send success signal to transition to READ_TEMP
-  }
-
-  void McpManager :: scalesSvc_ThermalStateMachine_action_doWarning(SmId smId, scalesSvc_ThermalStateMachine::Signal signal)
-  {
-    // Log temeletry to show that the system has switched state and is curretly in WARNING
-    printf("System is in WARNING state. Temperatures are above normal operating range.\n");
-    this->tlmWrite_MCP_THERMAL_STATE(Fw::String("WARNING"));
-    this->thermalStateMachine_sendSignal_success(); // Send success signal to transition to READ_TEMP 
-  }
-
-  void McpManager :: scalesSvc_ThermalStateMachine_action_doFault( SmId smId, scalesSvc_ThermalStateMachine::Signal signal)
-  {
-    // Log temeletry to show that the system has switched state and is curretly in FAULT
-    printf("System is in FAULT state. Temperatures are outside the safe operating range.\n");
-    this->tlmWrite_MCP_THERMAL_STATE(Fw::String("FAULT"));
-    this->thermalStateMachine_sendSignal_error(); // Send error signal to transition to RESET
-    
+    printf("Failed to read from sensor. Logging failure event...\n");
+    this->mcp_thermalStateMachine_sendSignal_success(); // Transition back to initial state to try reading again on next tick
   }
 
 
@@ -200,7 +187,7 @@ namespace scalesSvc {
     }
     
     printf("Error reading from I2C device at address 0x%X\n", deviceAddr);
-    this->thermalStateMachine_sendSignal_error(); // Send error signal to transition to RESET in case of I2C read failure
+    this->mcp_thermalStateMachine_sendSignal_fail();
     return -120.0; // Return an error value if the device address is unrecognized 
   }
   

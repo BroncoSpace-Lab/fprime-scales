@@ -1,6 +1,6 @@
 // ======================================================================
 // \title  McpManager.hpp
-// \author bidat
+// \author scales
 // \brief  hpp file for McpManager component implementation class
 // ======================================================================
 
@@ -11,7 +11,9 @@
 
 namespace scalesSvc {
 
-  class McpManager : public McpManagerComponentBase {
+  class McpManager :
+    public McpManagerComponentBase
+  {
 
     // Device Address and Target Register Addresses for MCP9808
     public:
@@ -21,7 +23,7 @@ namespace scalesSvc {
       static constexpr U8 JETSON_TEMP_ADDR = 0x1B; //!< I2C address for Jetson temperature sensor
       U8 deviceAddrs[3]; //!< Array of device addresses for iterating through sensors
       
-      static constexpr U8 TEMP_REG_ADDR = 0x05; //!< Register address for temperature data    
+      static constexpr U8 TEMP_REG_ADDR = 0x05; //!< Register address for temperature data
 
     public:
 
@@ -36,6 +38,11 @@ namespace scalesSvc {
 
       //! Destroy McpManager object
       ~McpManager();
+      
+
+      // ----------------------------------------------------------------------
+      // Class helper functions
+      // ----------------------------------------------------------------------
 
       F32 readTemp(U8 deviceAddr); //!< Function to read temperature from a given I2C device address
 
@@ -47,15 +54,16 @@ namespace scalesSvc {
       // Handler implementations for typed input ports
       // ----------------------------------------------------------------------
 
-      //! Handler implementation for run input port
+      //! Handler implementation for run
       //!
-      //! Async scheduler input port to poll temp data from the sensors 
+      //! Async scheduler input port to poll temp data from the sensors
       void run_handler(
           FwIndexType portNum, //!< The port number
           U32 context //!< The call order
       ) override;
 
     PRIVATE:
+
       /* Implementation-specific members */
       scalesSvc::ThermalReading m_thermalReadings[3]; //!< The 3 thermal readings to be logged to telemetry 
       scalesSvc::ThermalReading imx_thermalReadings;
@@ -76,36 +84,31 @@ namespace scalesSvc {
       F32 FAULT_HIGH_THR;
 
     PRIVATE:
+
       // ----------------------------------------------------------------------
       // Implementations for internal state machine actions
       // ----------------------------------------------------------------------
 
-      //! Implementation for action doReset of state machine scalesSvc_ThermalStateMachine
-      void scalesSvc_ThermalStateMachine_action_doReset(
+      //! Implementation for action doRead of state machine scalesSvc_ThermalStateMachine
+      //!
+      //! Read the temp values from the device
+      void scalesSvc_ThermalStateMachine_action_doRead(
           SmId smId, //!< The state machine id
           scalesSvc_ThermalStateMachine::Signal signal //!< The signal
       ) override;
 
-      //! Implementation for action doReadTemp of state machine scalesSvc_ThermalStateMachine
-      void scalesSvc_ThermalStateMachine_action_doReadTemp(
+      //! Implementation for action doEvaluate of state machine scalesSvc_ThermalStateMachine
+      //!
+      //! Evaluate the temp values against thresholds and update telemetry
+      void scalesSvc_ThermalStateMachine_action_doEvaluate(
           SmId smId, //!< The state machine id
           scalesSvc_ThermalStateMachine::Signal signal //!< The signal
       ) override;
 
-      //! Implementation for action doIdle of state machine scalesSvc_ThermalStateMachine
-      void scalesSvc_ThermalStateMachine_action_doIdle(
-          SmId smId, //!< The state machine id
-          scalesSvc_ThermalStateMachine::Signal signal //!< The signal
-      ) override;
-
-      //! Implementation for action doWarning of state machine scalesSvc_ThermalStateMachine
-      void scalesSvc_ThermalStateMachine_action_doWarning(
-          SmId smId, //!< The state machine id
-          scalesSvc_ThermalStateMachine::Signal signal //!< The signal
-      ) override;
-
-      //! Implementation for action doFault of state machine scalesSvc_ThermalStateMachine
-      void scalesSvc_ThermalStateMachine_action_doFault(
+      //! Implementation for action doReadFail of state machine scalesSvc_ThermalStateMachine
+      //!
+      //! Log a read failure event
+      void scalesSvc_ThermalStateMachine_action_doReadFail(
           SmId smId, //!< The state machine id
           scalesSvc_ThermalStateMachine::Signal signal //!< The signal
       ) override;
@@ -113,7 +116,7 @@ namespace scalesSvc {
       // ----------------------------------------------------------------------
       // Implementations for parameters update
       // ----------------------------------------------------------------------
-      void parameterUpdated(FwPrmIdType id) override;  
+      void parameterUpdated(FwPrmIdType id) override;  //! Handler implementation for parameter updates, used to update threshold values when parameters are updated
 
   };
 

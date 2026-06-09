@@ -3,7 +3,7 @@ module scalesSvc {
     active component McpManager {
 
         @ Bind the ThermalStateMachine to McpManager
-        state machine instance thermalStateMachine: ThermalStateMachine
+        state machine instance mcp_thermalStateMachine: ThermalStateMachine
 
         @ Output port allowing to connect to an I2c bus driver for writeRead operations to the mcp9808 temp sensors
         output port mcpWriteRead: Drv.I2cWriteRead
@@ -20,8 +20,16 @@ module scalesSvc {
         @ Telemetry to log Jetson temp data
         telemetry JETSON_TEMP: ThermalReading id 2
 
-        @ Telemetry to log the state of the manager
-        telemetry MCP_THERMAL_STATE: string id 3
+        @ Telemetry to log thermal state of OBC subsysetm
+        telemetry OCB_THERMAL_STATE: string id 3
+
+        @ Telemetry to log thermal state of Jetson subsystem
+        telemetry JETSON_THERMAL_STATE: string id 4
+
+        @ Telemetry to log thermal state of peripheral subsystem
+        telemetry PERIPHERAL_THERMAL_STATE: string id 5
+
+    
 
         @ IDLE Low temperature threshold
         param MCP_IDLE_LOW: F32 \
