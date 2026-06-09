@@ -9,10 +9,16 @@ module scalesSvc {
     ###############################################################################
     
     @ Port for receiving power mode change requests (e.g., 15W, 30W, 50W)
-    async input port powerModeRecieve: PowerModeReceive
+    async input port powerModeReceive: PowerModeReceive
 
     @ Port for sending current power mode information
     output port powerModeSend: PowerModeSend
+
+    @ Port for receiving Jetson power state requests from IMX PowerManager
+    async input port jetsonPowerStateReceive: JetsonPowerStateReceive
+
+    @ Port for sending Jetson power state acknowledgments to IMX PowerManager
+    output port jetsonPowerStateSend: JetsonPowerStateSend
 
     @ Port that receives the rate group tick
     sync input port schedIn: Svc.Sched
@@ -65,6 +71,11 @@ module scalesSvc {
 
     @ Command to request current power mode
     async command GET_POWER_MODE
+
+    @ Command to locally request Jetson shutdown
+    async command SET_JETSON_POWER_STATE(
+      jetsonState: JetsonPowerStateID @< Requested power state (on/off)
+    )
     
     ###############################################################################
     #                                   Events                                    #
@@ -85,6 +96,22 @@ module scalesSvc {
       requested: PowerModeID @< The requested power mode
       reason: string size 64 @< Reason for failure
     ) severity warning high id 1 format "Failed to change Jetson power mode to {}: {}"
+
+    @ Event emitted when a Jetson power state change request arrives via the hub port (from IMX PowerManager)
+    event JETSON_POWER_STATE_REQUEST_RECEIVED(
+      requested: JetsonPowerStateID @< The requested Jetson power state (on/off)
+    ) severity activity high id 3 format "Jetson received power state change request: {}"
+
+    @ Event indicating Jetson is beginning shutdown
+    event JETSON_SHUTDOWN_STARTED(
+      requested: JetsonPowerStateID @< The requested Jetson power state (on/off)
+    ) severity activity high id 4 format "Jetson shutdown initiated due to power state change request: {}"
+    
+    @ Event indicating Jetson power state request failed
+    event JETSON_POWER_STATE_CHANGE_FAILED(
+      requested: JetsonPowerStateID @< The requested Jetson power state (on/off)
+      reason: string size 64 @< Reason for failure
+    ) severity warning high id 5 format "Jetson power state change request {} failed: {}"
     
     ###############################################################################
     #                                 Telemetry                                   #
@@ -92,5 +119,8 @@ module scalesSvc {
     
     @ Current power mode of Jetson
     telemetry CurrentPowerMode: PowerModeID
+
+    @ Current power state of the Jetson
+    telemetry CurrentJetsonPowerState: JetsonPowerStateID
   }
 }
