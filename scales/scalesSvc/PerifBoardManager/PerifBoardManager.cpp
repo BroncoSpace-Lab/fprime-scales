@@ -45,9 +45,9 @@ namespace scalesSvc {
           this->gpioSet_out(0, Fw::Logic::LOW); //turn off temporarily
           if(this->getTime().getSeconds() - m_startTimeSec >= paramGet_offTimeSec(m_isValid)){ //check if it's time to turn back on
             m_powerMode = Fw::On::ON; //turn to m_powermode to ON to go in ON case.
+            m_onOff = Fw::On::ON; //record that we are turning the board back on for telemetry
+            this->log_ACTIVITY_HI_gpioOn(m_onOff);  //Since the board is coming back to ON, let GDS know
           }
-          m_onOff = Fw::On::ON; //record that we are turning the board back on for telemetry
-          this->log_ACTIVITY_HI_gpioOn(m_onOff);  //Since the board is coming back to ON, let GDS know
         break;
       default:
         FW_ASSERT(0, portNum);
