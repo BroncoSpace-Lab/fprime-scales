@@ -7,4 +7,3 @@ add_fprime_subdirectory("${CMAKE_CURRENT_LIST_DIR}/JetsonThermalManager/")
 add_fprime_subdirectory("${CMAKE_CURRENT_LIST_DIR}/PerifBoardManager/")
 add_fprime_subdirectory("${CMAKE_CURRENT_LIST_DIR}/ImxThermalManager/")
 add_fprime_subdirectory("${CMAKE_CURRENT_LIST_DIR}/JetsonManager/")
-

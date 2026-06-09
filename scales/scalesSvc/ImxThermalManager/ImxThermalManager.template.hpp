@@ -1,6 +1,6 @@
 // ======================================================================
 // \title  ImxThermalManager.hpp
-// \author luquito
+// \author lucal
 // \brief  hpp file for ImxThermalManager component implementation class
 // ======================================================================
 
@@ -8,7 +8,6 @@
 #define scalesSvc_ImxThermalManager_HPP
 
 #include "scales/scalesSvc/ImxThermalManager/ImxThermalManagerComponentAc.hpp"
-
 
 namespace scalesSvc {
 
@@ -32,24 +31,25 @@ namespace scalesSvc {
 
     PRIVATE:
 
-      
+      // ----------------------------------------------------------------------
+      // Handler implementations for typed input ports
+      // ----------------------------------------------------------------------
+
       //! Handler implementation for imxCpuTemp
-    void imxCpuTemp_handler(FwIndexType portNum,  //!< The port number
-                            U32 context           //!< The call order
-                            ) override;
-          
-      
-    scalesSvc::ThermalReading cpu_thermal_read;
-    Fw::ParamValid m_paramValid = Fw::ParamValid::VALID;
-    F32 m_tempMilliC = 0.0f;
-    F32 m_tempC = 0.0f;
-    const char* tempPath = "/sys/class/thermal/thermal_zone0/temp";
+      //!
+      //! asynchronous input port to handle incoming imx cpu temp
+      void imxCpuTemp_handler(
+          FwIndexType portNum, //!< The port number
+          U32 context //!< The call order
+      ) override;
 
-    scalesSvc::ThermalStates m_idleState = scalesSvc::ThermalStates::IDLE;
-    scalesSvc::ThermalStates m_warnState = scalesSvc::ThermalStates::WARN;
-    scalesSvc::ThermalStates m_faultState = scalesSvc::ThermalStates::FAULT;
+    PRIVATE:
 
-    //! Implementation for action doRead of state machine scalesSvc_ThermalStateMachine
+      // ----------------------------------------------------------------------
+      // Implementations for internal state machine actions
+      // ----------------------------------------------------------------------
+
+      //! Implementation for action doRead of state machine scalesSvc_ThermalStateMachine
       void scalesSvc_ThermalStateMachine_action_doRead(
           SmId smId, //!< The state machine id
           scalesSvc_ThermalStateMachine::Signal signal //!< The signal
@@ -66,7 +66,6 @@ namespace scalesSvc {
           SmId smId, //!< The state machine id
           scalesSvc_ThermalStateMachine::Signal signal //!< The signal
       ) override;
-
 
   };
 

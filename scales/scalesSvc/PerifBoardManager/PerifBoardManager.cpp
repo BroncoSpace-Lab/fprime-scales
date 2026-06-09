@@ -46,6 +46,7 @@ namespace scalesSvc {
           if(this->getTime().getSeconds() - m_startTimeSec >= paramGet_offTimeSec(m_isValid)){ //check if it's time to turn back on
             m_powerMode = Fw::On::ON; //turn to m_powermode to ON to go in ON case.
           }
+          this->log_ACTIVITY_HI_gpioOn(m_onOff);  //Since the board is coming back to ON, let GDS know
         break;
       default:
         FW_ASSERT(0, portNum);

@@ -2,20 +2,29 @@ module scalesSvc {
     @ ImxThermalManager to hold parameters and display IMX thermal data
     active component ImxThermalManager {
 
-  
-        # asynchronous input port to handle incoming imx cpu temp
+        @ Bind ThermalStateMachine to ImxThermalManager
+        state machine instance thermalStateMachine: ThermalStateMachine
+
+        @ asynchronous input port to handle incoming imx cpu temp
         async input port imxCpuTemp: Svc.Sched
+
+        @ output port to send imx thermal state to spacecraft state machine
+        output port imxThermalStateOut: ThermalStateOut
+       
+       @ telemetry channel for imx thermal state
+        telemetry imx_thermal_state: ThermalStates \
+            id 0x00
        
         @ telemetry channel for IMXCPUTEMP read
         telemetry imx_cpu_temp_read: ThermalReading \
-            id 0x00
+            id 0x01
 
         # Default Parameter bounds for IMX_CPU States
         @ IMX_CPU_IDLE_LOW Parameter 
         param IMX_CPU_IDLE_LOW: F32 \
             default 10.0 \
             id 0x00 \ 
-            set opcode 0x01 \
+            set opcode 0x01 \   
             save opcode 0x02
         
         @ IMX_CPU_IDLE_HIGH Parameter 

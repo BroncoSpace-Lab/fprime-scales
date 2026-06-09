@@ -192,7 +192,7 @@ namespace scalesSvc {
         scalesSvc::JetsonPowerStateID jetsonState
     )
   {
-    if (jetsonState.e == JetsonPowerStateID::UNKNOWN) {
+      if (jetsonState.e == JetsonPowerStateID::UNKNOWN) {
         this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::VALIDATION_ERROR);
         return;
       }
@@ -218,15 +218,17 @@ namespace scalesSvc {
         // to boot and report ON through currentJetsonPwrState_handler.
         this->gpioSet_out(0, JETSON_POWER_GPIO_ON);
         this->tlmWrite_JetsonPowerState(jetsonState);
+        m_hasPendingPowerCmd = false;
       } else if (jetsonState.e == JetsonPowerStateID::OFF) {
         // Jetson is currently on, so ask it to shut down
         // After it acknowledges OFF, this component will cut power with GPIO
-        this->gpioSet_out(0, JETSON_POWER_GPIO_OFF);
+        this->gpioSet_out(0, JETSON_POWER_GPIO_OFF);  
         this->reqJetsonPwrState_out(0, jetsonState);
+        m_hasPendingPowerCmd = false;
       } else {
         this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::VALIDATION_ERROR);
         m_hasPendingPowerCmd = false;
-      } 
-  }
+      }
+    }
 
 }
