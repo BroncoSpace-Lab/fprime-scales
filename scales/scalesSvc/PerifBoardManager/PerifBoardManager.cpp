@@ -74,7 +74,7 @@ namespace scalesSvc {
     else if (highLow == Fw::On::OFF){
       m_powerMode = Fw::On::OFF; //set power mode to false to go into OFF case in run handler
       m_onOff = Fw::On::OFF; //record the state we set for telemetry
-      this->log_ACTIVITY_HI_gpioOn(m_onOff); //log that we are not turning off the board
+      this->log_ACTIVITY_HI_gpioOn(Fw::On::OFF); //log that we are not turning off the board
       m_startTimeSec = this->getTime().getSeconds(); //record the time we are turning off
     }
     else {

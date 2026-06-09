@@ -63,23 +63,22 @@ void ImxThermalManager::scalesSvc_ThermalStateMachine_action_paramEvaluate( SmId
   if (this->m_tempC >= paramGet_IMX_CPU_IDLE_LOW(m_paramValid) && this->m_tempC < paramGet_IMX_CPU_IDLE_HIGH(m_paramValid))
     {
       this->tlmWrite_imx_thermal_state(ThermalStates::IDLE);
-      this->imxThermalStateOut_out(0, ThermalStates::IDLE);
+      //this->imxThermalStateOut_out(0, ThermalStates::IDLE);
       this->thermalStateMachine_sendSignal_success();
     }
   if (this->m_tempC >= paramGet_IMX_CPU_WARN_LOW(m_paramValid) && this->m_tempC < paramGet_IMX_CPU_WARN_HIGH(m_paramValid))
     {
       this->tlmWrite_imx_thermal_state(ThermalStates::WARN);
-      this->imxThermalStateOut_out(0, ThermalStates::WARN);
+      //this->imxThermalStateOut_out(0, ThermalStates::WARN);
       this->thermalStateMachine_sendSignal_success();
     }
   if (this->m_tempC >= paramGet_IMX_CPU_FAULT_LOW(m_paramValid) && this->m_tempC < paramGet_IMX_CPU_FAULT_HIGH(m_paramValid))
     {
       this->tlmWrite_imx_thermal_state(ThermalStates::FAULT);
-      this->imxThermalStateOut_out(0, ThermalStates::FAULT);
+      //this->imxThermalStateOut_out(0, ThermalStates::FAULT);
       this->thermalStateMachine_sendSignal_success();
     }
   else{
-
       this->thermalStateMachine_sendSignal_fail();
   }
 }
@@ -96,6 +95,7 @@ void ImxThermalManager::scalesSvc_ThermalStateMachine_action_paramEvaluate( SmId
         (this->cpu_thermal_read).setlocation(Fw::String("FAILED_READ"));
         this->thermalStateMachine_sendSignal_fail();
       }
+      
     }
 }
 
