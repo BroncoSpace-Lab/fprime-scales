@@ -1,25 +1,40 @@
 module scalesSvc {
-    @ Manages the INA260 sensorss which measure current, voltage, and power.
+    @ Manager for INA260 current, voltage, and power sensor.
     active component InaManager {
 
-        # One async command/port is required for active components
-        # This should be overridden by the developers with a useful command/port
-        @ TODOrmn 
-        async command TODO opcode 0
+        @ Port for performing I2C write/read transactions with the INA260 sensor
+        @ Write to the register address, then read the contents of the register
+        output port busWriteRead : Drv.I2cWriteRead
 
         ##############################################################################
         #### Uncomment the following examples to start customizing your component ####
         ##############################################################################
 
-        # @ Example async command
-        # async command COMMAND_NAME(param_name: U32)
+        @ Command to read current
+        async command READ_CURRENT
 
-        # @ Example telemetry counter
-        # telemetry ExampleCounter: U64
+        @ Command to read voltage
+        async command READ_VOLTAGE
 
-        # @ Example event
-        # event ExampleStateEvent(example_state: Fw.On) severity activity high id 0 format "State set to {}"
+        @ Command to read power
+        async command READ_POWER
 
+        @ Command to read all values
+        async command READ_ALL
+
+        @ Telemetry channel for current
+        telemetry Current_mA : F32
+
+        @ Telemetry channel for voltage
+        telemetry Voltage_mV : F32
+
+        @ Telemetry channel for power
+        telemetry Power_mW : F32
+
+        @ Event for failed INA260 read
+        event I2cReadFailed(register_address: U8, status: Drv.I2cStatus) severity warning high \
+            format "INA260 I2C read failed for register 0x{} with status {}"
+            
         # @ Example port: receiving calls from the rate group
         # sync input port run: Svc.Sched
 

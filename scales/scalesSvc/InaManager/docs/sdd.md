@@ -1,6 +1,6 @@
-# scalesSvc::INAManager
+# scalesSvc::InaManager
 
-Manages the INA260 sensorss which measure current, voltage, and power.
+Manager for INA260 current, voltage, and power sensor.
 
 ## Usage Examples
 Add usage examples here
