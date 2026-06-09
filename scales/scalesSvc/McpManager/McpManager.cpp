@@ -21,14 +21,7 @@ namespace scalesSvc {
   McpManager :: McpManager(const char* const compName) :
     McpManagerComponentBase(compName), 
     m_justBooted(true),
-    m_currentState(0),
-    // Default threshold values, can be updated by sending commands
-    IDLE_LOW_THR(this->paramGet_MCP_IDLE_LOW(m_paramIsValid)), 
-    IDLE_HIGH_THR(this->paramGet_MCP_IDLE_HIGH(m_paramIsValid)),
-    WARN_LOW_THR(this->paramGet_MCP_WARN_LOW(m_paramIsValid)),
-    WARN_HIGH_THR(this->paramGet_MCP_WARN_HIGH(m_paramIsValid)),
-    FAULT_LOW_THR(this->paramGet_MCP_FAULT_LOW(m_paramIsValid)),
-    FAULT_HIGH_THR(this->paramGet_MCP_FAULT_HIGH(m_paramIsValid))
+    m_currentState(0)
   {
     m_thermalReadings[0] = imx_thermalReadings;
     m_thermalReadings[1] = peripheral_thermalReadings;
@@ -62,12 +55,20 @@ namespace scalesSvc {
   // ----------------------------------------------------------------------
 
   void McpManager :: scalesSvc_ThermalStateMachine_action_doReset( SmId smId, scalesSvc_ThermalStateMachine::Signal signal) {
-    // If the device just booted, move to READ_TEMP
+    // If the device just booted, set up the parameters and move to READ_TEMP
     if (m_justBooted) {
       m_justBooted = false;
+
+      // Default threshold values, can be updated by sending commands
+      this->IDLE_LOW_THR = this->paramGet_MCP_IDLE_LOW(m_paramIsValid); 
+      this->IDLE_HIGH_THR = this->paramGet_MCP_IDLE_HIGH(m_paramIsValid);
+      this->WARN_LOW_THR = this->paramGet_MCP_WARN_LOW(m_paramIsValid);
+      this->WARN_HIGH_THR = this->paramGet_MCP_WARN_HIGH(m_paramIsValid);
+      this->FAULT_LOW_THR = this->paramGet_MCP_FAULT_LOW(m_paramIsValid);
+      this->FAULT_HIGH_THR = this->paramGet_MCP_FAULT_HIGH(m_paramIsValid);
+
       this->thermalStateMachine_sendSignal_success(); // Send success signal to transition to READ_TEMP
     } else { // Else Reset now
-      printf("Manager reached FAULT state, performing reset...\n");
       m_currentState = 0; // Reset current state
     }
     

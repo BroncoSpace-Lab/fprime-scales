@@ -45,7 +45,7 @@ void ThermalManager ::imxCpuTemp_handler(FwIndexType portNum, U32 context) {
     (this->cpu_thermal_read).setsensorId(0);
     (this->cpu_thermal_read).setlocation(Fw::String("CPU"));
     (this->cpu_thermal_read).settimestamp(this->getTime().getSeconds());
-    this->log_ACTIVITY_LO_IMXCPUTEMPREAD(this->cpu_thermal_read);
+    // this->log_ACTIVITY_LO_IMXCPUTEMPREAD(this->cpu_thermal_read);
     this->tlmWrite_imx_cpu_temp_read(this->cpu_thermal_read);
 
 }

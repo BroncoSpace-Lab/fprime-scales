@@ -25,42 +25,42 @@ module scalesSvc {
 
         @ IDLE Low temperature threshold
         param MCP_IDLE_LOW: F32 \
-            default 10.0 \
+            default 10 \
             id 0x00 \ 
             set opcode 0x01 \
             save opcode 0x02
 
         @ IDLE High temperature threshold
         param MCP_IDLE_HIGH: F32 \
-            default 60.0 \
+            default 60 \
             id 0x01 \ 
             set opcode 0x03 \
             save opcode 0x04
         
         @ WARNING Low temperature threshold
         param MCP_WARN_LOW: F32 \
-            default -20.0 \
+            default -20 \
             id 0x02 \ 
             set opcode 0x05 \
             save opcode 0x06
 
         @ WARNING High temperature threshold
         param MCP_WARN_HIGH: F32 \
-            default 80.0 \   
+            default 80 \   
             id 0x03 \ 
             set opcode 0x07 \
             save opcode 0x08
         
         @ FAULT Low temperature threshold
         param MCP_FAULT_LOW: F32 \
-            default -40.0 \
+            default -40 \
             id 0x04 \ 
             set opcode 0x09 \
             save opcode 0x10
         
         @ FAULT High temperature threshold
         param MCP_FAULT_HIGH: F32 \
-            default 100.0 \
+            default 100 \
             id 0x05 \ 
             set opcode 0x11 \
             save opcode 0x12
