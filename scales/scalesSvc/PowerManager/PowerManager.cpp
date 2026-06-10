@@ -8,6 +8,13 @@
 
 namespace scalesSvc {
 
+  namespace {
+    constexpr U32 JETSON_POWER_OFF_DELAY_TICKS = 5;
+
+    const Fw::Logic JETSON_POWER_GPIO_ON = Fw::Logic::HIGH;
+    const Fw::Logic JETSON_POWER_GPIO_OFF = Fw::Logic::LOW;
+  }
+
   // ----------------------------------------------------------------------
   // Component construction and destruction
   // ----------------------------------------------------------------------
@@ -19,7 +26,14 @@ namespace scalesSvc {
       m_pendingOpCode(0),
       m_pendingCmdSeq(0),
       m_requestedMode(PowerModeID::MAX),
-      m_timeoutTicks(0)
+      m_timeoutTicks(0),
+      m_hasPendingPowerCmd(false),
+      m_pendingPowerOpCode(0),
+      m_pendingPowerCmdSeq(0),
+      m_requestedPowerState(scalesSvc::JetsonPowerStateID::UNKNOWN),
+      m_powerTimeoutTicks(0),
+      m_waitingToCutJetsonPower(false),
+      m_powerOffDelayTicks(0)
   {
 
   }
@@ -54,6 +68,31 @@ namespace scalesSvc {
   }
 
   void PowerManager ::
+    currentJetsonPwrState_handler(
+        FwIndexType portNum,
+        const scalesSvc::JetsonPowerStateID& stateNow
+    )
+  {
+    this->log_ACTIVITY_LO_JETSON_POWER_STATE_RECEIVED(stateNow);
+    this->tlmWrite_JetsonPowerState(stateNow);
+
+    if (!m_hasPendingPowerCmd) {
+      return; // Not waiting for a power state change confirmation, ignore
+    }
+
+    if(stateNow.e != m_requestedPowerState.e) {
+      return; // Reported state doesn't match requested state, keep waiting (or eventually timeout)
+    }
+
+    if (stateNow.e == JetsonPowerStateID::OFF){
+      // Jetson has acknowledged shutdown. Wait a few ticks before cutting
+      // physical power so the shutdown command has time to start cleanly
+      m_waitingToCutJetsonPower = true;
+      m_powerOffDelayTicks = 0;
+    }
+   }
+
+  void PowerManager ::
     schedIn_handler(
         FwIndexType portNum,
         U32 context
@@ -68,6 +107,53 @@ namespace scalesSvc {
         this->cmdResponse_out(m_pendingOpCode, m_pendingCmdSeq, Fw::CmdResponse::EXECUTION_ERROR);
         m_hasPendingCmd = false;
         m_timeoutTicks = 0;
+      }
+    }
+
+    // Delay before physically cutting Jetson power after shutdown acknowledgment
+    if (m_waitingToCutJetsonPower) {
+      m_powerOffDelayTicks++;
+
+      if (m_powerOffDelayTicks >= JETSON_POWER_OFF_DELAY_TICKS) {
+        this->gpioSet_out(0, JETSON_POWER_GPIO_OFF);
+
+        this->cmdResponse_out(
+          m_pendingPowerOpCode,
+          m_pendingPowerCmdSeq,
+          Fw::CmdResponse::OK
+        );
+
+        m_waitingToCutJetsonPower = false;
+        m_hasPendingPowerCmd = false;
+        m_powerTimeoutTicks = 0;
+        m_powerOffDelayTicks = 0;
+      }
+    }
+
+    // Timeout for Jetson power-state command 
+    if (m_hasPendingPowerCmd && !m_waitingToCutJetsonPower) {
+      m_powerTimeoutTicks++;
+
+      if (m_powerTimeoutTicks >= CMD_TIMEOUT_TICKS) {
+        this->log_WARNING_HI_JETSON_POWER_STATE_TIMEOUT(m_requestedPowerState);
+
+        // If OFF was requested and Jetson never acknowledged, fall safe by
+        // cutting power anyway
+        if (m_requestedPowerState.e == JetsonPowerStateID::OFF) {
+          this->gpioSet_out(0, JETSON_POWER_GPIO_OFF);
+        }
+        
+
+        this->cmdResponse_out(
+          m_pendingPowerOpCode,
+          m_pendingPowerCmdSeq,
+          Fw::CmdResponse::OK
+        );
+
+        m_hasPendingPowerCmd = false;
+        m_powerTimeoutTicks = 0;
+        m_waitingToCutJetsonPower = false;
+        m_powerOffDelayTicks = 0;
       }
     }
   }
@@ -98,5 +184,46 @@ namespace scalesSvc {
     this->reqPwrMode_out(0, mode);
     this->log_ACTIVITY_HI_POWER_MODE_REQUESTED(mode);
   }
+
+  void PowerManager :: REQUEST_JETSON_POWER_STATE_cmdHandler(FwOpcodeType opCode, U32 cmdSeq, scalesSvc::JetsonPowerStateID jetsonState)
+    {
+      if (jetsonState.e == JetsonPowerStateID::UNKNOWN) {
+        this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::VALIDATION_ERROR);
+        return;
+      }
+
+      if (m_hasPendingPowerCmd) {
+        this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::BUSY);
+        return;
+      }
+
+      m_pendingPowerOpCode = opCode;
+      m_pendingPowerCmdSeq = cmdSeq;
+      m_requestedPowerState = jetsonState;
+      m_hasPendingPowerCmd = true;
+      m_powerTimeoutTicks = 0;
+      m_waitingToCutJetsonPower = false;
+      m_powerOffDelayTicks = 0;
+
+      this->log_ACTIVITY_HI_JETSON_POWER_STATE_REQUESTED(jetsonState);
+
+      if (jetsonState.e == JetsonPowerStateID::ON) {
+        // Jetson is possibly off, so it cannot receive a port call.
+        // Power it on directly from the IMX GPIO and wait for the Jetson app
+        // to boot and report ON through currentJetsonPwrState_handler.
+        this->gpioSet_out(0, JETSON_POWER_GPIO_ON);
+        this->tlmWrite_JetsonPowerState(jetsonState);
+        m_hasPendingPowerCmd = false;
+      } else if (jetsonState.e == JetsonPowerStateID::OFF) {
+        // Jetson is currently on, so ask it to shut down
+        // After it acknowledges OFF, this component will cut power with GPIO
+        this->gpioSet_out(0, JETSON_POWER_GPIO_OFF);  
+        // this->reqJetsonPwrState_out(0, jetsonState);
+        m_hasPendingPowerCmd = false;
+      } else {
+        this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::VALIDATION_ERROR);
+        m_hasPendingPowerCmd = false;
+      }
+    }
 
 }

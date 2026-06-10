@@ -7,10 +7,16 @@ module scalesSvc {
         ###############################################################################
 
         @ Port for sending power mode change requests to JetsonPowerModeManager
-        output port reqPwrMode: PowerModeRecieve
+        output port reqPwrMode: PowerModeReceive
 
         @ Port for receiving current power mode from JetsonPowerModeManager
         async input port currentPwrMode: PowerModeSend
+
+        @ Port for sending Jetson Power on/off requests to JetsonPowerModeManager
+        output port reqJetsonPwrState: JetsonPowerStateReceive
+
+        @ Port for receiving current Jetson power state from JetsonPowerModeManager
+        async input port currentJetsonPwrState: JetsonPowerStateSend
 
         @ Port for driving GPIO to control hardware power
         output port gpioSet: Drv.GpioWrite
@@ -57,6 +63,11 @@ module scalesSvc {
             mode: PowerModeID @< Requested power mode
         )
 
+        @ Command to request a power state change (on/off) for the Jetson
+        async command REQUEST_JETSON_POWER_STATE(
+            jetsonState: JetsonPowerStateID @< Requested power state (on/off)
+        )
+
         ###############################################################################
         #                                   Events                                    #
         ###############################################################################
@@ -71,12 +82,30 @@ module scalesSvc {
             mode: PowerModeID @< The current power mode reported by Jetson
         ) severity activity low id 1 format "PowerManager received Jetson power mode {}"
 
+        @ Event indicating a Jetson power state change was requested
+        event JETSON_POWER_STATE_REQUESTED(
+            jetsonState: JetsonPowerStateID @< The requested Jetson power state (on/off)
+        ) severity activity high id 2 format "PowerManager requested Jetson power state change to {}"
+
+        @ Event indicating the current Jetson power state was received
+        event JETSON_POWER_STATE_RECEIVED(
+            jetsonState: JetsonPowerStateID @< The current Jetson power state reported by Jetson
+        ) severity activity low id 3 format "PowerManager received Jetson power state {}"
+
+        @Event indicating a Jetson power commmand timed out
+        event JETSON_POWER_STATE_TIMEOUT(
+            jetsonState: JetsonPowerStateID @< The Jetson power state that timed out
+        ) severity warning high id 4 format "PowerManager timed out waiting for Jetson power state response to command {}"
+
         ###############################################################################
         #                                 Telemetry                                   #
         ###############################################################################
 
         @ Current power mode of the Jetson as reported by JetsonPowerModeManager
         telemetry JetsonPowerMode: PowerModeID
+
+        @ Current power state of the Jetson
+        telemetry JetsonPowerState: JetsonPowerStateID
 
     }
 }

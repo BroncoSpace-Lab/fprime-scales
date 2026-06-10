@@ -38,9 +38,14 @@ namespace scalesSvc {
       //! Handler implementation for powerModeRecieve
       //!
       //! Port for receiving power mode change requests (e.g., 15W, 30W, 50W)
-      void powerModeRecieve_handler(
+      void powerModeReceive_handler(
           FwIndexType portNum, //!< The port number
           const scalesSvc::PowerModeID& modeReq
+      ) override;
+
+      void jetsonPowerStateReceive_handler(
+          FwIndexType portNum, //!< The port number
+          const scalesSvc::JetsonPowerStateID& stateReq
       ) override;
 
       //! Handler implementation for schedIn
@@ -74,6 +79,12 @@ namespace scalesSvc {
           U32 cmdSeq //!< The command sequence number
       ) override;
 
+      void SET_JETSON_POWER_STATE_cmdHandler(
+          FwOpcodeType opCode, //!< The opcode
+          U32 cmdSeq, //!< The command sequence number
+          scalesSvc::JetsonPowerStateID jetsonState //!< Requested power state (on/off)
+      ) override;
+
     PRIVATE:
 
       // ----------------------------------------------------------------------
@@ -90,6 +101,7 @@ namespace scalesSvc {
       //! Reset to false each time powerModeRecieve_handler triggers a reboot so
       //! the new boot also reports automatically.
       bool m_modeReported;
+      bool m_powerStateReported; //!< False until we have reported the Jetson power state at least once after boot
 
   };
 

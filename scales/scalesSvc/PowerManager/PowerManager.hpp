@@ -43,6 +43,11 @@ namespace scalesSvc {
           const scalesSvc::PowerModeID& modeNow
       ) override;
 
+      void currentJetsonPwrState_handler(
+          FwIndexType portNum, //!< The port number
+          const scalesSvc::JetsonPowerStateID& stateNow
+      ) override;
+
       //! Handler implementation for schedIn
       //!
       //! Port that receives the rate group tick
@@ -64,6 +69,15 @@ namespace scalesSvc {
           FwOpcodeType opCode, //!< The opcode
           U32 cmdSeq, //!< The command sequence number
           scalesSvc::PowerModeID mode //!< Requested power mode
+      ) override;
+
+      //! Handler implementation for command REQUEST_JETSON_POWER_STATE
+      //!
+      //! Command to request a power state change (on/off) for the Jetson
+      void REQUEST_JETSON_POWER_STATE_cmdHandler(
+          FwOpcodeType opCode, //!< The opcode
+          U32 cmdSeq, //!< The command sequence number
+          scalesSvc::JetsonPowerStateID jetsonState //!< Requested power state (on/off)
       ) override;
 
     PRIVATE:
@@ -89,6 +103,13 @@ namespace scalesSvc {
       //! How many schedIn ticks to wait before timing out (120 ticks ≈ 2 min at 1 Hz)
       static const U32 CMD_TIMEOUT_TICKS = 120;
 
+      bool m_hasPendingPowerCmd; //!< True while waiting for Jetson power state change confirmation
+      FwOpcodeType m_pendingPowerOpCode; //!< Opcode of the in-flight REQUEST_JETSON_POWER_STATE
+      U32 m_pendingPowerCmdSeq; //!< Sequence number of the in-flight REQUEST_JETSON_POWER_STATE command
+      scalesSvc::JetsonPowerStateID m_requestedPowerState; //!< Power state we asked the Jetson to switch to
+      U32 m_powerTimeoutTicks;  //!< Ticks elapsed since the power state change request was sent
+      bool m_waitingToCutJetsonPower; //!< True if we've sent a shutdown command and are waiting to cut power after a delay
+      U32 m_powerOffDelayTicks; //!< Ticks elapsed since sending the shutdown command, used to delay cutting power to allow for graceful shutdown
   };
 
 }
