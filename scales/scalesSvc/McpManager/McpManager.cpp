@@ -97,10 +97,10 @@ namespace scalesSvc {
           this->m_thermalReadings[i].setlocation(Fw::String(indexToLocation[i].c_str()));
         }
 
-        // Logs to each sensor's respective telemetry channel
-        this->tlmWrite_IMX_TEMP(m_thermalReadings[0]);
-        this->tlmWrite_PERIPHERAL_TEMP(m_thermalReadings[1]);
-        this->tlmWrite_JETSON_TEMP(m_thermalReadings[2]);
+        // // Logs to each sensor's respective telemetry channel
+        // this->tlmWrite_IMX_TEMP(m_thermalReadings[0]);
+        // this->tlmWrite_PERIPHERAL_TEMP(m_thermalReadings[1]);
+        // this->tlmWrite_JETSON_TEMP(m_thermalReadings[2]);
 
         // Transition to next state to evaluate the readings
         this->mcp_thermalStateMachine_sendSignal_success();
@@ -113,16 +113,23 @@ namespace scalesSvc {
     printf("Evaluating thermal readings against thresholds...\n");
     for (int i = 0; i < 3; i++){
       U8 tempState = this->determineTempState(this->m_thermalReadings[i].gettemperature());
-        switch(i){
-          case 0:
-            this->tlmWrite_OCB_THERMAL_STATE(Fw::String(tempStateToStr[tempState].c_str()));
-            break;
-          case 1:
-            this->tlmWrite_PERIPHERAL_THERMAL_STATE(Fw::String(tempStateToStr[tempState].c_str()));
-            break;
-          case 2:
-            this->tlmWrite_JETSON_THERMAL_STATE(Fw::String(tempStateToStr[tempState].c_str()));
-            break;
+      this->m_thermalReadings[i].settempState(Fw::String(tempStateToStr[tempState].c_str())); // Set the temp state in the reading struct to log to telemetry
+      switch(i){
+        case 0:
+          this->tlmWrite_IMX_TEMP(m_thermalReadings[0]);
+          this->tlmWrite_OCB_THERMAL_STATE(Fw::String(tempStateToStr[tempState].c_str()));
+          break;
+        case 1:
+          this->tlmWrite_PERIPHERAL_TEMP(m_thermalReadings[1]);
+          this->tlmWrite_PERIPHERAL_THERMAL_STATE(Fw::String(tempStateToStr[tempState].c_str()));
+          break;
+        case 2:
+          this->tlmWrite_JETSON_TEMP(m_thermalReadings[2]);
+          this->tlmWrite_JETSON_THERMAL_STATE(Fw::String(tempStateToStr[tempState].c_str()));
+          break;
+        default:
+          printf("Warning: Unrecognized sensor index %d. No telemetry was logged for this sensor.\n", i);
+          break;
         }
       }
     this->mcp_thermalStateMachine_sendSignal_success(); // Transition back to initial state to read temp again on next tick

@@ -75,13 +75,34 @@ namespace scalesSvc {
           SmId smId, //!< The state machine id
           scalesSvc_ThermalStateMachine::Signal signal //!< The signal
       ) override;
+
+      // ----------------------------------------------------------------------
+      // Implementations for parameters update
+      // ----------------------------------------------------------------------
+      void parameterUpdated(FwPrmIdType id) override;  //! Handler implementation for parameter updates, used to update threshold values when parameters are updated
+      
+      // ----------------------------------------------------------------------
+      // Helper functions
+      // ----------------------------------------------------------------------
+
+      F32 readTemp(U8 index); // Helper function to read temp from a given device address
+
+      U8 determineTempState(F32 tempCelsius); //!< Function to determine the temperature state (IDLE, WARNING, FAULT) based on the temperature in Celsius
     
     PRIVATE:
 
       // Private instance variables/specific members
       scalesSvc::ThermalReading m_jetsonThermalReadings[9]; //!< The 9 thermal zones on the jetson
+      bool m_justBooted; // Whether the device has just booted, used to determine whether to set up parameters or read temp on first tick
+      Fw::ParamValid m_paramIsValid = Fw::ParamValid::VALID;
 
-
+      /* Telemetry values for temperature thresholds */
+      F32 IDLE_LOW_THR;
+      F32 IDLE_HIGH_THR;
+      F32 WARN_LOW_THR;
+      F32 WARN_HIGH_THR;
+      F32 FAULT_LOW_THR;
+      F32 FAULT_HIGH_THR;
   };
 
 }

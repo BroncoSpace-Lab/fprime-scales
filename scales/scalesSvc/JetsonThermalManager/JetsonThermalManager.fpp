@@ -61,6 +61,10 @@ module scalesSvc {
         @ Telemetry to log thermal state of Jetson TJ
         telemetry JETSON_TJ_THERMAL_STATE: string id 0x15
 
+        @ Telemetry to log thermal state of Jetson CVs
+        telemetry JETSON_CV0_THERMAL_STATE: string id 0x20
+        telemetry JETSON_CV1_THERMAL_STATE: string id 0x21
+        telemetry JETSON_CV2_THERMAL_STATE: string id 0x22
 
         @ IDLE Low temperature threshold
         param JETSON_IDLE_LOW: F32 \
