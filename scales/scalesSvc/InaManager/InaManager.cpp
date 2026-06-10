@@ -31,196 +31,134 @@ namespace scalesSvc {
 
   void InaManager ::
     run_handler(
-        FwIndexType portNum,
-        U32 context
+      FwIndexType portNum,
+      U32 context
     )
   {
     (void)(portNum);
     (void)(context);
 
-    F32 current_mA = 0.00F;
-    F32 voltage_mV = 0.00F;
-    F32 power_mW = 0.00F;
+    F32 jetson_current = 0.0F, jetson_voltage = 0.0F, jetson_power = 0.0F;
+    F32 OBC_current = 0.0F, OBC_voltage = 0.0F, OBC_power = 0.0F;
+    F32 peripheral_current = 0.0F, peripheral_voltage = 0.0F, peripheral_power = 0.0F;
 
-    const bool success = this->readSensorOnce(current_mA, voltage_mV, power_mW);
+    if (this->readSensorOnce(
+      INA260_I2C_ADDRESS_JETSON,
+      jetson_current,
+      jetson_voltage,
+      jetson_power
 
-    if (success) {
-      this->tlmWrite_Current_mA(current_mA);
-      this->tlmWrite_Voltage_mV(voltage_mV);
-      this->tlmWrite_Power_mW(power_mW);
+      )) {
+      this->tlmWrite_INA260_Jetson_Current_Amps(jetson_current);
+      this->tlmWrite_INA260_Jetson_Voltage_Volts(jetson_voltage);
+      this->tlmWrite_INA260_Jetson_Power_Watts(jetson_power);
+    }
 
-      this->log_ACTIVITY_HI_SensorReadComplete(
-        current_mA,
-        voltage_mV,
-        power_mW
-      );
+    if (this->readSensorOnce(
+      INA260_I2C_ADDRESS_OBC,
+      OBC_current,
+      OBC_voltage,
+      OBC_power
+
+      )) {
+      this->tlmWrite_INA260_OBC_Current_Amps(OBC_current);
+      this->tlmWrite_INA260_OBC_Voltage_Volts(OBC_voltage);
+      this->tlmWrite_INA260_OBC_Power_Watts(OBC_power);
+    }
+
+    if (this->readSensorOnce(
+      INA260_I2C_ADDRESS_PERIPHERAL,
+      peripheral_current,
+      peripheral_voltage,
+      peripheral_power
+
+      )) {
+      this->tlmWrite_INA260_Peripheral_Current_Amps(peripheral_current);
+      this->tlmWrite_INA260_Peripheral_Voltage_Volts(peripheral_voltage);
+      this->tlmWrite_INA260_Peripheral_Power_Watts(peripheral_power);
     }
   }
 
+  // ----------------------------------------------------------------------
+  // Helper Functions
+  // ----------------------------------------------------------------------
+
   // Write to the target address, -> read two bytes -> check the I2C status 
-  // -> combine the two bytes into a 16-bit value
+  // -> combine the two bytes into a 16-bit value -> return the value
   Drv::I2cStatus InaManager ::
-    readRegister16(U8 register_address, U16& value)
-    {
-      U8 writeData[1] = {register_address};
-      U8 readData[2] = {0, 0};
+    readRegister16(U32 sensorAddress, U8 registerAddress, U16& value)
+  {
+    U8 writeData[1] = {registerAddress};
+    U8 readData[2] = {0, 0};
 
-      Fw::Buffer writeBuffer(writeData, sizeof(writeData));
-      Fw::Buffer readBuffer(readData, sizeof(readData));
+    Fw::Buffer writeBuffer(writeData, sizeof(writeData));
+    Fw::Buffer readBuffer(readData, sizeof(readData));
 
-      Drv::I2cStatus status = 
-        this->busWriteRead_out(0, INA260_I2C_ADDRESS, writeBuffer, readBuffer);
+    Drv::I2cStatus status = 
+      this->busWriteRead_out(0, sensorAddress, writeBuffer, readBuffer);
 
-      if(status != Drv::I2cStatus::I2C_OK) {
-        this->log_WARNING_HI_I2cReadFailed(register_address, static_cast<I32>(status.e));
-        return status;
-      }
+    if(status != Drv::I2cStatus::I2C_OK) {
+      this->log_WARNING_HI_I2cReadFailed(registerAddress, static_cast<I32>(status.e));
+      return status;
+    }
 
-      value = static_cast<U16>(
+    value = 
+      static_cast<U16>(
         (static_cast<U16>(readData[0]) << 8) |
          static_cast<U16>(readData[1])
       );
 
-      return status;
-    }
-
-    // Conversion helper functions to convert raw INA260 register values to 
-    // decimal values with appropriate units (mA, mV, mW)
-    F32 InaManager ::
-      convertCurrentRawToMilliAmps(U16 raw) const
-      {
-        const I16 signedRaw = static_cast<I16>(raw);
-        return static_cast<F32>(signedRaw) * 1.25F; // INA260 current LSB is 1.25mA
-      }
-
-    F32 InaManager ::
-      convertVoltageRawToMilliVolts(U16 raw) const
-      {
-        return static_cast<F32>(raw) * 1.25F; // INA260 voltage LSB is 1.25mV
-      }
-
-    F32 InaManager ::
-      convertPowerRawToMilliWatts(U16 raw) const
-      {
-        return static_cast<F32>(raw) * 10.0F; // INA260 power LSB is 10mW
-      }
-  // ----------------------------------------------------------------------
-  // Handler implementations for commands
-  // ----------------------------------------------------------------------
-
-  void InaManager ::
-    READ_CURRENT_cmdHandler(
-        FwOpcodeType opCode,
-        U32 cmdSeq
-    )
-  {
-    U16 raw = 0;
-    Drv::I2cStatus status = this->readRegister16(INA260_REG_CURRENT, raw);
-
-    if (status == Drv::I2cStatus::I2C_OK) {
-      I16 signedRaw = static_cast<I16>(raw);
-      F32 current_mA = this->convertCurrentRawToMilliAmps(signedRaw);
-      this->tlmWrite_Current_mA(current_mA);
-      this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
-    } else {
-      this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::EXECUTION_ERROR);
-    }
-  } 
-
-  void InaManager ::
-    READ_VOLTAGE_cmdHandler(
-        FwOpcodeType opCode,
-        U32 cmdSeq
-    )
-  {
-    U16 raw = 0;
-    Drv::I2cStatus status = this->readRegister16(INA260_REG_VOLTAGE, raw);
-
-    if (status == Drv::I2cStatus::I2C_OK) {
-      I16 signedRaw = static_cast<I16>(raw);
-      F32 voltage_mV = this->convertVoltageRawToMilliVolts(signedRaw);
-      this->tlmWrite_Current_mA(voltage_mV);
-      this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
-    } else {
-      this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::EXECUTION_ERROR);
-    }
+    return status;
   }
 
-  void InaManager ::
-    READ_POWER_cmdHandler(
-        FwOpcodeType opCode,
-        U32 cmdSeq
-    )
-  {
-    U16 raw = 0;
-    Drv::I2cStatus status = this->readRegister16(INA260_REG_POWER, raw);
+  // Conversion helper functions to convert raw INA260 register values to 
+  // decimal values with appropriate units (A, V, W)
+  F32 InaManager ::
+    convertCurrentRawToAmps(U16 raw) const
+    {
+      const I16 signedRaw = static_cast<I16>(raw);
+      return static_cast<F32>(signedRaw) * 0.00125F; // INA260 current LSB is 1.25mA
+    }
 
-    if (status == Drv::I2cStatus::I2C_OK) {
-      I16 signedRaw = static_cast<I16>(raw);
-      F32 power_mW = this->convertPowerRawToMilliWatts(signedRaw);
-      this->tlmWrite_Current_mA(power_mW);
-      this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
-    } else {
-      this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::EXECUTION_ERROR);
-    }  
-  }
+  F32 InaManager ::
+    convertVoltageRawToVolts(U16 raw) const
+    {
+      return static_cast<F32>(raw) * 0.00125F; // INA260 voltage LSB is 1.25mV
+    }
 
-  void InaManager ::
-    READ_ALL_cmdHandler(
-        FwOpcodeType opCode,
-        U32 cmdSeq
-    )
-  {
-    U16 rawCurrent = 0;
-    U16 rawVoltage = 0;
-    U16 rawPower = 0;
-
-    if (this->readRegister16(INA260_REG_CURRENT, rawCurrent) != Drv::I2cStatus::I2C_OK || 
-        this->readRegister16(INA260_REG_VOLTAGE, rawVoltage) != Drv::I2cStatus::I2C_OK ||
-        this->readRegister16(INA260_REG_POWER, rawPower) != Drv::I2cStatus::I2C_OK) {
-        this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse:: EXECUTION_ERROR);
-        return;
-      }
-
-      this->tlmWrite_Current_mA(
-        this->convertCurrentRawToMilliAmps(static_cast<I16>(rawCurrent))
-      );
-      this->tlmWrite_Voltage_mV(
-        this->convertVoltageRawToMilliVolts(rawVoltage)
-      );
-      this->tlmWrite_Power_mW(
-        this->convertPowerRawToMilliWatts(rawPower)
-      );
-
-      this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
-  }
+  F32 InaManager ::
+    convertPowerRawToWatts(U16 raw) const
+    {
+      return static_cast<F32>(raw) * 0.010F; // INA260 power LSB is 10mW
+    }
 
   bool InaManager :: 
     readSensorOnce(
-      F32& current_mA,
-      F32& voltage_mV,
-      F32& power_mW
+      U32 sensorAddress,
+      F32& current,
+      F32& voltage,
+      F32& power
     )
   {
     U16 rawCurrent = 0;
     U16 rawVoltage = 0;
     U16 rawPower = 0;
 
-    if (this->readRegister16(INA260_REG_CURRENT, rawCurrent) != Drv::I2cStatus::I2C_OK) {
+    if (this->readRegister16(sensorAddress, INA260_REG_CURRENT, rawCurrent) != Drv::I2cStatus::I2C_OK) {
       return false;
     }
 
-    if (this->readRegister16(INA260_REG_VOLTAGE, rawVoltage) != Drv::I2cStatus::I2C_OK) {
+    if (this->readRegister16(sensorAddress, INA260_REG_VOLTAGE, rawVoltage) != Drv::I2cStatus::I2C_OK) {
       return false;
     }
 
-    if (this->readRegister16(INA260_REG_POWER, rawPower) != Drv::I2cStatus::I2C_OK) {
+    if (this->readRegister16(sensorAddress, INA260_REG_POWER, rawPower) != Drv::I2cStatus::I2C_OK) {
       return false;
     }
 
-    current_mA = this->convertCurrentRawToMilliAmps(rawCurrent);
-    voltage_mV = this->convertVoltageRawToMilliVolts(rawVoltage);
-    power_mW = this->convertPowerRawToMilliWatts(rawPower);
+    current = this->convertCurrentRawToAmps(rawCurrent);
+    voltage = this->convertVoltageRawToVolts(rawVoltage);
+    power = this->convertPowerRawToWatts(rawPower);
 
     return true;
   }

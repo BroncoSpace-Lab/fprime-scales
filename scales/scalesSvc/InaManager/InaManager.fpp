@@ -1,7 +1,10 @@
 module scalesSvc {
     @ Manager for INA260 current, voltage, and power sensor.
     active component InaManager {
-
+        
+        # ----------------------------------------------------------------------
+        # General ports
+        # ----------------------------------------------------------------------
 
         @ Port for performing I2C write/read transactions with the INA260 sensor
         output port busWriteRead : Drv.I2cWriteRead
@@ -9,26 +12,46 @@ module scalesSvc {
         @ Input port for sending data each tick
         async input port run: Svc.Sched
 
-        @ Command to read current
-        async command READ_CURRENT
+        # ----------------------------------------------------------------------
+        # Telemetry
+        # ----------------------------------------------------------------------
 
-        @ Command to read voltage
-        async command READ_VOLTAGE
-
-        @ Command to read power
-        async command READ_POWER
-
-        @ Command to read all values
-        async command READ_ALL
+        # Telemetry channels for INA260 Jetson subsystem
 
         @ Telemetry channel for current
-        telemetry Current_mA : F32
+        telemetry INA260_Jetson_Current_Amps : F32
 
         @ Telemetry channel for voltage
-        telemetry Voltage_mV : F32
+        telemetry INA260_Jetson_Voltage_Volts : F32
 
         @ Telemetry channel for power
-        telemetry Power_mW : F32
+        telemetry INA260_Jetson_Power_Watts : F32
+
+        # Telemetry channels for INA260 OBC subsystem
+
+        @ Telemetry channel for current
+        telemetry INA260_OBC_Current_Amps : F32
+
+        @ Telemetry channel for voltage
+        telemetry INA260_OBC_Voltage_Volts : F32
+
+        @ Telemetry channel for power
+        telemetry INA260_OBC_Power_Watts : F32
+
+        # Telemetry channels for INA260 peripheral subsystem
+
+        @ Telemetry channel for current
+        telemetry INA260_Peripheral_Current_Amps : F32
+
+        @ Telemetry channel for voltage
+        telemetry INA260_Peripheral_Voltage_Volts : F32
+
+        @ Telemetry channel for power
+        telemetry INA260_Peripheral_Power_Watts : F32
+
+        # ----------------------------------------------------------------------
+        # Events
+        # ----------------------------------------------------------------------
 
         @ Event for failed INA260 read
         event I2cReadFailed(register_address: U8, status: I32) severity warning high \

@@ -30,7 +30,6 @@ namespace scalesSvc {
 
     PRIVATE:
 
-
       // ----------------------------------------------------------------------
       // Handler implementations for typed input ports
       // ----------------------------------------------------------------------
@@ -43,57 +42,24 @@ namespace scalesSvc {
           U32 context //!< The call order
       ) override;
 
-      // ----------------------------------------------------------------------
-      // Handler implementations for commands
-      // ----------------------------------------------------------------------
+      static constexpr U32 INA260_I2C_ADDRESS_JETSON = 0x40; // Jetson subsystem INA260 address
+      static constexpr U32 INA260_I2C_ADDRESS_OBC = 0x41; // OBC subsystem INA260 address
+      static constexpr U32 INA260_I2C_ADDRESS_PERIPHERAL = 0x45; // Peripheral subsystem INA260 address
 
-      //! Handler implementation for command READ_CURRENT
-      //!
-      //! Command to read current
-      void READ_CURRENT_cmdHandler(
-          FwOpcodeType opCode, //!< The opcode
-          U32 cmdSeq //!< The command sequence number
-      ) override;
+      static constexpr U32 INA260_REG_CURRENT = 0x01; // current register address
+      static constexpr U32 INA260_REG_VOLTAGE = 0x02; // voltage register address
+      static constexpr U32 INA260_REG_POWER = 0x03; // power register address
 
-      //! Handler implementation for command READ_VOLTAGE
-      //!
-      //! Command to read voltage
-      void READ_VOLTAGE_cmdHandler(
-          FwOpcodeType opCode, //!< The opcode
-          U32 cmdSeq //!< The command sequence number
-      ) override;
+      // Functions to convert raw data from registers to usable values
+      F32 convertCurrentRawToAmps(U16 raw) const;
+      F32 convertVoltageRawToVolts(U16 raw) const;
+      F32 convertPowerRawToWatts(U16 raw) const;
 
-      //! Handler implementation for command READ_POWER
-      //!
-      //! Command to read power
-      void READ_POWER_cmdHandler(
-          FwOpcodeType opCode, //!< The opcode
-          U32 cmdSeq //!< The command sequence number
-      ) override;
+      // Function to read the 16-bit value stored in a register at a specified address
+      Drv::I2cStatus readRegister16(U32 sensorAddress, U8 registerAddress, U16& value);
 
-      //! Handler implementation for command READ_ALL
-      //!
-      //! Command to read all values
-      void READ_ALL_cmdHandler(
-          FwOpcodeType opCode, //!< The opcode
-          U32 cmdSeq //!< The command sequence number
-      ) override;
-
-
-      Drv::I2cStatus readRegister16(U8 register_address, U16& value);
-
-      F32 convertCurrentRawToMilliAmps(U16 raw) const;
-      F32 convertVoltageRawToMilliVolts(U16 raw) const;
-      F32 convertPowerRawToMilliWatts(U16 raw) const;
-
-      bool readSensorOnce(F32& current_mA, F32& voltage_mV, F32& power_mW);
-
-      static constexpr U32 INA260_I2C_ADDRESS = 0x41;
-
-      static constexpr U32 INA260_REG_CURRENT = 0x01;
-      static constexpr U32 INA260_REG_VOLTAGE = 0x02;
-      static constexpr U32 INA260_REG_POWER = 0x03;
-
+      // Function that confirms data has been successfully read from each register
+      bool readSensorOnce(U32 sensorAddress, F32& current_A, F32& voltage_V, F32& power_W);
 
   };
 
