@@ -2,31 +2,64 @@ module scalesSvc {
     @ Component to manage and monitor thermals in the SCALES system.
     active component ThermalManager {
 
-        # One async command/port is required for active components
-        # This should be overridden by the developers with a useful command/port
-        @ TODO
-        async command TODO opcode 0
+        # Synchronous input port to handle incoming imx cpu temp
+        async input port imxCpuTemp: Svc.Sched
 
-        ##############################################################################
-        #### Uncomment the following examples to start customizing your component ####
-        ##############################################################################
+        # Event to send data to GDS. Using ThermalReading struct within theh scalesSVC module
+        @ event for temp read of IMX_CPU
+        event IMXCPUTEMPREAD(
+            imx_thermal: ThermalReading
+        )  severity activity low format "IMX CPU temp Data {}"
 
-        # @ Example async command
-        # async command COMMAND_NAME(param_name: U32)
+        @ telemetry channel for IMXCPUTEMP read
+        telemetry imx_cpu_temp_read: ThermalReading \
+            id 0x00
 
-        # @ Example telemetry counter
-        # telemetry ExampleCounter: U64
+        # Default Parameter bounds for IMX_CPU States
+        @ IMX_CPU_IDLE_LOW Parameter 
+        param IMX_CPU_IDLE_LOW: F32 \
+            default 10.0 \
+            id 0x00 \ 
+            set opcode 0x01 \
+            save opcode 0x02
+        
+        @ IMX_CPU_IDLE_HIGH Parameter 
+        param IMX_CPU_IDLE_HIGH: F32 \
+            default 60.0 \
+            id 0x01 \ 
+            set opcode 0x03 \
+            save opcode 0x04
 
-        # @ Example event
-        # event ExampleStateEvent(example_state: Fw.On) severity activity high id 0 format "State set to {}"
+        @ IMX_CPU_WARN_LOW Parameter 
+        param IMX_CPU_WARN_LOW: F32 \
+            default -20.0 \
+            id 0x02 \ 
+            set opcode 0x05 \
+            save opcode 0x06
 
-        # @ Example port: receiving calls from the rate group
-        # sync input port run: Svc.Sched
+        @ IMX_CPU_WARN_HIGH Parameter 
+        param IMX_CPU_WARN_HIGH: F32 \
+            default 80.0 \
+            id 0x03 \ 
+            set opcode 0x07 \
+            save opcode 0x08
+        
+        @ IMX_CPU_FAULT_LOW Parameter 
+        param IMX_CPU_FAULT_LOW: F32 \
+            default -40.0 \
+            id 0x04 \ 
+            set opcode 0x09 \
+            save opcode 0x10
 
-        # @ Example parameter
-        # param PARAMETER_NAME: U32
+        @ IMX_CPU_FAULT_HIGH Parameter 
+        param IMX_CPU_FAULT_HIGH: F32 \
+            default 100.0 \
+            id 0x05 \ 
+            set opcode 0x11 \
+            save opcode 0x12
 
-        ###############################################################################
+        
+        ############################################
         # Standard AC Ports: Required for Channels, Events, Commands, and Parameters  #
         ###############################################################################
         @ Port for requesting the current time
