@@ -37,6 +37,7 @@ namespace scalesSvc {
       // ----------------------------------------------------------------------
       Fw::Enabled m_wdStatus = Fw::Enabled::DISABLED; //Initial state for the watchdog
       Fw::ParamValid m_isValid = Fw::ParamValid::VALID; //instantiate valid type for paramget
+      bool m_isPetting = false;
        //! Handler implementation for run
       U32 m_startTimeSec;
       //! run handler
