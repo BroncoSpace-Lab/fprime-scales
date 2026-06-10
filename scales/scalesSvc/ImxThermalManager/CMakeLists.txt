@@ -13,7 +13,6 @@
 set(SOURCE_FILES
   "${CMAKE_CURRENT_LIST_DIR}/ImxThermalManager.fpp"
   "${CMAKE_CURRENT_LIST_DIR}/ImxThermalManager.cpp"
-  "${CMAKE_CURRENT_LIST_DIR}/ThermalStateMachine.fpp"
 )
 
 # Uncomment and add any modules that this component depends on, else
