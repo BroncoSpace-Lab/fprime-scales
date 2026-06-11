@@ -74,7 +74,7 @@ namespace scalesSvc {
           }
           else {
             this->m_jetsonThermalReadings[i].settemperature(0.0f);
-            this->m_successfulRead = false;
+            // this->m_successfulRead = false;
           }
           this->m_jetsonThermalReadings[i].setsensorId(i); 
           this->m_jetsonThermalReadings[i].settimestamp(this->getTime().getSeconds());
