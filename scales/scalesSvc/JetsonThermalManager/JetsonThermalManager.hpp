@@ -85,7 +85,7 @@ namespace scalesSvc {
       // Helper functions
       // ----------------------------------------------------------------------
 
-      F32 readTemp(U8 index); // Helper function to read temp from a given device address
+      bool readTemp(U8 index, F32& temp); // Helper function to read temp from a given device address
 
       scalesSvc::ThermalStates determineTempState(F32 tempCelsius); //!< Function to determine the temperature state (IDLE, WARNING, FAULT) based on the temperature in Celsius
     
@@ -94,6 +94,7 @@ namespace scalesSvc {
       // Private instance variables/specific members
       scalesSvc::ThermalReading m_jetsonThermalReadings[9]; //!< The 9 thermal zones on the jetson
       bool m_justBooted; // Whether the device has just booted, used to determine whether to set up parameters or read temp on first tick
+      bool m_successfulRead; // Whether the most recent read was successful, used to determine whether to transition to EVALUATE or FAIL state
       Fw::ParamValid m_paramIsValid = Fw::ParamValid::VALID;
 
       /* Telemetry values for temperature thresholds */

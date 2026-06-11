@@ -28,7 +28,8 @@ namespace scalesSvc {
 
   JetsonThermalManager :: JetsonThermalManager(const char* const compName) : 
     JetsonThermalManagerComponentBase(compName),
-    m_justBooted(true)
+    m_justBooted(true),
+    m_successfulRead(true)
   {
 
   }
@@ -67,7 +68,14 @@ namespace scalesSvc {
       this->FAULT_HIGH_THR = this->paramGet_JETSON_FAULT_HIGH(m_paramIsValid);
     } else {
         for (int i = 0; i < 9; i++){
-          this->m_jetsonThermalReadings[i].settemperature(this->readTemp(i));
+          F32 temp;
+          if (this->readTemp(i, temp)) {
+            this->m_jetsonThermalReadings[i].settemperature(temp);
+          }
+          else {
+            this->m_jetsonThermalReadings[i].settemperature(0.0f);
+            this->m_successfulRead = false;
+          }
           this->m_jetsonThermalReadings[i].setsensorId(i); 
           this->m_jetsonThermalReadings[i].settimestamp(this->getTime().getSeconds());
           this->m_jetsonThermalReadings[i].setlocation(Fw::String(indexToZone[i].c_str()));
@@ -75,7 +83,11 @@ namespace scalesSvc {
         }
 
         // Transition to next state to evaluate the readings
-        this->jetson_thermalStateMachine_sendSignal_success();
+        if(m_successfulRead){
+          this->jetson_thermalStateMachine_sendSignal_success();
+        } else { // If any read failed, transition to read failure state to log the failure event
+          this->jetson_thermalStateMachine_sendSignal_fail();
+        }
     }
   }
 
@@ -123,6 +135,8 @@ namespace scalesSvc {
   void JetsonThermalManager :: scalesSvc_ThermalStateMachine_action_doReadFail(SmId smId, scalesSvc_ThermalStateMachine::Signal signal)
   {
     printf("Failed to read from sensor. Logging failure event...\n");
+
+    this->m_successfulRead = true; // Reset success flag for next read attempt
     this->jetson_thermalStateMachine_sendSignal_success(); // Transition back to initial state to try reading again on next tick
   }
 
@@ -156,13 +170,26 @@ namespace scalesSvc {
     }
   }
 
-  F32 JetsonThermalManager :: readTemp(U8 index) {
+  bool JetsonThermalManager :: readTemp(U8 index, F32& temp) {
     float tempMilliC = 0.0f;
     char path[128];
     std::snprintf(path, sizeof(path), "/sys/class/thermal/thermal_zone%u/temp", index);
     std::ifstream tempFile(path);
-    tempFile >> tempMilliC;
-    return tempMilliC / 1000.0f;
+
+    if (!tempFile.is_open()) {
+      printf("Could not open thermal file: %s at zone: %s\n", path, indexToZone[index].c_str());
+      temp = 0.0f; // Set temp to 0 if we fail to read so that the system defaults to IDLE state for that sensor
+      return false;
+    }
+
+    if (!(tempFile >> tempMilliC)) {
+      printf("Could not read thermal file: %s at zone: %s\n", path,indexToZone[index].c_str());
+      temp = 0.0f; // Set temp to 0 if we fail to read so that the system defaults to IDLE state for that sensor
+      return false;
+    }
+
+    temp = tempMilliC / 1000.0f;
+    return true;
   }
 
   scalesSvc::ThermalStates JetsonThermalManager :: determineTempState(F32 tempCelsius) {
