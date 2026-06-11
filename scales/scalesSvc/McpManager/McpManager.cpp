@@ -10,20 +10,11 @@
 
 F32 convertRawTemp(U8 *rawData); // Forward decleration 
 
-enum temp_state{IDLE = 1, WARNING = 2, FAULT = 3}; 
-
 std::unordered_map<U8, std::string> indexToLocation = {
     {0, "OBC"},
     {1, "PERIPHERAL"},
     {2, "JETSON"}
 };
-
-std::unordered_map<U8, std::string> tempStateToStr = {
-    {IDLE, "IDLE"},
-    {WARNING, "WARNING"},
-    {FAULT, "FAULT"}
-};
-
 
 
 namespace scalesSvc {
@@ -108,8 +99,8 @@ namespace scalesSvc {
   {
     printf("Evaluating thermal readings against thresholds...\n");
     for (int i = 0; i < 3; i++){
-      U8 tempState = this->determineTempState(this->m_thermalReadings[i].gettemperature());
-      this->m_thermalReadings[i].settempState(Fw::String(tempStateToStr[tempState].c_str())); // Set the temp state in the reading struct to log to telemetry
+      scalesSvc::ThermalStates tempState = this->determineTempState(this->m_thermalReadings[i].gettemperature());
+      this->m_thermalReadings[i].settempState(tempState); // Set the temp state in the reading struct to log to telemetry
       switch(i){
         case 0:
           this->tlmWrite_IMX_TEMP(m_thermalReadings[0]);
@@ -191,13 +182,13 @@ namespace scalesSvc {
     return -120.0; // Return an error value if the device address is unrecognized 
   }
   
-  U8 McpManager :: determineTempState(F32 tempCelsius){
+  scalesSvc::ThermalStates McpManager :: determineTempState(F32 tempCelsius){
     if (this->IDLE_LOW_THR <= tempCelsius && tempCelsius <= this->IDLE_HIGH_THR){
-      return IDLE;
+      return scalesSvc::ThermalStates::IDLE;
     } else if ((this->WARN_LOW_THR <= tempCelsius && tempCelsius < this->IDLE_LOW_THR) || (this->IDLE_HIGH_THR < tempCelsius && tempCelsius <= this->WARN_HIGH_THR)){
-      return WARNING;
+      return scalesSvc::ThermalStates::WARN;
     } else {
-      return FAULT;
+      return scalesSvc::ThermalStates::FAULT;
     }
   }
 

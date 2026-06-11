@@ -46,7 +46,7 @@ namespace scalesSvc {
 
       F32 readTemp(U8 deviceAddr); //!< Function to read temperature from a given I2C device address
 
-      U8 determineTempState(F32 tempCelsius); //!< Function to determine the temperature state (IDLE, WARNING, FAULT) based on the temperature in Celsius
+      scalesSvc::ThermalStates determineTempState(F32 tempCelsius); //!< Function to determine the temperature state (IDLE, WARNING, FAULT) based on the temperature in Celsius
 
     PRIVATE:
 

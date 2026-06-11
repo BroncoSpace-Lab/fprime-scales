@@ -8,14 +8,6 @@
 #include <unordered_map> // Required header for hashmap
 #include <string>
 
-enum temp_state{IDLE = 1, WARNING = 2, FAULT = 3}; 
-
-std::unordered_map<U8, std::string> tempStateToStr = {
-    {IDLE, "IDLE"},
-    {WARNING, "WARNING"},
-    {FAULT, "FAULT"}
-};
-
 std::unordered_map<U8, std::string> indexToZone = {
     {0, "CPU"},
     {1, "GPU"},
@@ -91,8 +83,8 @@ namespace scalesSvc {
   {
     printf("Evaluating temperature readings against thresholds and updating telemetry...\n");
     for (int i = 0; i < 9; i++){
-        U8 tempState = this->determineTempState(this->m_jetsonThermalReadings[i].gettemperature());
-        this->m_jetsonThermalReadings[i].settempState(Fw::String(tempStateToStr[tempState].c_str())); // Set the temp state
+        scalesSvc::ThermalStates tempState = this->determineTempState(this->m_jetsonThermalReadings[i].gettemperature());
+        this->m_jetsonThermalReadings[i].settempState(tempState); // Set the temp state
         
         switch(i){
           case 0:
@@ -173,13 +165,13 @@ namespace scalesSvc {
     return tempMilliC / 1000.0f;
   }
 
-  U8 JetsonThermalManager :: determineTempState(F32 tempCelsius) {
+  scalesSvc::ThermalStates JetsonThermalManager :: determineTempState(F32 tempCelsius) {
     if (this->IDLE_LOW_THR <= tempCelsius && tempCelsius <= this->IDLE_HIGH_THR){
-      return IDLE;
+      return scalesSvc::ThermalStates::IDLE;
     } else if ((this->WARN_LOW_THR <= tempCelsius && tempCelsius < this->IDLE_LOW_THR) || (this->IDLE_HIGH_THR < tempCelsius && tempCelsius <= this->WARN_HIGH_THR)){
-      return WARNING;
+      return scalesSvc::ThermalStates::WARN;
     } else {
-      return FAULT;
+      return scalesSvc::ThermalStates::FAULT;
     }
   }
 }
