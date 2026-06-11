@@ -19,18 +19,7 @@ module scalesSvc {
 
         @ Telemetry to log Jetson temp data
         telemetry JETSON_TEMP: ThermalReading id 2
-
-        @ Telemetry to log thermal state of OBC subsysetm
-        telemetry OCB_THERMAL_STATE: string id 3
-
-        @ Telemetry to log thermal state of Jetson subsystem
-        telemetry JETSON_THERMAL_STATE: string id 4
-
-        @ Telemetry to log thermal state of peripheral subsystem
-        telemetry PERIPHERAL_THERMAL_STATE: string id 5
-
     
-
         @ IDLE Low temperature threshold
         param MCP_IDLE_LOW: F32 \
             default 10 \

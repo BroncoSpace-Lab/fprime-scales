@@ -45,26 +45,8 @@ module scalesSvc {
             id 0x08
 
         ###############################################################################
-        # Telemetry to show the state of the Jetson's thermal zones  #
+        # Telemetry to show the parameters of the Jetson's thermal zones  #
         ###############################################################################
-        @ Telemetry to log thermal state of Jetson CPU 
-        telemetry JETSON_CPU_THERMAL_STATE: string id 0x10
-
-        @ Telemetry to log thermal state of Jetson GPU
-        telemetry JETSON_GPU_THERMAL_STATE: string id 0x11
-
-        @ Telemetry to log thermal state of Jetson SOCS
-        telemetry JETSON_SOC0_THERMAL_STATE: string id 0x12
-        telemetry JETSON_SOC1_THERMAL_STATE: string id 0x13
-        telemetry JETSON_SOC2_THERMAL_STATE: string id 0x14
-
-        @ Telemetry to log thermal state of Jetson TJ
-        telemetry JETSON_TJ_THERMAL_STATE: string id 0x15
-
-        @ Telemetry to log thermal state of Jetson CVs
-        telemetry JETSON_CV0_THERMAL_STATE: string id 0x20
-        telemetry JETSON_CV1_THERMAL_STATE: string id 0x21
-        telemetry JETSON_CV2_THERMAL_STATE: string id 0x22
 
         @ IDLE Low temperature threshold
         param JETSON_IDLE_LOW: F32 \

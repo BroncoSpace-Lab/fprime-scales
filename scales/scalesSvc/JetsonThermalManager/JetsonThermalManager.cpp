@@ -97,39 +97,30 @@ namespace scalesSvc {
         switch(i){
           case 0:
             this->tlmWrite_jetson_cpu_temp_read(this->m_jetsonThermalReadings[i]);
-            this->tlmWrite_JETSON_CPU_THERMAL_STATE(Fw::String(tempStateToStr[tempState].c_str()));
             break;
           case 1:
             this->tlmWrite_jetson_gpu_temp_read(this->m_jetsonThermalReadings[i]);
-            this->tlmWrite_JETSON_GPU_THERMAL_STATE(Fw::String(tempStateToStr[tempState].c_str()));
             break;
           case 2:
             this->tlmWrite_jetson_cv0_temp_read(this->m_jetsonThermalReadings[i]);
-            this->tlmWrite_JETSON_CV0_THERMAL_STATE(Fw::String(tempStateToStr[tempState].c_str()));
             break;
           case 3:
             this->tlmWrite_jetson_cv1_temp_read(this->m_jetsonThermalReadings[i]);
-            this->tlmWrite_JETSON_CV1_THERMAL_STATE(Fw::String(tempStateToStr[tempState].c_str()));
             break;
           case 4:
             this->tlmWrite_jetson_cv2_temp_read(this->m_jetsonThermalReadings[i]);
-            this->tlmWrite_JETSON_CV2_THERMAL_STATE(Fw::String(tempStateToStr[tempState].c_str()));
             break;
           case 5:
             this->tlmWrite_jetson_soc0_temp_read(this->m_jetsonThermalReadings[i]);
-            this->tlmWrite_JETSON_SOC0_THERMAL_STATE(Fw::String(tempStateToStr[tempState].c_str()));
             break;
           case 6:
             this->tlmWrite_jetson_soc1_temp_read(this->m_jetsonThermalReadings[i]);
-            this->tlmWrite_JETSON_SOC1_THERMAL_STATE(Fw::String(tempStateToStr[tempState].c_str()));
             break;
           case 7:
             this->tlmWrite_jetson_soc2_temp_read(this->m_jetsonThermalReadings[i]);
-            this->tlmWrite_JETSON_SOC2_THERMAL_STATE(Fw::String(tempStateToStr[tempState].c_str()));
             break;
           case 8:
             this->tlmWrite_jetson_tj_temp_read(this->m_jetsonThermalReadings[i]);
-            this->tlmWrite_JETSON_TJ_THERMAL_STATE(Fw::String(tempStateToStr[tempState].c_str()));
             break;
         }
     }

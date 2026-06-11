@@ -66,10 +66,7 @@ namespace scalesSvc {
 
       /* Implementation-specific members */
       scalesSvc::ThermalReading m_thermalReadings[3]; //!< The 3 thermal readings to be logged to telemetry 
-      scalesSvc::ThermalReading imx_thermalReadings;
-      scalesSvc::ThermalReading peripheral_thermalReadings;
-      scalesSvc::ThermalReading jetson_thermalReadings;
-
+      
       /* Determines whether the device has just booted */
       bool m_justBooted;
       U8 m_currentState;

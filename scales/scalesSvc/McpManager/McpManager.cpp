@@ -37,10 +37,6 @@ namespace scalesSvc {
     m_justBooted(true),
     m_currentState(0)
   {
-    m_thermalReadings[0] = imx_thermalReadings;
-    m_thermalReadings[1] = peripheral_thermalReadings;
-    m_thermalReadings[2] = jetson_thermalReadings;
-
     deviceAddrs[0] = IMX_TEMP_ADDR;
     deviceAddrs[1] = PERIPHERAL_TEMP_ADDR;
     deviceAddrs[2] = JETSON_TEMP_ADDR;
@@ -117,15 +113,12 @@ namespace scalesSvc {
       switch(i){
         case 0:
           this->tlmWrite_IMX_TEMP(m_thermalReadings[0]);
-          this->tlmWrite_OCB_THERMAL_STATE(Fw::String(tempStateToStr[tempState].c_str()));
           break;
         case 1:
           this->tlmWrite_PERIPHERAL_TEMP(m_thermalReadings[1]);
-          this->tlmWrite_PERIPHERAL_THERMAL_STATE(Fw::String(tempStateToStr[tempState].c_str()));
           break;
         case 2:
           this->tlmWrite_JETSON_TEMP(m_thermalReadings[2]);
-          this->tlmWrite_JETSON_THERMAL_STATE(Fw::String(tempStateToStr[tempState].c_str()));
           break;
         default:
           printf("Warning: Unrecognized sensor index %d. No telemetry was logged for this sensor.\n", i);
