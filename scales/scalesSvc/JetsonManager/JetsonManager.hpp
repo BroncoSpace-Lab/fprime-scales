@@ -1,18 +1,18 @@
 // ======================================================================
-// \title  PowerManager.hpp
-// \author dragon-scales
-// \brief  hpp file for PowerManager component implementation class
+// \title  JetsonManager.hpp
+// \author lucal
+// \brief  hpp file for JetsonManager component implementation class
 // ======================================================================
 
-#ifndef scalesSvc_PowerManager_HPP
-#define scalesSvc_PowerManager_HPP
+#ifndef scalesSvc_JetsonManager_HPP
+#define scalesSvc_JetsonManager_HPP
 
-#include "scales/scalesSvc/PowerManager/PowerManagerComponentAc.hpp"
+#include "scales/scalesSvc/JetsonManager/JetsonManagerComponentAc.hpp"
 
 namespace scalesSvc {
 
-  class PowerManager :
-    public PowerManagerComponentBase
+  class JetsonManager :
+    public JetsonManagerComponentBase
   {
 
     public:
@@ -21,13 +21,13 @@ namespace scalesSvc {
       // Component construction and destruction
       // ----------------------------------------------------------------------
 
-      //! Construct PowerManager object
-      PowerManager(
+      //! Construct JetsonManager object
+      JetsonManager(
           const char* const compName //!< The component name
       );
 
-      //! Destroy PowerManager object
-      ~PowerManager();
+      //! Destroy JetsonManager object
+      ~JetsonManager();
 
     PRIVATE:
 
@@ -35,17 +35,20 @@ namespace scalesSvc {
       // Handler implementations for typed input ports
       // ----------------------------------------------------------------------
 
+      //! Handler implementation for currentJetsonPwrState
+      //!
+      //! Port for receiving current Jetson power state from JetsonPowerModeManager
+      void currentJetsonPwrState_handler(
+          FwIndexType portNum, //!< The port number
+          const scalesSvc::JetsonPowerStateID& stateNow
+      ) override;
+
       //! Handler implementation for currentPwrMode
       //!
       //! Port for receiving current power mode from JetsonPowerModeManager
       void currentPwrMode_handler(
           FwIndexType portNum, //!< The port number
           const scalesSvc::PowerModeID& modeNow
-      ) override;
-
-      void currentJetsonPwrState_handler(
-          FwIndexType portNum, //!< The port number
-          const scalesSvc::JetsonPowerStateID& stateNow
       ) override;
 
       //! Handler implementation for schedIn
@@ -61,6 +64,9 @@ namespace scalesSvc {
       // ----------------------------------------------------------------------
       // Handler implementations for commands
       // ----------------------------------------------------------------------
+
+      //! Handler implementation for command TODO
+     
 
       //! Handler implementation for command REQUEST_POWER_MODE
       //!
@@ -80,9 +86,9 @@ namespace scalesSvc {
           scalesSvc::JetsonPowerStateID jetsonState //!< Requested power state (on/off)
       ) override;
 
-    PRIVATE:
+      PRIVATE:
 
-      // ----------------------------------------------------------------------
+       // ----------------------------------------------------------------------
       // Deferred command state for REQUEST_POWER_MODE
       //
       // REQUEST_POWER_MODE cannot complete immediately because the Jetson must
@@ -110,6 +116,7 @@ namespace scalesSvc {
       U32 m_powerTimeoutTicks;  //!< Ticks elapsed since the power state change request was sent
       bool m_waitingToCutJetsonPower; //!< True if we've sent a shutdown command and are waiting to cut power after a delay
       U32 m_powerOffDelayTicks; //!< Ticks elapsed since sending the shutdown command, used to delay cutting power to allow for graceful shutdown
+
   };
 
 }

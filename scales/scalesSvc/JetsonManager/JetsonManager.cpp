@@ -1,27 +1,26 @@
 // ======================================================================
-// \title  PowerManager.cpp
-// \author dragon-scales
-// \brief  cpp file for PowerManager component implementation class
+// \title  JetsonManager.cpp
+// \author lucal
+// \brief  cpp file for JetsonManager component implementation class
 // ======================================================================
 
-#include "scales/scalesSvc/PowerManager/PowerManager.hpp"
+#include "scales/scalesSvc/JetsonManager/JetsonManager.hpp"
 
 namespace scalesSvc {
 
-  namespace {
+    
     constexpr U32 JETSON_POWER_OFF_DELAY_TICKS = 5;
-
     const Fw::Logic JETSON_POWER_GPIO_ON = Fw::Logic::HIGH;
     const Fw::Logic JETSON_POWER_GPIO_OFF = Fw::Logic::LOW;
-  }
+
 
   // ----------------------------------------------------------------------
   // Component construction and destruction
   // ----------------------------------------------------------------------
 
-  PowerManager ::
-    PowerManager(const char* const compName) :
-      PowerManagerComponentBase(compName),
+  JetsonManager ::
+    JetsonManager(const char* const compName) :
+      JetsonManagerComponentBase(compName),
       m_hasPendingCmd(false),
       m_pendingOpCode(0),
       m_pendingCmdSeq(0),
@@ -34,12 +33,13 @@ namespace scalesSvc {
       m_powerTimeoutTicks(0),
       m_waitingToCutJetsonPower(false),
       m_powerOffDelayTicks(0)
+      // instantiate private members in a constructor.
   {
 
   }
 
-  PowerManager ::
-    ~PowerManager()
+  JetsonManager ::
+    ~JetsonManager()
   {
 
   }
@@ -48,26 +48,7 @@ namespace scalesSvc {
   // Handler implementations for typed input ports
   // ----------------------------------------------------------------------
 
-  void PowerManager ::
-    currentPwrMode_handler(
-        FwIndexType portNum,
-        const scalesSvc::PowerModeID& modeNow
-    )
-  {
-    this->log_ACTIVITY_LO_POWER_MODE_RECEIVED(modeNow);
-    this->tlmWrite_JetsonPowerMode(modeNow);
-
-    // If we are waiting for the Jetson to confirm a mode change, check whether
-    // the reported mode matches what we requested. If so, complete the deferred
-    // REQUEST_POWER_MODE command with OK. This fires once after the Jetson
-    // reboots and its schedIn reports the current mode back through the hub.
-    if (m_hasPendingCmd && modeNow.e == m_requestedMode.e) {
-      this->cmdResponse_out(m_pendingOpCode, m_pendingCmdSeq, Fw::CmdResponse::OK);
-      m_hasPendingCmd = false;
-    }
-  }
-
-  void PowerManager ::
+  void JetsonManager ::
     currentJetsonPwrState_handler(
         FwIndexType portNum,
         const scalesSvc::JetsonPowerStateID& stateNow
@@ -90,9 +71,28 @@ namespace scalesSvc {
       m_waitingToCutJetsonPower = true;
       m_powerOffDelayTicks = 0;
     }
-   }
+  }
 
-  void PowerManager ::
+  void JetsonManager ::
+    currentPwrMode_handler(
+        FwIndexType portNum,
+        const scalesSvc::PowerModeID& modeNow
+    )
+  {
+    this->log_ACTIVITY_LO_POWER_MODE_RECEIVED(modeNow);
+    this->tlmWrite_JetsonPowerMode(modeNow);
+
+    // If we are waiting for the Jetson to confirm a mode change, check whether
+    // the reported mode matches what we requested. If so, complete the deferred
+    // REQUEST_POWER_MODE command with OK. This fires once after the Jetson
+    // reboots and its schedIn reports the current mode back through the hub.
+    if (m_hasPendingCmd && modeNow.e == m_requestedMode.e) {
+      this->cmdResponse_out(m_pendingOpCode, m_pendingCmdSeq, Fw::CmdResponse::OK);
+      m_hasPendingCmd = false;
+    }
+  }
+
+  void JetsonManager ::
     schedIn_handler(
         FwIndexType portNum,
         U32 context
@@ -162,7 +162,7 @@ namespace scalesSvc {
   // Handler implementations for commands
   // ----------------------------------------------------------------------
 
-  void PowerManager ::
+  void JetsonManager ::
     REQUEST_POWER_MODE_cmdHandler(
         FwOpcodeType opCode,
         U32 cmdSeq,
@@ -185,8 +185,13 @@ namespace scalesSvc {
     this->log_ACTIVITY_HI_POWER_MODE_REQUESTED(mode);
   }
 
-  void PowerManager :: REQUEST_JETSON_POWER_STATE_cmdHandler(FwOpcodeType opCode, U32 cmdSeq, scalesSvc::JetsonPowerStateID jetsonState)
-    {
+  void JetsonManager ::
+    REQUEST_JETSON_POWER_STATE_cmdHandler(
+        FwOpcodeType opCode,
+        U32 cmdSeq,
+        scalesSvc::JetsonPowerStateID jetsonState
+    )
+  {
       if (jetsonState.e == JetsonPowerStateID::UNKNOWN) {
         this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::VALIDATION_ERROR);
         return;
@@ -218,7 +223,7 @@ namespace scalesSvc {
         // Jetson is currently on, so ask it to shut down
         // After it acknowledges OFF, this component will cut power with GPIO
         this->gpioSet_out(0, JETSON_POWER_GPIO_OFF);  
-        // this->reqJetsonPwrState_out(0, jetsonState);
+        this->reqJetsonPwrState_out(0, jetsonState);
         m_hasPendingPowerCmd = false;
       } else {
         this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::VALIDATION_ERROR);
