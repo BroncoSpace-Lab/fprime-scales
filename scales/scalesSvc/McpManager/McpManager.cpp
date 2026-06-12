@@ -25,8 +25,8 @@ namespace scalesSvc {
 
   McpManager :: McpManager(const char* const compName) :
     McpManagerComponentBase(compName), 
-    m_justBooted(true),
-    m_currentState(0)
+    m_successfulRead(true), // Initialize successful read flag to true as default
+    m_justBooted(true)
   {
     deviceAddrs[0] = IMX_TEMP_ADDR;
     deviceAddrs[1] = PERIPHERAL_TEMP_ADDR;
@@ -78,7 +78,16 @@ namespace scalesSvc {
         printf("Reading temperature data from sensors...\n");
         // Read temp data from sensors and log to telemetry
         for (int i = 0; i < 3; i++){
-          this->m_thermalReadings[i].settemperature(this->readTemp(deviceAddrs[i])); 
+          // this->m_thermalReadings[i].settemperature(this->readTemp(deviceAddrs[i])); 
+
+          F32 tempCelsius;
+          if (this->readTemp(deviceAddrs[i], tempCelsius)){
+            this->m_thermalReadings[i].settemperature(tempCelsius);
+          } else {
+            this->m_thermalReadings[i].settemperature(0.0f); // Set temp to 0 if the read failed, which will be evaluated as IDLE in determineTempState, and log the failure in the next state
+            m_successfulRead = false; // Set successful read flag to false if any read failed, which will be used to determine state machine transition in the next states
+          }
+
           this->m_thermalReadings[i].setsensorId(i + 1);
           this->m_thermalReadings[i].settimestamp(this->getTime().getSeconds());
           this->m_thermalReadings[i].setlocation(Fw::String(indexToLocation[i].c_str()));
@@ -88,9 +97,14 @@ namespace scalesSvc {
         // this->tlmWrite_IMX_TEMP(m_thermalReadings[0]);
         // this->tlmWrite_PERIPHERAL_TEMP(m_thermalReadings[1]);
         // this->tlmWrite_JETSON_TEMP(m_thermalReadings[2]);
-
-        // Transition to next state to evaluate the readings
-        this->mcp_thermalStateMachine_sendSignal_success();
+        
+        if (m_successfulRead) {
+          // Transition to next state to evaluate the readings
+          this->mcp_thermalStateMachine_sendSignal_success();
+        } else {
+          // If any read failed, transition to read failure state to log the failure event
+          this->mcp_thermalStateMachine_sendSignal_fail();
+        }
     }
   }
 
@@ -122,6 +136,7 @@ namespace scalesSvc {
   void McpManager :: scalesSvc_ThermalStateMachine_action_doReadFail(SmId smId, scalesSvc_ThermalStateMachine::Signal signal)
   {
     printf("Failed to read from sensor. Logging failure event...\n");
+    m_successfulRead = true; // Reset successful read flag to true to try reading again on next tick
     this->mcp_thermalStateMachine_sendSignal_success(); // Transition back to initial state to try reading again on next tick
   }
 
@@ -163,7 +178,7 @@ namespace scalesSvc {
   // Helper functions
   // ----------------------------------------------------------------------
 
-  F32 McpManager :: readTemp(U8 deviceAddr)
+  bool McpManager ::readTemp(U8 deviceAddr, F32& temperature)
   {
     U8 regAddr = TEMP_REG_ADDR;
     U8 rawData[2]; // MCP9808 temperature read back data is 2 bytes
@@ -174,12 +189,13 @@ namespace scalesSvc {
     Drv::I2cStatus status = this->mcpWriteRead_out(0, deviceAddr, writeBuffer, readBuffer);
 
     if (status == Drv::I2cStatus::I2C_OK){
-      return convertRawTemp(rawData); // Convert raw data to Celsius and return
+      temperature = convertRawTemp(rawData); // Convert raw data to Celsius and return
+      return true;
     }
     
     printf("Error reading from I2C device at address 0x%X\n", deviceAddr);
-    this->mcp_thermalStateMachine_sendSignal_fail();
-    return -120.0; // Return an error value if the device address is unrecognized 
+    temperature = 0.0f;
+    return false; // Return false if the device address is unrecognized 
   }
   
   scalesSvc::ThermalStates McpManager :: determineTempState(F32 tempCelsius){

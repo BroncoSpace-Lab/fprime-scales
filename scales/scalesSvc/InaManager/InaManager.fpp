@@ -16,38 +16,14 @@ module scalesSvc {
         # Telemetry
         # ----------------------------------------------------------------------
 
-        # Telemetry channels for INA260 Jetson subsystem
+        @ Telemetry channel for INA260 Jetson subsystem using struct PowerReading
+        telemetry INA260_Jetson : PowerReading id 0
 
-        @ Telemetry channel for current
-        telemetry INA260_Jetson_Current_Amps : F32
+        @ Telemetry channel for INA260 OBC subsystem using struct PowerReading
+        telemetry INA260_OBC : PowerReading id 1
 
-        @ Telemetry channel for voltage
-        telemetry INA260_Jetson_Voltage_Volts : F32
-
-        @ Telemetry channel for power
-        telemetry INA260_Jetson_Power_Watts : F32
-
-        # Telemetry channels for INA260 OBC subsystem
-
-        @ Telemetry channel for current
-        telemetry INA260_OBC_Current_Amps : F32
-
-        @ Telemetry channel for voltage
-        telemetry INA260_OBC_Voltage_Volts : F32
-
-        @ Telemetry channel for power
-        telemetry INA260_OBC_Power_Watts : F32
-
-        # Telemetry channels for INA260 peripheral subsystem
-
-        @ Telemetry channel for current
-        telemetry INA260_Peripheral_Current_Amps : F32
-
-        @ Telemetry channel for voltage
-        telemetry INA260_Peripheral_Voltage_Volts : F32
-
-        @ Telemetry channel for power
-        telemetry INA260_Peripheral_Power_Watts : F32
+        @ Telemetry channel for INA260 Peripheral subsystem using struct PowerReading
+        telemetry INA260_Peripheral : PowerReading id 2
 
         # ----------------------------------------------------------------------
         # Events

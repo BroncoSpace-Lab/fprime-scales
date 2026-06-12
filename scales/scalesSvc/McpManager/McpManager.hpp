@@ -39,15 +39,6 @@ namespace scalesSvc {
       //! Destroy McpManager object
       ~McpManager();
       
-
-      // ----------------------------------------------------------------------
-      // Class helper functions
-      // ----------------------------------------------------------------------
-
-      F32 readTemp(U8 deviceAddr); //!< Function to read temperature from a given I2C device address
-
-      scalesSvc::ThermalStates determineTempState(F32 tempCelsius); //!< Function to determine the temperature state (IDLE, WARNING, FAULT) based on the temperature in Celsius
-
     PRIVATE:
 
       // ----------------------------------------------------------------------
@@ -67,9 +58,9 @@ namespace scalesSvc {
       /* Implementation-specific members */
       scalesSvc::ThermalReading m_thermalReadings[3]; //!< The 3 thermal readings to be logged to telemetry 
       
-      /* Determines whether the device has just booted */
+      /* Determines whether the device has just booted, valid parameter values, and read fail state */
       bool m_justBooted;
-      U8 m_currentState;
+      bool m_successfulRead; // Flag to track whether the most recent read was successful, used to determine state machine transitions
       Fw::ParamValid m_paramIsValid = Fw::ParamValid::VALID;
 
       /* Telemetry values for temperature thresholds */
@@ -114,6 +105,15 @@ namespace scalesSvc {
       // Implementations for parameters update
       // ----------------------------------------------------------------------
       void parameterUpdated(FwPrmIdType id) override;  //! Handler implementation for parameter updates, used to update threshold values when parameters are updated
+
+      // ----------------------------------------------------------------------
+      // Class helper functions
+      // ----------------------------------------------------------------------
+
+      bool readTemp(U8 deviceAddr, F32& temperature); //!< Function to read temperature from a given I2C device address
+
+      scalesSvc::ThermalStates determineTempState(F32 tempCelsius); //!< Function to determine the temperature state (IDLE, WARNING, FAULT) based on the temperature in Celsius
+
 
   };
 

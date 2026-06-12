@@ -42,13 +42,17 @@ namespace scalesSvc {
           U32 context //!< The call order
       ) override;
 
+      static constexpr U32 INA260_REG_CURRENT = 0x01; // current register address
+      static constexpr U32 INA260_REG_VOLTAGE = 0x02; // voltage register address
+      static constexpr U32 INA260_REG_POWER = 0x03; // power register address
+
       static constexpr U32 INA260_I2C_ADDRESS_JETSON = 0x40; // Jetson subsystem INA260 address
       static constexpr U32 INA260_I2C_ADDRESS_OBC = 0x41; // OBC subsystem INA260 address
       static constexpr U32 INA260_I2C_ADDRESS_PERIPHERAL = 0x45; // Peripheral subsystem INA260 address
 
-      static constexpr U32 INA260_REG_CURRENT = 0x01; // current register address
-      static constexpr U32 INA260_REG_VOLTAGE = 0x02; // voltage register address
-      static constexpr U32 INA260_REG_POWER = 0x03; // power register address
+      PowerReading jetsonData = {0, 0, 0, INA260_I2C_ADDRESS_JETSON, 0};
+      PowerReading obcData = {0, 0, 0, INA260_I2C_ADDRESS_OBC, 0};
+      PowerReading peripheralData = {0, 0, 0, INA260_I2C_ADDRESS_PERIPHERAL, 0};
 
       // Functions to convert raw data from registers to usable values
       F32 convertCurrentRawToAmps(U16 raw) const;
@@ -59,7 +63,7 @@ namespace scalesSvc {
       Drv::I2cStatus readRegister16(U32 sensorAddress, U8 registerAddress, U16& value);
 
       // Function that confirms data has been successfully read from each register
-      bool readSensorOnce(U32 sensorAddress, F32& current_A, F32& voltage_V, F32& power_W);
+      bool readSensorOnce(PowerReading& sensordata);
 
   };
 
