@@ -38,44 +38,16 @@ namespace scalesSvc {
     (void)(portNum);
     (void)(context);
 
-    F32 jetson_current = 0.0F, jetson_voltage = 0.0F, jetson_power = 0.0F;
-    F32 OBC_current = 0.0F, OBC_voltage = 0.0F, OBC_power = 0.0F;
-    F32 peripheral_current = 0.0F, peripheral_voltage = 0.0F, peripheral_power = 0.0F;
-
-    if (this->readSensorOnce(
-      INA260_I2C_ADDRESS_JETSON,
-      jetson_current,
-      jetson_voltage,
-      jetson_power
-
-      )) {
-      this->tlmWrite_INA260_Jetson_Current_Amps(jetson_current);
-      this->tlmWrite_INA260_Jetson_Voltage_Volts(jetson_voltage);
-      this->tlmWrite_INA260_Jetson_Power_Watts(jetson_power);
+    if (this->readSensorOnce(jetsonData)) {
+      this->tlmWrite_INA260_Jetson(jetsonData);
     }
 
-    if (this->readSensorOnce(
-      INA260_I2C_ADDRESS_OBC,
-      OBC_current,
-      OBC_voltage,
-      OBC_power
-
-      )) {
-      this->tlmWrite_INA260_OBC_Current_Amps(OBC_current);
-      this->tlmWrite_INA260_OBC_Voltage_Volts(OBC_voltage);
-      this->tlmWrite_INA260_OBC_Power_Watts(OBC_power);
+    if (this->readSensorOnce(obcData)) {
+      this->tlmWrite_INA260_OBC(obcData);
     }
 
-    if (this->readSensorOnce(
-      INA260_I2C_ADDRESS_PERIPHERAL,
-      peripheral_current,
-      peripheral_voltage,
-      peripheral_power
-
-      )) {
-      this->tlmWrite_INA260_Peripheral_Current_Amps(peripheral_current);
-      this->tlmWrite_INA260_Peripheral_Voltage_Volts(peripheral_voltage);
-      this->tlmWrite_INA260_Peripheral_Power_Watts(peripheral_power);
+    if (this->readSensorOnce(peripheralData)) {
+      this->tlmWrite_INA260_Peripheral(peripheralData);
     }
   }
 
@@ -134,31 +106,28 @@ namespace scalesSvc {
 
   bool InaManager :: 
     readSensorOnce(
-      U32 sensorAddress,
-      F32& current,
-      F32& voltage,
-      F32& power
+      PowerReading& sensorData
     )
   {
     U16 rawCurrent = 0;
     U16 rawVoltage = 0;
     U16 rawPower = 0;
 
-    if (this->readRegister16(sensorAddress, INA260_REG_CURRENT, rawCurrent) != Drv::I2cStatus::I2C_OK) {
+    if (this->readRegister16(sensorData.getsourceId(), INA260_REG_CURRENT, rawCurrent) != Drv::I2cStatus::I2C_OK) {
       return false;
     }
 
-    if (this->readRegister16(sensorAddress, INA260_REG_VOLTAGE, rawVoltage) != Drv::I2cStatus::I2C_OK) {
+    if (this->readRegister16(sensorData.getsourceId(), INA260_REG_VOLTAGE, rawVoltage) != Drv::I2cStatus::I2C_OK) {
       return false;
     }
 
-    if (this->readRegister16(sensorAddress, INA260_REG_POWER, rawPower) != Drv::I2cStatus::I2C_OK) {
+    if (this->readRegister16(sensorData.getsourceId(), INA260_REG_POWER, rawPower) != Drv::I2cStatus::I2C_OK) {
       return false;
     }
 
-    current = this->convertCurrentRawToAmps(rawCurrent);
-    voltage = this->convertVoltageRawToVolts(rawVoltage);
-    power = this->convertPowerRawToWatts(rawPower);
+    sensorData.setcurrent(this->convertCurrentRawToAmps(rawCurrent));
+    sensorData.setvoltage(this->convertVoltageRawToVolts(rawVoltage));
+    sensorData.setpower(this->convertPowerRawToWatts(rawPower));
 
     return true;
   }
