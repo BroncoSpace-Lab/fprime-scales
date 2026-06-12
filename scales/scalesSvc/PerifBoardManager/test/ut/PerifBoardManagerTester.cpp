@@ -76,8 +76,8 @@ namespace scalesSvc {
     ASSERT_from_gpioSet_SIZE(1); //check an output from gpioSet was set to turn off
     ASSERT_from_gpioSet(0, Fw::Logic::LOW); //check GPIO value is correct for off state
     
-    // t = 2, still outputs LOW, then sets m_powerMode = ON
-    this->setTestTime(Fw::Time(2, 0));
+    // t = 2, still outputs LOW,
+    this->setTestTime(Fw::Time(2, 0)); //2 seconds pass, switching from low to high on next cycle
     this->invoke_to_run(0, 0);
     this->component.doDispatch();
     ASSERT_from_gpioSet_SIZE(2);
@@ -96,7 +96,16 @@ namespace scalesSvc {
     ASSERT_from_gpioSet_SIZE(4);
     ASSERT_from_gpioSet(3, Fw::Logic::HIGH);
 
+    // New Cycle. When CMD ON is sent, we check that we get a command response
 
+    this->clearHistory(); //resets history of ports for new unit test cycle
+    this->invoke_to_run(0, 0);
+    this->sendCmd_powerOn(0, 0, Fw::On::ON); //send command to turn off the board
+    this->component.doDispatch();
+    //check inside the if statement
+    ASSERT_EVENTS_gpioOn_SIZE(1); //check event was emitted for gpioOn
+    ASSERT_EVENTS_gpioOn(0, Fw::On::ON); //check event value is set to ON
+    ASSERT_CMD_RESPONSE_SIZE(1); //check command response was emitted
 
   }
 }

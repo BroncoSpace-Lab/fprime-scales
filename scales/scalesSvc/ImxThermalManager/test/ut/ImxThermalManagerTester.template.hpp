@@ -10,8 +10,6 @@
 #include "scales/scalesSvc/ImxThermalManager/ImxThermalManagerGTestBase.hpp"
 #include "scales/scalesSvc/ImxThermalManager/ImxThermalManager.hpp"
 
-
-
 namespace scalesSvc {
 
   class ImxThermalManagerTester :
@@ -52,7 +50,7 @@ namespace scalesSvc {
       // ----------------------------------------------------------------------
 
       //! To do
-      void ImxThermalManagerTesting();
+      void toDo();
 
     private:
 
@@ -76,8 +74,6 @@ namespace scalesSvc {
       ImxThermalManager component;
 
   };
-
-  
 
 }
 

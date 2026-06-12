@@ -49,8 +49,6 @@ namespace scalesSvc {
             this->log_ACTIVITY_HI_gpioOn(m_onOff);  //Since the board is coming back to ON, let GDS know
           }
         break;
-      default:
-        FW_ASSERT(0, portNum);
     }
     
   }
@@ -76,9 +74,6 @@ namespace scalesSvc {
       m_onOff = Fw::On::OFF; //record the state we set for telemetry
       this->log_ACTIVITY_HI_gpioOn(Fw::On::OFF); //log that we are not turning off the board
       m_startTimeSec = this->getTime().getSeconds(); //record the time we are turning off
-    }
-    else {
-      FW_ASSERT(0, opCode);
     }
     this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
   }

@@ -6,9 +6,9 @@
 
 #include "ImxThermalManagerTester.hpp"
 
-TEST(Nominal, ImxThermalManagerTesting) {
+TEST(Nominal, toDo) {
   scalesSvc::ImxThermalManagerTester tester;
-  tester.ImxThermalManagerTesting();
+  tester.toDo();
 }
 
 int main(int argc, char** argv) {

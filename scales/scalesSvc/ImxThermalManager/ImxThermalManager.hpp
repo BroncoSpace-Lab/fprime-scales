@@ -18,6 +18,10 @@ namespace scalesSvc {
 
     public:
 
+      void setTempPath(const char* path) {
+        this->tempPath = path;
+  }
+
       // ----------------------------------------------------------------------
       // Component construction and destruction
       // ----------------------------------------------------------------------
@@ -39,7 +43,7 @@ namespace scalesSvc {
                             ) override;
           
       
-    scalesSvc::ThermalReading cpu_thermal_read;
+    scalesSvc::ThermalReading m_cpu_thermal_read;
     Fw::ParamValid m_paramValid = Fw::ParamValid::VALID;
     F32 m_tempMilliC = 0.0f;
     F32 m_tempC = 0.0f;

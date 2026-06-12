@@ -5,7 +5,7 @@ Directory: ../../../../..
 File                                       Lines    Exec  Cover   Missing
 ------------------------------------------------------------------------------
 build-fprime-automatic-native-ut/scales/scalesSvc/PerifBoardManager/PerifBoardManagerGTestBase.cpp
-                                             135      30    22%   27,36,42-48,58-62,77-81,85,94-126,133,139-145,155-159,171-176,180-186,194,200-206,216-220,232-237,241-247
+                                             135      37    27%   27,36,42-48,58-62,77-81,95-100,103-109,111-117,119-125,133,139-145,155-159,171-176,180-186,194,200-206,216-220,232-237,241-247
 build-fprime-automatic-native-ut/scales/scalesSvc/PerifBoardManager/PerifBoardManagerTesterBase.cpp
                                              471     366    77%   605,607,612,616,618,623,642,648-654,656,658,660,692,752-753,806-807,815-816,837,842-844,847,853-854,858-859,861-863,865-867,871,874,879-881,883-885,887-889,893,947,952,954,956-957,959-960,962-963,965-966,968-969,971-972,974-975,977-978,981-982,984-989,991,994,996-999,1001-1002,1018,1025,1102-1103,1110,1117-1119,1121-1122,1124,1126-1128,1132,1137,1140-1141,1143
 build-fprime-automatic-native-ut/scales/scalesSvc/PerifBoardManager/PerifBoardManagerTesterBase.hpp
@@ -13,9 +13,9 @@ build-fprime-automatic-native-ut/scales/scalesSvc/PerifBoardManager/PerifBoardMa
 build-fprime-automatic-native-ut/scales/scalesSvc/PerifBoardManager/PerifBoardManagerTesterHelpers.cpp
                                               28      28   100%
 lib/fprime-scales/scales/scalesSvc/PerifBoardManager/PerifBoardManager.cpp
-                                              36      29    80%   51-52,68-71,79
+                                              35      35   100%
 lib/fprime-scales/scales/scalesSvc/PerifBoardManager/PerifBoardManager.hpp
                                                3       3   100%
 ------------------------------------------------------------------------------
-TOTAL                                        703     486    69%
+TOTAL                                        702     499    71%
 ------------------------------------------------------------------------------
