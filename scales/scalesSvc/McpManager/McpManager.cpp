@@ -43,15 +43,13 @@ namespace scalesSvc {
 
   void McpManager :: run_handler(FwIndexType portNum, U32 context)
   { 
-
     // Log temperature threshold values to telemetry on each run, in case they were updated by a command
-    this->tlmWrite_MCP_IDLE_LOW(this->IDLE_LOW_THR);
-    this->tlmWrite_MCP_IDLE_HIGH(this->IDLE_HIGH_THR);
-    this->tlmWrite_MCP_WARN_LOW(this->WARN_LOW_THR);
-    this->tlmWrite_MCP_WARN_HIGH(this->WARN_HIGH_THR);
-    this->tlmWrite_MCP_FAULT_LOW(this->FAULT_LOW_THR);
-    this->tlmWrite_MCP_FAULT_HIGH(this->FAULT_HIGH_THR);
-
+    // this->tlmWrite_MCP_IDLE_LOW(this->IDLE_LOW_THR);
+    // this->tlmWrite_MCP_IDLE_HIGH(this->IDLE_HIGH_THR);
+    // this->tlmWrite_MCP_WARN_LOW(this->WARN_LOW_THR);
+    // this->tlmWrite_MCP_WARN_HIGH(this->WARN_HIGH_THR);
+    // this->tlmWrite_MCP_FAULT_LOW(this->FAULT_LOW_THR);
+    // this->tlmWrite_MCP_FAULT_HIGH(this->FAULT_HIGH_THR);
     this->mcp_thermalStateMachine_sendSignal_tick(); // Trigger state machine tick 
   }
 
@@ -65,7 +63,7 @@ namespace scalesSvc {
     // If the device just booted, set up the parameters. If not, then start reading temp
     if (m_justBooted) {
       m_justBooted = false;
-      
+      m_startTime = this->getTime().getSeconds(); // Record the start time at boot to track uptime in telemetry
       printf("Device just booted. Setting up parameters...\n");
       // Default threshold values, can be updated by sending commands
       this->IDLE_LOW_THR = this->paramGet_MCP_IDLE_LOW(m_paramIsValid); 
@@ -89,7 +87,7 @@ namespace scalesSvc {
           }
 
           this->m_thermalReadings[i].setsensorId(i + 1);
-          this->m_thermalReadings[i].settimestamp(this->getTime().getSeconds());
+          this->m_thermalReadings[i].settimestamp(this->getTime().getSeconds()- m_startTime); // Log uptime in seconds as the timestamp for telemetry
           this->m_thermalReadings[i].setlocation(Fw::String(indexToLocation[i].c_str()));
         }
 

@@ -61,6 +61,7 @@ namespace scalesSvc {
       /* Determines whether the device has just booted, valid parameter values, and read fail state */
       bool m_justBooted;
       bool m_successfulRead; // Flag to track whether the most recent read was successful, used to determine state machine transitions
+      U32  m_startTime = 0;
       Fw::ParamValid m_paramIsValid = Fw::ParamValid::VALID;
 
       /* Telemetry values for temperature thresholds */

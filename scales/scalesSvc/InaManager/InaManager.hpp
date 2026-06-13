@@ -65,6 +65,10 @@ namespace scalesSvc {
       // Function that confirms data has been successfully read from each register
       bool readSensorOnce(PowerReading& sensordata);
 
+      // Time helpers
+      bool m_justBooted = true;
+      U32 m_startTime = 0;
+
   };
 
 }
