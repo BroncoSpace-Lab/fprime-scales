@@ -36,7 +36,6 @@ namespace scalesSvc {
   )
 {
   const U32 nowSec = this->getTime().getSeconds(); //Define curret time
-  const U32 intervalSec = this->paramGet_watchdogPetInterval(this->m_isValid); //Parameter used for the pet interval
 
   switch (this->m_wdStatus.e){ /*take the actual enum valu */ 
     case Fw::Enabled::DISABLED: //on first cycle ever, wd is disabled
@@ -51,7 +50,7 @@ namespace scalesSvc {
       break;
 
     case Fw::Enabled::ENABLED: //now that that the watchdog is enabled, check if we have been petting long enough, if not, PET!
-      if (nowSec - this->m_startTimeSec >= intervalSec) {
+      if (nowSec - this->m_startTimeSec >= m_intervalSec) {
         if (this->m_isPetting) {
           this->tlmWrite_WatchdogPet(scalesSvc::WatchdogStates::NOT_PETTING);
           this->gpioWatchDog_out(0, Fw::Logic::LOW);

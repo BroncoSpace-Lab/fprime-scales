@@ -11,9 +11,6 @@ module scalesSvc {
         @ telemetry channel to report the state of the watchdog
         telemetry WatchdogPet: scalesSvc.WatchdogStates
 
-        @ parameter for watchdog pet interval, 1 second
-        param watchdogPetInterval: U32 default 1
-
         @ event that updates everytime watchdog is pet
         event WatchdogState($state: Fw.On) \
             severity activity high \

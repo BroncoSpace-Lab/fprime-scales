@@ -6,9 +6,9 @@
 
 #include "WatchdogManagerTester.hpp"
 
-TEST(Nominal, toDo) {
+TEST(Nominal, WatchdogTester) {
   scalesSvc::WatchdogManagerTester tester;
-  tester.toDo();
+  tester.WatchdogTester();
 }
 
 int main(int argc, char** argv) {

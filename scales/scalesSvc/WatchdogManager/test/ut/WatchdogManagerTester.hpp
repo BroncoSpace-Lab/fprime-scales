@@ -49,8 +49,8 @@ namespace scalesSvc {
       // Tests
       // ----------------------------------------------------------------------
 
-      //! To do
-      void toDo();
+      
+      void WatchdogTester();
 
     private:
 

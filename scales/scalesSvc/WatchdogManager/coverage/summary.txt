@@ -1,0 +1,21 @@
+------------------------------------------------------------------------------
+                           GCC Code Coverage Report
+Directory: ../../../../..
+------------------------------------------------------------------------------
+File                                       Lines    Exec  Cover   Missing
+------------------------------------------------------------------------------
+build-fprime-automatic-native-ut/scales/scalesSvc/WatchdogManager/WatchdogManagerGTestBase.cpp
+                                              93      24    25%   27,36,42-48,51,57-63,77-81,85,91-97,108-113,117-123,131,137-143,153-157,169-174,178-184
+build-fprime-automatic-native-ut/scales/scalesSvc/WatchdogManager/WatchdogManagerTesterBase.cpp
+                                             306     233    76%   171,176,181-182,203,205,210,214,216,221,251,253,258,262,264,269,409,411,421,423,427,429,449,451,455,457,483,485,490,494,496,501,560-561,614-615,623-624,691,696,698,700-701,703-704,706-707,709-710,712-713,715-716,718-719,721-722,725-726,728-733,735,738,740-743,745-746
+build-fprime-automatic-native-ut/scales/scalesSvc/WatchdogManager/WatchdogManagerTesterBase.hpp
+                                              29      29   100%
+build-fprime-automatic-native-ut/scales/scalesSvc/WatchdogManager/WatchdogManagerTesterHelpers.cpp
+                                              18      18   100%
+lib/fprime-scales/scales/scalesSvc/WatchdogManager/WatchdogManager.cpp
+                                              30      30   100%
+lib/fprime-scales/scales/scalesSvc/WatchdogManager/WatchdogManager.hpp
+                                               4       4   100%
+------------------------------------------------------------------------------
+TOTAL                                        480     338    70%
+------------------------------------------------------------------------------
