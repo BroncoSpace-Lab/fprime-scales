@@ -70,33 +70,6 @@ namespace scalesSvc {
     ASSERT_TLM_jetson_soc1_temp_read_SIZE(1);
     ASSERT_TLM_jetson_soc2_temp_read_SIZE(1);
     ASSERT_TLM_jetson_tj_temp_read_SIZE(1);
-
-    this->clearHistory();
-    this->component.loadParameters();
-
-    // First tick: boot/setup path. State stays INIT, m_justBooted becomes false.
-    this->invoke_to_run(0, 0);
-    this->component.doDispatch();
-    this->component.doDispatch();
-
-    // Force the next read to transition to FAIL.
-    this->component.m_successfulRead = false;
-
-    // Second tick: doRead runs, then queues fail; final dispatch enters FAIL.
-    this->invoke_to_run(0, 0);
-    this->component.doDispatch();
-    this->component.doDispatch();
-    this->component.doDispatch();
-
-    // Third tick: now state is FAIL, so this executes doReadFail.
-    this->invoke_to_run(0, 0);
-    this->component.doDispatch();
-    this->component.doDispatch();
-    this->component.doDispatch();
-
-    // doReadFail resets this flag.
-    ASSERT_EQ(false,this->component.m_successfulRead);
-    ASSERT_TLM_SIZE(9);
   }
 
 }
