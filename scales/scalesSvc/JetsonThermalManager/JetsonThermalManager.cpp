@@ -54,11 +54,12 @@ namespace scalesSvc {
 
   void JetsonThermalManager :: scalesSvc_ThermalStateMachine_action_doRead(SmId smId, scalesSvc_ThermalStateMachine::Signal signal)
   {
+
     // If the device just booted, set up the parameters. If not, then start reading temp
     if (m_justBooted) {
       printf("Device just booted. Setting up parameters...\n");
       m_justBooted = false;
-      
+      m_startTime = this->getTime().getSeconds();
       // Default threshold values, can be updated by sending commands
       this->IDLE_LOW_THR = this->paramGet_JETSON_IDLE_LOW(m_paramIsValid); 
       this->IDLE_HIGH_THR = this->paramGet_JETSON_IDLE_HIGH(m_paramIsValid);
@@ -77,7 +78,7 @@ namespace scalesSvc {
             // this->m_successfulRead = false;
           }
           this->m_jetsonThermalReadings[i].setsensorId(i); 
-          this->m_jetsonThermalReadings[i].settimestamp(this->getTime().getSeconds());
+          this->m_jetsonThermalReadings[i].settimestamp(this->getTime().getSeconds()-m_startTime);
           this->m_jetsonThermalReadings[i].setlocation(Fw::String(indexToZone[i].c_str()));
 
         }

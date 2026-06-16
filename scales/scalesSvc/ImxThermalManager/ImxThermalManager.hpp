@@ -47,6 +47,7 @@ namespace scalesSvc {
     Fw::ParamValid m_paramValid = Fw::ParamValid::VALID;
     F32 m_tempMilliC = 0.0f;
     F32 m_tempC = 0.0f;
+    U32  m_startTime = 0;
     const char* tempPath = "/sys/class/thermal/thermal_zone0/temp";
 
     scalesSvc::ThermalStates m_idleState = scalesSvc::ThermalStates::IDLE;
