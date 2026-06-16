@@ -38,7 +38,11 @@ namespace scalesSvc {
 
 void ImxThermalManager::scalesSvc_ThermalStateMachine_action_doRead(SmId smId, scalesSvc_ThermalStateMachine::Signal signal) {
       
-      m_startTime = this->getTime().getSeconds(); // Record the start time at boot to track uptime in telemetry
+        if (m_justBooted){
+        m_startTime = this->getTime().getSeconds(); // Record the start time at boot to track uptime in telemetry
+        m_justBooted = false;
+      }
+      
       std::ifstream tempFile(tempPath); // Open the temperature file
       // Rob says to use FPrime OSAL for file reading.
       if(tempFile){ //if the file opened successfully, read the data
