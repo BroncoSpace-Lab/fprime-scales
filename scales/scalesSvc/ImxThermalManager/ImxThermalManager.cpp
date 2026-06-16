@@ -56,7 +56,7 @@ void ImxThermalManager::scalesSvc_ThermalStateMachine_action_doRead(SmId smId, s
 
   }
 
-void ImxThermalManager::scalesSvc_ThermalStateMachine_action_paramEvaluate( SmId smId, scalesSvc_ThermalStateMachine::Signal signal){
+void ImxThermalManager::scalesSvc_ThermalStateMachine_action_doEvaluate( SmId smId, scalesSvc_ThermalStateMachine::Signal signal){
   if(paramGet_IMX_CPU_FAULT_LOW(m_paramValid) <= this->m_tempC && this->m_tempC < paramGet_IMX_CPU_WARN_LOW(m_paramValid)){
     this->m_cpu_thermal_read.settempState(scalesSvc::ThermalStates::FAULT); // Set the thermal state to FAULT
     this->tlmWrite_imx_cpu_temp_read(this->m_cpu_thermal_read); // emit the telemetry with the state
@@ -89,7 +89,7 @@ void ImxThermalManager::scalesSvc_ThermalStateMachine_action_paramEvaluate( SmId
   }
 }
 
-  void ImxThermalManager::scalesSvc_ThermalStateMachine_action_readFail(SmId smId, scalesSvc_ThermalStateMachine::Signal signal){
+  void ImxThermalManager::scalesSvc_ThermalStateMachine_action_doReadFail(SmId smId, scalesSvc_ThermalStateMachine::Signal signal){
       
       std::ifstream tempFile(tempPath); // Open the temperature file
       if(tempFile){ //if the file opened successfully, read the data

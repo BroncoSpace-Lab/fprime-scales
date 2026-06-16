@@ -59,14 +59,14 @@ namespace scalesSvc {
           scalesSvc_ThermalStateMachine::Signal signal //!< The signal
       ) override;
 
-      //! Implementation for action paramEvaluate of state machine scalesSvc_ThermalStateMachine
-      void scalesSvc_ThermalStateMachine_action_paramEvaluate(
+      //! Implementation for action doEvaluate of state machine scalesSvc_ThermalStateMachine
+      void scalesSvc_ThermalStateMachine_action_doEvaluate(
           SmId smId, //!< The state machine id
           scalesSvc_ThermalStateMachine::Signal signal //!< The signal
       ) override;
 
-      //! Implementation for action readFail of state machine scalesSvc_ThermalStateMachine
-      void scalesSvc_ThermalStateMachine_action_readFail(
+      //! Implementation for action doReadFail of state machine scalesSvc_ThermalStateMachine
+      void scalesSvc_ThermalStateMachine_action_doReadFail(
           SmId smId, //!< The state machine id
           scalesSvc_ThermalStateMachine::Signal signal //!< The signal
       ) override;

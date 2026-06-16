@@ -11,8 +11,8 @@
 ####
 
 set(SOURCE_FILES
-  "${CMAKE_CURRENT_LIST_DIR}/McpManager.fpp"
-  "${CMAKE_CURRENT_LIST_DIR}/McpManager.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/InaManager.fpp"
+  "${CMAKE_CURRENT_LIST_DIR}/InaManager.cpp"
 )
 
 # Uncomment and add any modules that this component depends on, else
@@ -31,13 +31,13 @@ register_fprime_module()
 
 
 ### Unit Tests ###
-set(UT_SOURCE_FILES
-  "${CMAKE_CURRENT_LIST_DIR}/McpManager.fpp"
-  "${CMAKE_CURRENT_LIST_DIR}/test/ut/McpManagerTestMain.cpp"
-  "${CMAKE_CURRENT_LIST_DIR}/test/ut/McpManagerTester.cpp"
-)
-set(UT_MOD_DEPS
-  STest
-)
-set(UT_AUTO_HELPERS ON)
-register_fprime_ut()
+# set(UT_SOURCE_FILES
+#   "${CMAKE_CURRENT_LIST_DIR}/InaManager.fpp"
+#   "${CMAKE_CURRENT_LIST_DIR}/test/ut/InaManagerTestMain.cpp"
+#   "${CMAKE_CURRENT_LIST_DIR}/test/ut/InaManagerTester.cpp"
+# )
+# set(UT_MOD_DEPS
+#   STest
+# )
+# set(UT_AUTO_HELPERS ON)
+# register_fprime_ut()

@@ -2,8 +2,11 @@ module scalesSvc {
     @ Manager to pull temperature zone data from the Jetson to forward to ThermalManager
     active component JetsonThermalManager {
 
+        @ Bind the ThermalStateMachine to JetsonThermalManager
+        state machine instance jetson_thermalStateMachine: ThermalStateMachine
+
          @ Synchronous input port to handle incoming jetson temp readings
-        async input port jetsonTempRead: Svc.Sched
+        async input port run: Svc.Sched
 
         @ telemetry channel for Jetson CPU temp data
         telemetry jetson_cpu_temp_read: ThermalReading \
@@ -40,6 +43,70 @@ module scalesSvc {
         # telemetry channel for Jetson TJ temp data
         telemetry jetson_tj_temp_read: ThermalReading \
             id 0x08
+
+        ###############################################################################
+        # Telemetry to show the parameters of the Jetson's thermal zones  #
+        ###############################################################################
+
+        @ IDLE Low temperature threshold
+        param JETSON_IDLE_LOW: F32 \
+            default 10 \
+            id 0x00 \ 
+            set opcode 0x01 \
+            save opcode 0x02
+
+        @ IDLE High temperature threshold
+        param JETSON_IDLE_HIGH: F32 \
+            default 60 \
+            id 0x01 \ 
+            set opcode 0x03 \
+            save opcode 0x04
+        
+        @ WARNING Low temperature threshold
+        param JETSON_WARN_LOW: F32 \
+            default -20 \
+            id 0x02 \ 
+            set opcode 0x05 \
+            save opcode 0x06
+
+        @ WARNING High temperature threshold
+        param JETSON_WARN_HIGH: F32 \
+            default 80 \   
+            id 0x03 \ 
+            set opcode 0x07 \
+            save opcode 0x08
+        
+        @ FAULT Low temperature threshold
+        param JETSON_FAULT_LOW: F32 \
+            default -40 \
+            id 0x04 \ 
+            set opcode 0x09 \
+            save opcode 0x10
+        
+        @ FAULT High temperature threshold
+        param JETSON_FAULT_HIGH: F32 \
+            default 100 \
+            id 0x05 \ 
+            set opcode 0x11 \
+            save opcode 0x12
+        
+        @ Telmetry for IDLE state low threshold
+        telemetry JETSON_IDLE_LOW: F32 id 0x16
+
+        @ Telmetry for IDLE state high threshold
+        telemetry JETSON_IDLE_HIGH: F32 id 0x17
+
+        @ Telmetry for WARNING state low threshold
+        telemetry JETSON_WARN_LOW: F32 id 0x18  
+
+        @ Telmetry for WARNING state high threshold
+        telemetry JETSON_WARN_HIGH: F32 id 0x19
+
+        @ Telmetry for FAULT state low threshold
+        telemetry JETSON_FAULT_LOW: F32 id 0x1a
+
+        @ Telmetry for FAULT state high threshold
+        telemetry JETSON_FAULT_HIGH: F32 id 0x1b
 
         ###############################################################################
         # Standard AC Ports: Required for Channels, Events, Commands, and Parameters  #
