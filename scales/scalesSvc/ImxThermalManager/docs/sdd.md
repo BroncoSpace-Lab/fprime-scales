@@ -1,6 +1,6 @@
-# scalesSvc::ThermalManager
+# scalesSvc::ImxThermalManager
 
-Component to manage and monitor thermals in the SCALES system.
+ImxThermalManager to hold parameters and display IMX thermal data
 
 ## Usage Examples
 Add usage examples here

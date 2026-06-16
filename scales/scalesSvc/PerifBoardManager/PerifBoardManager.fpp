@@ -1,20 +1,28 @@
 module scalesSvc {
-    @ Watchdog Manager for SCALES system.
-    active component WatchdogManager {
+    @ Component to automate power sequencing for external ethernet switch board integrated in the SCALES custom hardware stack
+    active component PerifBoardManager {
 
-        @ run handler
+        # One async command/port is required for active components
+    
+        @ input port to run the manager
         async input port run: Svc.Sched
 
-        @ gpio output port
-        output port gpioWatchDog: Drv.GpioWrite
+        @ output port  sending calls to the GPIO driver
+        output port gpioSet: Drv.GpioWrite
 
-        @ telemetry channel to report the state of the watchdog
-        telemetry WatchdogPet: scalesSvc.WatchdogStates
+        @ command to set the state of the gpio
+        async command powerOn(
+            highLow: Fw.On
+        )   @< Sets the state of the GPIO to high
 
-        @ event that updates everytime watchdog is pet
-        event WatchdogState($state: Fw.On) \
+        @ event to report the state of the gpio
+        event gpioOn($state: Fw.On) \
             severity activity high \
-            format "Watchdog is {}"
+            format "Peripheral Board is {}"
+
+        telemetry gpioState: Fw.Logic @< telemetry channel to report the state of the GPIO
+
+        param offTimeSec: U32 default 2 @< Parameter to set the time to wait before re-powering on the board
 
 
         ###############################################################################
@@ -46,6 +54,5 @@ module scalesSvc {
 
         @Port to set the value of a parameter
         param set port prmSetOut
-
     }
 }

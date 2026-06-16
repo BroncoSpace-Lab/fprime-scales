@@ -1,26 +1,30 @@
 module scalesSvc {
-    @ Component to manage and monitor thermals in the SCALES system.
-    active component ThermalManager {
+    @ ImxThermalManager to hold parameters and display IMX thermal data
+    active component ImxThermalManager {
 
-        # Synchronous input port to handle incoming imx cpu temp
+        @ Bind ThermalStateMachine to ImxThermalManager
+        state machine instance thermalStateMachine: ThermalStateMachine
+
+        @ asynchronous input port to handle incoming imx cpu temp
         async input port imxCpuTemp: Svc.Sched
 
-        # Event to send data to GDS. Using ThermalReading struct within theh scalesSVC module
-        @ event for temp read of IMX_CPU
-        event IMXCPUTEMPREAD(
-            imx_thermal: ThermalReading
-        )  severity activity low format "IMX CPU temp Data {}"
-
+        @ output port to send imx thermal state to spacecraft state machine
+        output port imxThermalStateOut: ThermalStateOut
+       
+       @ telemetry channel for imx thermal state
+        telemetry imx_thermal_state: ThermalStates \
+            id 0x00
+       
         @ telemetry channel for IMXCPUTEMP read
         telemetry imx_cpu_temp_read: ThermalReading \
-            id 0x00
+            id 0x01
 
         # Default Parameter bounds for IMX_CPU States
         @ IMX_CPU_IDLE_LOW Parameter 
         param IMX_CPU_IDLE_LOW: F32 \
             default 10.0 \
             id 0x00 \ 
-            set opcode 0x01 \
+            set opcode 0x01 \   
             save opcode 0x02
         
         @ IMX_CPU_IDLE_HIGH Parameter 
@@ -58,8 +62,7 @@ module scalesSvc {
             set opcode 0x11 \
             save opcode 0x12
 
-        
-        ############################################
+        ###############################################################################
         # Standard AC Ports: Required for Channels, Events, Commands, and Parameters  #
         ###############################################################################
         @ Port for requesting the current time

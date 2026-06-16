@@ -13,4 +13,5 @@ module scalesSvc{
     location: string size 32 @< Description of sensor location
     timestamp: U32 @< Timestamp of reading
   }
+
 }

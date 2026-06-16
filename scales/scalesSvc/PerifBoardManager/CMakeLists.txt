@@ -1,4 +1,4 @@
-####
+  ####
 # FPrime CMakeLists.txt:
 #
 # SOURCE_FILES: combined list of source and autocoding files
@@ -11,8 +11,8 @@
 ####
 
 set(SOURCE_FILES
-  "${CMAKE_CURRENT_LIST_DIR}/WatchdogManager.fpp"
-  "${CMAKE_CURRENT_LIST_DIR}/WatchdogManager.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/PerifBoardManager.fpp"
+  "${CMAKE_CURRENT_LIST_DIR}/PerifBoardManager.cpp"
 )
 
 # Uncomment and add any modules that this component depends on, else
@@ -32,9 +32,9 @@ register_fprime_module()
 
 ### Unit Tests ###
 set(UT_SOURCE_FILES
-  "${CMAKE_CURRENT_LIST_DIR}/WatchdogManager.fpp"
-  "${CMAKE_CURRENT_LIST_DIR}/test/ut/WatchdogManagerTestMain.cpp"
-  "${CMAKE_CURRENT_LIST_DIR}/test/ut/WatchdogManagerTester.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/PerifBoardManager.fpp"
+  "${CMAKE_CURRENT_LIST_DIR}/test/ut/PerifBoardManagerTestMain.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/test/ut/PerifBoardManagerTester.cpp"
 )
 set(UT_MOD_DEPS
   STest

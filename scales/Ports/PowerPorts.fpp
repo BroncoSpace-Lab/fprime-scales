@@ -5,11 +5,11 @@ module scalesSvc{
     @ Port for sending current power mode information
     port PowerModeSend(modeNow: PowerModeID)
 
-    @ Port for receiving power data
-    port PowerData(reading: PowerReading)
-
     @ Port for receiving power mode change requests for the Jetson
     port JetsonPowerStateReceive(stateReq: JetsonPowerStateID)
+
+    @ Port for receiving power data
+    port PowerData(reading: PowerReading)
 
     @ Port for sending current power state of the Jetson
     port JetsonPowerStateSend(stateNow: JetsonPowerStateID)
