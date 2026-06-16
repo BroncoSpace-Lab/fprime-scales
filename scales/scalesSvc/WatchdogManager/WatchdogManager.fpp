@@ -2,29 +2,20 @@ module scalesSvc {
     @ Watchdog Manager for SCALES system.
     active component WatchdogManager {
 
-        # One async command/port is required for active components
-        # This should be overridden by the developers with a useful command/port
-        @ TODO
-        async command TODO opcode 0
+        @ run handler
+        async input port run: Svc.Sched
 
-        ##############################################################################
-        #### Uncomment the following examples to start customizing your component ####
-        ##############################################################################
+        @ gpio output port
+        output port gpioWatchDog: Drv.GpioWrite
 
-        # @ Example async command
-        # async command COMMAND_NAME(param_name: U32)
+        @ telemetry channel to report the state of the watchdog
+        telemetry WatchdogPet: scalesSvc.WatchdogStates
 
-        # @ Example telemetry counter
-        # telemetry ExampleCounter: U64
+        @ event that updates everytime watchdog is pet
+        event WatchdogState($state: Fw.On) \
+            severity activity high \
+            format "Watchdog is {}"
 
-        # @ Example event
-        # event ExampleStateEvent(example_state: Fw.On) severity activity high id 0 format "State set to {}"
-
-        # @ Example port: receiving calls from the rate group
-        sync input port schedIn: Svc.Sched
-
-        # @ Example parameter
-        # param PARAMETER_NAME: U32
 
         ###############################################################################
         # Standard AC Ports: Required for Channels, Events, Commands, and Parameters  #
