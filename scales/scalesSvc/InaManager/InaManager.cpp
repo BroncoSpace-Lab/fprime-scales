@@ -153,7 +153,7 @@ namespace scalesSvc {
 
     // Set the class member value of power with 3 decimal places
     sensorData.setpower(
-      std::trunc(this->convertPowerRawToWatts(rawPower) / 1000.0f) / 1000.0f
+      std::trunc(this->convertPowerRawToWatts(rawPower) * 1000.0f) / 1000.0f
     );
 
     return true;

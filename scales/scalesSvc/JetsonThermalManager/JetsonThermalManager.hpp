@@ -96,6 +96,7 @@ namespace scalesSvc {
       bool m_justBooted; // Whether the device has just booted, used to determine whether to set up parameters or read temp on first tick
       bool m_successfulRead; // Whether the most recent read was successful, used to determine whether to transition to EVALUATE or FAIL state
       Fw::ParamValid m_paramIsValid = Fw::ParamValid::VALID;
+      U32  m_startTime = 0;
 
       /* Telemetry values for temperature thresholds */
       F32 IDLE_LOW_THR;
