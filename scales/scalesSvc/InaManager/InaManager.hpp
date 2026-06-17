@@ -28,7 +28,7 @@ namespace scalesSvc {
       //! Destroy InaManager object
       ~InaManager();
 
-    PRIVATE:
+    private:
 
       // ----------------------------------------------------------------------
       // Handler implementations for typed input ports

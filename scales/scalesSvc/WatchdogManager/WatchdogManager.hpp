@@ -30,7 +30,7 @@ namespace scalesSvc {
       //! Destroy WatchdogManager object
       ~WatchdogManager();
 
-    PRIVATE:
+    private:
 
       // ----------------------------------------------------------------------
       // Handler implementations for typed input ports

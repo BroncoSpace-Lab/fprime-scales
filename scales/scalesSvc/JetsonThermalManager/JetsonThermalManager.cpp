@@ -71,15 +71,15 @@ namespace scalesSvc {
         for (int i = 0; i < 9; i++){
           F32 temp;
           if (this->readTemp(i, temp)) {
-            this->m_jetsonThermalReadings[i].settemperature(temp);
+            this->m_jetsonThermalReadings[i].set_temperature(temp);
           }
           else {
-            this->m_jetsonThermalReadings[i].settemperature(0.0f);
+            this->m_jetsonThermalReadings[i].set_temperature(0.0f);
             // this->m_successfulRead = false;
           }
-          this->m_jetsonThermalReadings[i].setsensorId(i); 
-          this->m_jetsonThermalReadings[i].settimestamp(this->getTime().getSeconds()-m_startTime);
-          this->m_jetsonThermalReadings[i].setlocation(Fw::String(indexToZone[i].c_str()));
+          this->m_jetsonThermalReadings[i].set_sensorId(i); 
+          this->m_jetsonThermalReadings[i].set_timestamp(this->getTime().getSeconds()-m_startTime);
+          this->m_jetsonThermalReadings[i].set_location(Fw::String(indexToZone[i].c_str()));
 
         }
 
@@ -96,8 +96,8 @@ namespace scalesSvc {
   {
     printf("Evaluating temperature readings against thresholds and updating telemetry...\n");
     for (int i = 0; i < 9; i++){
-        scalesSvc::ThermalStates tempState = this->determineTempState(this->m_jetsonThermalReadings[i].gettemperature());
-        this->m_jetsonThermalReadings[i].settempState(tempState); // Set the temp state
+        scalesSvc::ThermalStates tempState = this->determineTempState(this->m_jetsonThermalReadings[i].get_temperature());
+        this->m_jetsonThermalReadings[i].set_tempState(tempState); // Set the temp state
         
         switch(i){
           case 0:

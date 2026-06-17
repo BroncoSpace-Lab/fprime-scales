@@ -49,9 +49,9 @@ namespace scalesSvc {
     U32 currentTime = getTime().getSeconds() - m_startTime; 
 
     // Set the current time for each object's timestamp variable
-    jetsonData.settimestamp(currentTime);
-    obcData.settimestamp(currentTime);
-    peripheralData.settimestamp(currentTime);
+    jetsonData.set_timestamp(currentTime);
+    obcData.set_timestamp(currentTime);
+    peripheralData.set_timestamp(currentTime);
 
     // Write to the telemetry channel for each INA260 sensor
     if (this->readSensorOnce(jetsonData)) {
@@ -129,30 +129,30 @@ namespace scalesSvc {
     U16 rawVoltage = 0;
     U16 rawPower = 0;
 
-    if (this->readRegister16(sensorData.getsourceId(), INA260_REG_CURRENT, rawCurrent) != Drv::I2cStatus::I2C_OK) {
+    if (this->readRegister16(sensorData.get_sourceId(), INA260_REG_CURRENT, rawCurrent) != Drv::I2cStatus::I2C_OK) {
       return false;
     }
 
-    if (this->readRegister16(sensorData.getsourceId(), INA260_REG_VOLTAGE, rawVoltage) != Drv::I2cStatus::I2C_OK) {
+    if (this->readRegister16(sensorData.get_sourceId(), INA260_REG_VOLTAGE, rawVoltage) != Drv::I2cStatus::I2C_OK) {
       return false;
     }
 
-    if (this->readRegister16(sensorData.getsourceId(), INA260_REG_POWER, rawPower) != Drv::I2cStatus::I2C_OK) {
+    if (this->readRegister16(sensorData.get_sourceId(), INA260_REG_POWER, rawPower) != Drv::I2cStatus::I2C_OK) {
       return false;
     }
 
     // Set the class member value of current with 3 decimal places
-    sensorData.setcurrent(
+    sensorData.set_current(
       std::trunc(this->convertCurrentRawToAmps(rawCurrent) * 1000.0f) / 1000.0f
     );
 
-    // Set the class member value of votlage with 3 decimal places
-    sensorData.setvoltage(
+    // Set the class member value of voltage with 3 decimal places
+    sensorData.set_voltage(
       std::trunc(this->convertVoltageRawToVolts(rawVoltage) * 1000.0f) / 1000.0f
     );
 
     // Set the class member value of power with 3 decimal places
-    sensorData.setpower(
+    sensorData.set_power(
       std::trunc(this->convertPowerRawToWatts(rawPower) * 1000.0f) / 1000.0f
     );
 
