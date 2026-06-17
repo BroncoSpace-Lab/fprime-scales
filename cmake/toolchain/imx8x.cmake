@@ -38,7 +38,8 @@
 
 
 ## STEP 2: Specify the target system's name. i.e. raspberry-pi-3
-set(CMAKE_SYSTEM_NAME "imx8x")
+set(CMAKE_SYSTEM_NAME "Generic")
+set(FPRIME_PLATFORM imx8x)
 
 if(DEFINED ENV{IMX_C_COMPILER})
     message("The IMX8X toolchain path is set to $ENV{IMX_C_COMPILER}")

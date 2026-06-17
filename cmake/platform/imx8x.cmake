@@ -67,15 +67,15 @@ if (NOT DEFINED FPRIME_USE_BAREMETAL_SCHEDULER)
    FIND_PACKAGE ( Threads REQUIRED )
 endif()
 
-choose_fprime_implementation(Os/File Os/File/Posix)
-choose_fprime_implementation(Os/Console Os/Console/Posix)
-choose_fprime_implementation(Os/Task Os/Task/Posix)
-choose_fprime_implementation(Os/Mutex Os/Mutex/Posix)
-choose_fprime_implementation(Os/Queue Os/Generic/PriorityQueue)
-choose_fprime_implementation(Os/RawTime Os/RawTime/Posix)
+# choose_fprime_implementation(Os/File Os/File/Posix)
+# choose_fprime_implementation(Os/Console Os/Console/Posix)
+# choose_fprime_implementation(Os/Task Os/Task/Posix)
+# choose_fprime_implementation(Os/Mutex Os/Mutex/Posix)
+# choose_fprime_implementation(Os/Queue Os/Generic/PriorityQueue)
+# choose_fprime_implementation(Os/RawTime Os/RawTime/Posix)
 
-choose_fprime_implementation(Os/Cpu Os/Cpu/Stub)
-choose_fprime_implementation(Os/Memory Os/Memory/Stub)
+# choose_fprime_implementation(Os/Cpu Os/Cpu/Stub)
+# choose_fprime_implementation(Os/Memory Os/Memory/Stub)
 
 set(FPRIME_USE_POSIX ON)
 # STEP 5: Specify a directory containing the "PlatformTypes.hpp" headers, as well

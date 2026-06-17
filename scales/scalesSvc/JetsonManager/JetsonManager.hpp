@@ -29,7 +29,7 @@ namespace scalesSvc {
       //! Destroy JetsonManager object
       ~JetsonManager();
 
-    PRIVATE:
+    private:
 
       // ----------------------------------------------------------------------
       // Handler implementations for typed input ports
@@ -59,7 +59,7 @@ namespace scalesSvc {
           U32 context //!< The call order
       ) override;
 
-    PRIVATE:
+    private:
 
       // ----------------------------------------------------------------------
       // Handler implementations for commands
@@ -86,7 +86,7 @@ namespace scalesSvc {
           scalesSvc::JetsonPowerStateID jetsonState //!< Requested power state (on/off)
       ) override;
 
-      PRIVATE:
+      private:
 
        // ----------------------------------------------------------------------
       // Deferred command state for REQUEST_POWER_MODE

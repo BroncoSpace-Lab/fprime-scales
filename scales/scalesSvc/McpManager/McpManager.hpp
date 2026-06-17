@@ -39,7 +39,7 @@ namespace scalesSvc {
       //! Destroy McpManager object
       ~McpManager();
       
-    PRIVATE:
+    private:
 
       // ----------------------------------------------------------------------
       // Handler implementations for typed input ports
@@ -53,7 +53,7 @@ namespace scalesSvc {
           U32 context //!< The call order
       ) override;
 
-    PRIVATE:
+    private:
 
       /* Implementation-specific members */
       scalesSvc::ThermalReading m_thermalReadings[3]; //!< The 3 thermal readings to be logged to telemetry 
@@ -72,7 +72,7 @@ namespace scalesSvc {
       F32 FAULT_LOW_THR;
       F32 FAULT_HIGH_THR;
 
-    PRIVATE:
+    private:
 
       // ----------------------------------------------------------------------
       // Implementations for internal state machine actions

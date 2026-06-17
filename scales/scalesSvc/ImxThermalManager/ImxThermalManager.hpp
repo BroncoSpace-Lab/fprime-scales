@@ -34,7 +34,7 @@ namespace scalesSvc {
       //! Destroy ImxThermalManager object
       ~ImxThermalManager();
 
-    PRIVATE:
+    private:
 
       
       //! Handler implementation for imxCpuTemp
