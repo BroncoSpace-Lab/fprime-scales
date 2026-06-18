@@ -14,6 +14,8 @@ namespace scalesSvc {
     public InaManagerComponentBase
   {
 
+    friend class InaManagerTester;
+
     public:
 
       // ----------------------------------------------------------------------
@@ -42,9 +44,9 @@ namespace scalesSvc {
           U32 context //!< The call order
       ) override;
 
-      static constexpr U32 INA260_REG_CURRENT = 0x01; // current register address
-      static constexpr U32 INA260_REG_VOLTAGE = 0x02; // voltage register address
-      static constexpr U32 INA260_REG_POWER = 0x03; // power register address
+      static constexpr U8 INA260_REG_CURRENT = 0x01; // current register address
+      static constexpr U8 INA260_REG_VOLTAGE = 0x02; // voltage register address
+      static constexpr U8 INA260_REG_POWER = 0x03; // power register address
 
       static constexpr U32 INA260_I2C_ADDRESS_JETSON = 0x40; // Jetson subsystem INA260 address
       static constexpr U32 INA260_I2C_ADDRESS_OBC = 0x41; // OBC subsystem INA260 address

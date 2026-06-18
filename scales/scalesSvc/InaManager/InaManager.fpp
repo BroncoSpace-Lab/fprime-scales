@@ -34,7 +34,7 @@ module scalesSvc {
             format "INA260 I2C read failed for register 0x{} with status {}"
 
         event SensorReadComplete(current_mA: F32, voltage_mV: F32, power_mW: F32) severity activity high \
-            format "INA260 read complete: current {} mA, voltage {} mV, power {} mW"
+            format "INA260 read complete: current {} A, voltage {} V, power {} W"
             
         # @ Example port: receiving calls from the rate group
         # sync input port run: Svc.Sched

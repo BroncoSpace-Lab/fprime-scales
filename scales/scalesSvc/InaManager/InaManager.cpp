@@ -42,11 +42,11 @@ namespace scalesSvc {
     // Evaluate the start time of time
     if (m_justBooted == true) {
       m_justBooted = false;
-      m_startTime = getTime().getSeconds();
+      m_startTime = this->getTime().getSeconds();
     }
   
     // Evaluate the current time by subtracting the start time from the current time
-    U32 currentTime = getTime().getSeconds() - m_startTime; 
+    U32 currentTime = (this->getTime().getSeconds()) - m_startTime; 
 
     // Set the current time for each object's timestamp variable
     jetsonData.settimestamp(currentTime);
@@ -86,7 +86,7 @@ namespace scalesSvc {
       this->busWriteRead_out(0, sensorAddress, writeBuffer, readBuffer);
 
     if(status != Drv::I2cStatus::I2C_OK) {
-      this->log_WARNING_HI_I2cReadFailed(registerAddress, static_cast<I32>(status.e));
+      this->log_WARNING_HI_I2cReadFailed(registerAddress, static_cast<I32>(status));
       return status;
     }
 
@@ -141,20 +141,24 @@ namespace scalesSvc {
       return false;
     }
 
-    // Set the class member value of current with 3 decimal places
-    sensorData.setcurrent(
-      std::trunc(this->convertCurrentRawToAmps(rawCurrent) * 1000.0f) / 1000.0f
-    );
+    sensorData.setcurrent(this->convertCurrentRawToAmps(rawCurrent));
+    sensorData.setvoltage(this->convertVoltageRawToVolts(rawVoltage));
+    sensorData.setpower(this->convertPowerRawToWatts(rawPower));
 
-    // Set the class member value of votlage with 3 decimal places
-    sensorData.setvoltage(
-      std::trunc(this->convertVoltageRawToVolts(rawVoltage) * 1000.0f) / 1000.0f
-    );
+    // // Set the class member value of current with 3 decimal places
+    // sensorData.setcurrent(
+    //   std::trunc(this->convertCurrentRawToAmps(rawCurrent) * 1000.0f) / 1000.0f
+    // );
 
-    // Set the class member value of power with 3 decimal places
-    sensorData.setpower(
-      std::trunc(this->convertPowerRawToWatts(rawPower) / 1000.0f) / 1000.0f
-    );
+    // // Set the class member value of votlage with 3 decimal places
+    // sensorData.setvoltage(
+    //   std::trunc(this->convertVoltageRawToVolts(rawVoltage) * 1000.0f) / 1000.0f
+    // );
+
+    // // Set the class member value of power with 3 decimal places
+    // sensorData.setpower(
+    //   std::trunc(this->convertPowerRawToWatts(rawPower) * 1000.0f) / 1000.0f
+    // );
 
     return true;
   }
