@@ -44,44 +44,52 @@
 #           to prevent a raw-copy from being treated as a valid toolchain file.
 ####
 
-## STEP 1: DELETE the following fail-safe line
-# message(FATAL_ERROR "\n[F-PRIME] Platform must be filled before use.\n")
+####
+# IMX8X platform file for F Prime 4.x
+#
+# Compiler, sysroot, CMAKE_SYSTEM_NAME, and FPRIME_PLATFORM are handled by:
+#   lib/fprime-scales/cmake/toolchain/imx8x.cmake
+####
 
-## STEP 2: Specify the OS type include directive i.e. LINUX or DARWIN
-add_definitions(-DTGT_OS_TYPE_LINUX)
+# Target behaves like Linux/POSIX
+set(FPRIME_USE_POSIX ON)
+set(FPRIME_HAS_SOCKETS ON)
 
-# STEP 3: Specify CMAKE C and CXX compile flags. DO NOT clear existing flags
-set(CMAKE_C_FLAGS
-  "${CMAKE_C_FLAGS} -mcpu=cortex-a35+crc+crypto -mbranch-protection=standard -fstack-protector-strong  -O2 -D_FORTIFY_SOURCE=2 -Wformat -Wformat-security -Werror=format-security --sysroot=/opt/ampliphy-vendor/5.0.4-devel/sysroots/cortexa35-phytec-linux"
-)
-set(CMAKE_CXX_FLAGS
-  "${CMAKE_CXX_FLAGS} -mcpu=cortex-a35+crc+crypto -mbranch-protection=standard -fstack-protector-strong  -O2 -D_FORTIFY_SOURCE=2 -Wformat -Wformat-security -Werror=format-security --sysroot=/opt/ampliphy-vendor/5.0.4-devel/sysroots/cortexa35-phytec-linux"
-)
-
-# STEP 4: Specify that a thread package should be searched in the toolchain
-#         directory. NOTE: when running without threads, remove this line.
-#         Here there is a check for the using baremetal scheduler
+# Use threads unless explicitly building with the baremetal scheduler
 if (NOT DEFINED FPRIME_USE_BAREMETAL_SCHEDULER)
-   set(FPRIME_USE_BAREMETAL_SCHEDULER OFF)
-   message(STATUS "Requiring thread library")
-   FIND_PACKAGE ( Threads REQUIRED )
+    set(FPRIME_USE_BAREMETAL_SCHEDULER OFF)
 endif()
 
-choose_fprime_implementation(Os/File Os/File/Posix)
-choose_fprime_implementation(Os/Console Os/Console/Posix)
-choose_fprime_implementation(Os/Task Os/Task/Posix)
-choose_fprime_implementation(Os/Mutex Os/Mutex/Posix)
-choose_fprime_implementation(Os/Queue Os/Generic/PriorityQueue)
-choose_fprime_implementation(Os/RawTime Os/RawTime/Posix)
+if (NOT FPRIME_USE_BAREMETAL_SCHEDULER)
+    message(STATUS "Requiring thread library")
+    find_package(Threads REQUIRED)
+endif()
 
-choose_fprime_implementation(Os/Cpu Os/Cpu/Stub)
-choose_fprime_implementation(Os/Memory Os/Memory/Stub)
+# Pull in the standard Unix platform types/config support
+add_fprime_subdirectory("${FPRIME_FRAMEWORK_PATH}/cmake/platform/unix/Platform/")
 
-set(FPRIME_USE_POSIX ON)
-# STEP 5: Specify a directory containing the "PlatformTypes.hpp" headers, as well
-#         as other system headers. Other global headers can be placed here.
-#         Note: Typically, the Linux directory is a good default, as it grabs
-#         standard types from <cstdint>.
-add_definitions(-DTGT_OS_TYPE_LINUX)
-# include_directories(SYSTEM "${FPRIME_FRAMEWORK_PATH}/Fw/Types/Linux")
-include_directories(SYSTEM "${CMAKE_CURRENT_LIST_DIR}/types")
+# F Prime 4.x platform configuration
+register_fprime_config(
+    PlatformImx8x
+
+    INTERFACE
+
+    CHOOSES_IMPLEMENTATIONS
+        Os_File_Posix
+        Os_Console_Posix
+        Os_Task_Posix
+        Os_Mutex_Posix
+        Os_Generic_PriorityQueue
+        Os_RawTime_Posix
+        Os_Cpu_Stub
+        Os_Memory_Stub
+
+    BASE_CONFIG
+)
+
+target_compile_definitions(PlatformImx8x INTERFACE -DTGT_OS_TYPE_LINUX)
+
+# Your custom PlatformTypes.hpp location, if you still need it.
+# Leave this enabled only if lib/fprime-scales/cmake/platform/types/PlatformTypes.hpp exists
+# and you intentionally want it instead of the standard Unix platform types.
+target_include_directories(PlatformImx8x INTERFACE "${CMAKE_CURRENT_LIST_DIR}/types")
