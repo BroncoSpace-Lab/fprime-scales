@@ -38,6 +38,7 @@ register_fprime_config(
         Fw_StringFormat_snprintf
         Os_Cpu_Stub
         Os_Memory_Stub
+        Fw_StringScan_sscanf
 
     BASE_CONFIG
 )
