@@ -29,7 +29,7 @@ namespace scalesSvc {
       m_hasPendingPowerCmd(false),
       m_pendingPowerOpCode(0),
       m_pendingPowerCmdSeq(0),
-      m_requestedPowerState(scalesSvc::JetsonPowerStateID::UNKNOWN),
+      m_requestedPowerState(scalesSvc::JetsonPowerStateID::OFF),
       m_powerTimeoutTicks(0),
       m_waitingToCutJetsonPower(false),
       m_powerOffDelayTicks(0)
@@ -192,11 +192,6 @@ namespace scalesSvc {
         scalesSvc::JetsonPowerStateID jetsonState
     )
   {
-      if (jetsonState.e == JetsonPowerStateID::UNKNOWN) {
-        this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::VALIDATION_ERROR);
-        return;
-      }
-
       if (m_hasPendingPowerCmd) {
         this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::BUSY);
         return;
