@@ -5,9 +5,12 @@
 // ======================================================================
 
 #include "scales/scalesSvc/ImxThermalManager/ImxThermalManager.hpp"
-#include <fstream>
-#include <iostream>
+#include <Fw/Types/StringUtils.hpp>
+#include <Os/File.hpp>
 
+namespace {
+  constexpr FwSizeType TEMP_FILE_BUFFER_SIZE = 32;
+}
 
 namespace scalesSvc {
 
@@ -36,6 +39,41 @@ namespace scalesSvc {
       this->thermalStateMachine_sendSignal_tick();
 }
 
+bool ImxThermalManager::readTemperatureFile() {
+  Os::File tempFile;
+  Os::File::Status fileStatus = tempFile.open(this->tempPath, Os::File::Mode::OPEN_READ);
+  if (fileStatus != Os::File::Status::OP_OK) {
+    return false;
+  }
+
+  CHAR tempBuffer[TEMP_FILE_BUFFER_SIZE] = {};
+  FwSizeType readSize = sizeof(tempBuffer) - 1;
+  fileStatus = tempFile.read(reinterpret_cast<U8*>(tempBuffer), readSize, Os::File::WaitType::NO_WAIT);
+  tempFile.close();
+  if ((fileStatus != Os::File::Status::OP_OK) || (readSize == 0)) {
+    return false;
+  }
+  tempBuffer[readSize] = '\0';
+
+  I32 tempMilliC = 0;
+  CHAR* parseEnd = nullptr;
+  Fw::StringUtils::StringToNumberStatus parseStatus =
+      Fw::StringUtils::string_to_number(tempBuffer, sizeof(tempBuffer), tempMilliC, &parseEnd, 10);
+  if ((parseStatus != Fw::StringUtils::StringToNumberStatus::SUCCESSFUL_CONVERSION) || (parseEnd == nullptr)) {
+    return false;
+  }
+  while ((*parseEnd == ' ') || (*parseEnd == '\t') || (*parseEnd == '\r') || (*parseEnd == '\n')) {
+    parseEnd++;
+  }
+  if (*parseEnd != '\0') {
+    return false;
+  }
+
+  this->m_tempMilliC = static_cast<F32>(tempMilliC);
+  this->m_tempC = this->m_tempMilliC / 1000.0F;
+  return true;
+}
+
 void ImxThermalManager::scalesSvc_ThermalStateMachine_action_doRead(SmId smId, scalesSvc_ThermalStateMachine::Signal signal) {
       
         if (m_justBooted){
@@ -43,11 +81,7 @@ void ImxThermalManager::scalesSvc_ThermalStateMachine_action_doRead(SmId smId, s
         m_justBooted = false;
       }
       
-      std::ifstream tempFile(tempPath); // Open the temperature file
-      // Rob says to use FPrime OSAL for file reading.
-      if(tempFile){ //if the file opened successfully, read the data
-      tempFile >> this->m_tempMilliC;         // Read the raw temperature value into the variable
-      this->m_tempC = this->m_tempMilliC / 1000.0f; // Convert from millidegrees Celsius to Celsius
+      if(this->readTemperatureFile()){ //if the file opened and parsed successfully, read the data
       (this->m_cpu_thermal_read).set_temperature(m_tempC);
       (this->m_cpu_thermal_read).set_sensorId(0);
       (this->m_cpu_thermal_read).set_location(Fw::String("CPU"));
@@ -96,10 +130,7 @@ void ImxThermalManager::scalesSvc_ThermalStateMachine_action_doEvaluate( SmId sm
 
   void ImxThermalManager::scalesSvc_ThermalStateMachine_action_doReadFail(SmId smId, scalesSvc_ThermalStateMachine::Signal signal){
       
-      std::ifstream tempFile(tempPath); // Open the temperature file
-      if(tempFile){ //if the file opened successfully, read the data
-      tempFile >> this->m_tempMilliC;         // Read the raw temperature value into the variable
-      this->m_tempC = this->m_tempMilliC / 1000.0f; // Convert from millidegrees Celsius to Celsius
+      if(this->readTemperatureFile()){ //if the file opened and parsed successfully, read the data
       this->thermalStateMachine_sendSignal_success();
       }
       else{

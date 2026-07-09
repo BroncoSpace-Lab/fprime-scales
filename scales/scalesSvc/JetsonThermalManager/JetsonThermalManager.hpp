@@ -8,8 +8,6 @@
 #define scalesSvc_JetsonThermalManager_HPP
 
 #include "scales/scalesSvc/JetsonThermalManager/JetsonThermalManagerComponentAc.hpp"
-#include <fstream>
-#include <iostream>
 
 
 namespace scalesSvc {
@@ -31,6 +29,10 @@ namespace scalesSvc {
 
       //! Destroy JetsonThermalManager object
       ~JetsonThermalManager();
+
+      void setTempPathTemplate(const char* pathTemplate) {
+        this->m_tempPathTemplate = pathTemplate;
+      }
 
     private:
 
@@ -97,6 +99,7 @@ namespace scalesSvc {
       bool m_successfulRead; // Whether the most recent read was successful, used to determine whether to transition to EVALUATE or FAIL state
       Fw::ParamValid m_paramIsValid = Fw::ParamValid::VALID;
       U32  m_startTime = 0;
+      const char* m_tempPathTemplate = "/sys/class/thermal/thermal_zone%u/temp";
 
       /* Telemetry values for temperature thresholds */
       F32 IDLE_LOW_THR;

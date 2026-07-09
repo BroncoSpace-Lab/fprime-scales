@@ -60,6 +60,18 @@ namespace scalesSvc {
       // Helper functions
       // ----------------------------------------------------------------------
 
+      //! Write a sysfs-style millidegree Celsius value through the OSAL
+      void writeTemperatureFile(const char* path, F32 tempC);
+
+      //! Run a tick through the component and dispatch the resulting state-machine action
+      void runTickAction();
+
+      //! Read the currently configured temperature file and evaluate the result
+      void readAndEvaluateTemperature();
+
+      //! Assert the latest thermal telemetry reading
+      void assertLatestReading(FwSizeType expectedHistorySize, F32 tempC, scalesSvc::ThermalStates expectedState);
+
       //! Connect ports
       void connectPorts();
 

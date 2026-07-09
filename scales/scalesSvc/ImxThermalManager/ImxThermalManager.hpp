@@ -55,6 +55,8 @@ namespace scalesSvc {
     scalesSvc::ThermalStates m_warnState = scalesSvc::ThermalStates::WARN;
     scalesSvc::ThermalStates m_faultState = scalesSvc::ThermalStates::FAULT;
 
+    bool readTemperatureFile();
+
     //! Implementation for action doRead of state machine scalesSvc_ThermalStateMachine
       void scalesSvc_ThermalStateMachine_action_doRead(
           SmId smId, //!< The state machine id
