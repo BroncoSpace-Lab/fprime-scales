@@ -22,7 +22,6 @@ module scalesSvc{
   enum JetsonPowerStateID: U8 {
     OFF = 0 @< Jetson is powered off
     ON = 1 @< Jetson is powered on
-    UNKNOWN = 2 @< Power state is unknown
   }
 
   struct JetsonPowerState {
