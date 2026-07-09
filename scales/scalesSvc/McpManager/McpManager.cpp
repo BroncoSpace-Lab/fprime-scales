@@ -73,22 +73,22 @@ namespace scalesSvc {
       this->FAULT_LOW_THR = this->paramGet_MCP_FAULT_LOW(m_paramIsValid);
       this->FAULT_HIGH_THR = this->paramGet_MCP_FAULT_HIGH(m_paramIsValid);
     } else {
-        printf("Reading temperature data from sensors...\n");
+        // printf("Reading temperature data from sensors...\n");
         // Read temp data from sensors and log to telemetry
         for (int i = 0; i < 3; i++){
           // this->m_thermalReadings[i].settemperature(this->readTemp(deviceAddrs[i])); 
 
           F32 tempCelsius;
           if (this->readTemp(deviceAddrs[i], tempCelsius)){
-            this->m_thermalReadings[i].settemperature(tempCelsius);
+            this->m_thermalReadings[i].set_temperature(tempCelsius);
           } else {
-            this->m_thermalReadings[i].settemperature(0.0f); // Set temp to 0 if the read failed, which will be evaluated as IDLE in determineTempState, and log the failure in the next state
+            this->m_thermalReadings[i].set_temperature(0.0f); // Set temp to 0 if the read failed, which will be evaluated as IDLE in determineTempState, and log the failure in the next state
             m_successfulRead = false; // Set successful read flag to false if any read failed, which will be used to determine state machine transition in the next states
           }
 
-          this->m_thermalReadings[i].setsensorId(i + 1);
-          this->m_thermalReadings[i].settimestamp(this->getTime().getSeconds()- m_startTime); // Log uptime in seconds as the timestamp for telemetry
-          this->m_thermalReadings[i].setlocation(Fw::String(indexToLocation[i].c_str()));
+          this->m_thermalReadings[i].set_sensorId(i + 1);
+          this->m_thermalReadings[i].set_timestamp(this->getTime().getSeconds()- m_startTime); // Log uptime in seconds as the timestamp for telemetry
+          this->m_thermalReadings[i].set_location(Fw::String(indexToLocation[i].c_str()));
         }
 
         // // Logs to each sensor's respective telemetry channel
@@ -109,10 +109,10 @@ namespace scalesSvc {
 
   void McpManager :: scalesSvc_ThermalStateMachine_action_doEvaluate(SmId smId, scalesSvc_ThermalStateMachine::Signal signal)
   {
-    printf("Evaluating thermal readings against thresholds...\n");
+    // printf("Evaluating thermal readings against thresholds...\n");
     for (int i = 0; i < 3; i++){
-      scalesSvc::ThermalStates tempState = this->determineTempState(this->m_thermalReadings[i].gettemperature());
-      this->m_thermalReadings[i].settempState(tempState); // Set the temp state in the reading struct to log to telemetry
+      scalesSvc::ThermalStates tempState = this->determineTempState(this->m_thermalReadings[i].get_temperature());
+      this->m_thermalReadings[i].set_tempState(tempState); // Set the temp state in the reading struct to log to telemetry
       switch(i){
         case 0:
           this->tlmWrite_IMX_TEMP(m_thermalReadings[0]);

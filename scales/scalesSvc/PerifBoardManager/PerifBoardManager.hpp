@@ -29,7 +29,7 @@ namespace scalesSvc {
       //! Destroy PerifBoardManager object
       ~PerifBoardManager();
 
-    PRIVATE:
+    private:
 
       // ----------------------------------------------------------------------
       // Handler implementations for typed input ports
@@ -46,7 +46,7 @@ namespace scalesSvc {
           U32 context //!< The call order
       ) override;
 
-    PRIVATE:
+    private:
 
       // ----------------------------------------------------------------------
       // Handler implementations for commands

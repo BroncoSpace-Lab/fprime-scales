@@ -32,7 +32,7 @@ namespace scalesSvc {
       //! Destroy JetsonThermalManager object
       ~JetsonThermalManager();
 
-    PRIVATE:
+    private:
 
       // ----------------------------------------------------------------------
       // Handler implementations for typed input ports
@@ -46,7 +46,7 @@ namespace scalesSvc {
           U32 context //!< The call order
       ) override;
 
-    PRIVATE:
+    private:
 
       // ----------------------------------------------------------------------
       // Implementations for internal state machine actions
@@ -89,7 +89,7 @@ namespace scalesSvc {
 
       scalesSvc::ThermalStates determineTempState(F32 tempCelsius); //!< Function to determine the temperature state (IDLE, WARNING, FAULT) based on the temperature in Celsius
     
-    PRIVATE:
+    private:
 
       // Private instance variables/specific members
       scalesSvc::ThermalReading m_jetsonThermalReadings[9]; //!< The 9 thermal zones on the jetson
