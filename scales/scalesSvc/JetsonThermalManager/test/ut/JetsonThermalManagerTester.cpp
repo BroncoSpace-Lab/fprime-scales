@@ -63,6 +63,21 @@ namespace scalesSvc {
     ASSERT_EQ(static_cast<FwSizeType>(textSize), writeSize);
   }
 
+  void JetsonThermalManagerTester :: removeTemperatureFile(U8 index)
+  {
+    CHAR path[160];
+    const int pathSize = std::snprintf(
+        path,
+        sizeof(path),
+        this->m_tempPathTemplate,
+        static_cast<unsigned int>(index)
+    );
+    ASSERT_GT(pathSize, 0);
+    ASSERT_LT(static_cast<FwSizeType>(pathSize), static_cast<FwSizeType>(sizeof(path)));
+
+    static_cast<void>(std::remove(path));
+  }
+
   void JetsonThermalManagerTester :: runTickAction()
   {
     this->invoke_to_run(0, 0);
@@ -163,7 +178,7 @@ namespace scalesSvc {
     ASSERT_TLM_SIZE(0);
 
     const F32 firstTemps[9] = {42.0F, 75.0F, 80.0F, 0.0F, -30.0F, 55.0F, 65.0F, 10.0F, 100.0F};
-    const F32 secondTemps[9] = {15.0F, 61.0F, 81.0F, 9.0F, -21.0F, -39.0F, 60.0F, 79.0F, 101.0F};
+    const F32 secondTemps[9] = {15.0F, 61.0F, 0.0F, 0.0F, 0.0F, -39.0F, 60.0F, 79.0F, 101.0F};
     const char* locations[9] = {"CPU", "GPU", "CV0", "CV1", "CV2", "SOC0", "SOC1", "SOC2", "TJ"};
     const scalesSvc::ThermalStates firstStates[9] = {
         scalesSvc::ThermalStates::IDLE,
@@ -179,9 +194,9 @@ namespace scalesSvc {
     const scalesSvc::ThermalStates secondStates[9] = {
         scalesSvc::ThermalStates::IDLE,
         scalesSvc::ThermalStates::WARN,
-        scalesSvc::ThermalStates::FAULT,
-        scalesSvc::ThermalStates::WARN,
-        scalesSvc::ThermalStates::FAULT,
+        scalesSvc::ThermalStates::NOT_USED,
+        scalesSvc::ThermalStates::NOT_USED,
+        scalesSvc::ThermalStates::NOT_USED,
         scalesSvc::ThermalStates::FAULT,
         scalesSvc::ThermalStates::IDLE,
         scalesSvc::ThermalStates::WARN,
@@ -198,7 +213,11 @@ namespace scalesSvc {
     }
 
     for (U8 i = 0; i < 9; i++) {
-      this->writeTemperatureFile(i, secondTemps[i]);
+      if ((i >= 2) && (i <= 4)) {
+        this->removeTemperatureFile(i);
+      } else {
+        this->writeTemperatureFile(i, secondTemps[i]);
+      }
     }
     this->readAndEvaluateTemperatures();
     ASSERT_TLM_SIZE(18);

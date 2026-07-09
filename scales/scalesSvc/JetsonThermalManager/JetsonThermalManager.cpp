@@ -79,9 +79,11 @@ namespace scalesSvc {
           F32 temp;
           if (this->readTemp(i, temp)) {
             this->m_jetsonThermalReadings[i].set_temperature(temp);
+            this->m_jetsonThermalReadings[i].set_tempState(this->determineTempState(temp));
           }
           else {
-            this->m_jetsonThermalReadings[i].set_temperature(0.0f);
+            this->m_jetsonThermalReadings[i].set_temperature(0.0F);
+            this->m_jetsonThermalReadings[i].set_tempState(scalesSvc::ThermalStates::NOT_USED);
             // this->m_successfulRead = false;
           }
           this->m_jetsonThermalReadings[i].set_sensorId(i); 
@@ -103,8 +105,10 @@ namespace scalesSvc {
   {
     printf("Evaluating temperature readings against thresholds and updating telemetry...\n");
     for (int i = 0; i < 9; i++){
-        scalesSvc::ThermalStates tempState = this->determineTempState(this->m_jetsonThermalReadings[i].get_temperature());
-        this->m_jetsonThermalReadings[i].set_tempState(tempState); // Set the temp state
+        if (this->m_jetsonThermalReadings[i].get_tempState() != scalesSvc::ThermalStates::NOT_USED) {
+          scalesSvc::ThermalStates tempState = this->determineTempState(this->m_jetsonThermalReadings[i].get_temperature());
+          this->m_jetsonThermalReadings[i].set_tempState(tempState); // Set the temp state
+        }
         
         switch(i){
           case 0:
@@ -186,7 +190,7 @@ namespace scalesSvc {
     Os::File::Status fileStatus = tempFile.open(path, Os::File::Mode::OPEN_READ);
     if (fileStatus != Os::File::Status::OP_OK) {
       printf("Could not open thermal file: %s at zone: %s\n", path, indexToZone[index].c_str());
-      temp = 0.0f; // Set temp to 0 if we fail to read so that the system defaults to IDLE state for that sensor
+      temp = 0.0F; // The caller marks failed reads as NOT_USED so this fallback is not treated as a real temperature
       return false;
     }
 
@@ -196,7 +200,7 @@ namespace scalesSvc {
     tempFile.close();
     if ((fileStatus != Os::File::Status::OP_OK) || (readSize == 0)) {
       printf("Could not read thermal file: %s at zone: %s\n", path, indexToZone[index].c_str());
-      temp = 0.0f; // Set temp to 0 if we fail to read so that the system defaults to IDLE state for that sensor
+      temp = 0.0F; // The caller marks failed reads as NOT_USED so this fallback is not treated as a real temperature
       return false;
     }
     tempBuffer[readSize] = '\0';
@@ -207,7 +211,7 @@ namespace scalesSvc {
         Fw::StringUtils::string_to_number(tempBuffer, sizeof(tempBuffer), tempMilliC, &parseEnd, 10);
     if ((parseStatus != Fw::StringUtils::StringToNumberStatus::SUCCESSFUL_CONVERSION) || (parseEnd == nullptr)) {
       printf("Could not parse thermal file: %s at zone: %s\n", path, indexToZone[index].c_str());
-      temp = 0.0f; // Set temp to 0 if we fail to read so that the system defaults to IDLE state for that sensor
+      temp = 0.0F; // The caller marks failed reads as NOT_USED so this fallback is not treated as a real temperature
       return false;
     }
     while ((*parseEnd == ' ') || (*parseEnd == '\t') || (*parseEnd == '\r') || (*parseEnd == '\n')) {
@@ -215,7 +219,7 @@ namespace scalesSvc {
     }
     if (*parseEnd != '\0') {
       printf("Could not parse thermal file: %s at zone: %s\n", path, indexToZone[index].c_str());
-      temp = 0.0f; // Set temp to 0 if we fail to read so that the system defaults to IDLE state for that sensor
+      temp = 0.0F; // The caller marks failed reads as NOT_USED so this fallback is not treated as a real temperature
       return false;
     }
 

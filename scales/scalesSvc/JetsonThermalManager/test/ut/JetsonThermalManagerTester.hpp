@@ -61,6 +61,9 @@ namespace scalesSvc {
       //! Write a sysfs-style millidegree Celsius value through the OSAL
       void writeTemperatureFile(U8 index, F32 tempC);
 
+      //! Remove a fake temperature file so the read path sees an unavailable zone
+      void removeTemperatureFile(U8 index);
+
       //! Run a tick through the component and dispatch queued work
       void runTickAction();
 
