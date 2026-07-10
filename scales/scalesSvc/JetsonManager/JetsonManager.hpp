@@ -105,6 +105,7 @@ namespace scalesSvc {
       U32 m_pendingCmdSeq;          //!< Sequence number of the in-flight command
       PowerModeID m_requestedMode;  //!< Mode we asked the Jetson to switch to
       U32 m_timeoutTicks;           //!< Ticks elapsed since the request was sent
+      Fw::ParamValid m_paramIsValid = Fw::ParamValid::VALID;
 
       //! How many schedIn ticks to wait before timing out (120 ticks ≈ 2 min at 1 Hz)
       static const U32 CMD_TIMEOUT_TICKS = 120;

@@ -76,6 +76,16 @@ module scalesSvc {
         @ Current power state of the Jetson
         telemetry JetsonPowerState: JetsonPowerStateID
 
+        ###############################################################################
+        #                                 Parameters                                  #
+        ###############################################################################
+
+        @ Number of ticks to turn off Jetson power after requesting a power off command
+        param JETSON_POWER_OFF_DELAY_TICKS: U32 \
+            default 15 \
+            id 0x12 \
+            set opcode 0x13 \
+            save opcode 0x14
 
         ###############################################################################
         # Standard AC Ports: Required for Channels, Events, Commands, and Parameters  #
