@@ -112,7 +112,7 @@ namespace scalesSvc {
         
         int ret = std::system("sudo -n /sbin/shutdown -h now");
 
-        if (ret != 0) {
+        if (ret == -1) {
           Fw::String reason("shutdown command returned non-zero exit code");
           this->log_WARNING_HI_JETSON_POWER_STATE_CHANGE_FAILED(stateReq, reason);
 
