@@ -172,7 +172,7 @@ namespace scalesSvc {
   // Helper functions
   // ----------------------------------------------------------------------
 
-  bool McpManager ::readTemp(U8 deviceAddr, std::string location, F32& temperature)
+  bool McpManager ::readTemp(U8 deviceAddr, std::string& location, F32& temperature)
   {
     U8 regAddr = TEMP_REG_ADDR;
     U8 rawData[2]; // MCP9808 temperature read back data is 2 bytes

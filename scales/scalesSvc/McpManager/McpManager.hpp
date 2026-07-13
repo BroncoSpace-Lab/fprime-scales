@@ -111,7 +111,7 @@ namespace scalesSvc {
       // Class helper functions
       // ----------------------------------------------------------------------
 
-      bool readTemp(U8 deviceAddr, std::string location, F32& temperature); //!< Function to read temperature from a given I2C device address
+      bool readTemp(U8 deviceAddr, std::string& location, F32& temperature); //!< Function to read temperature from a given I2C device address
 
       scalesSvc::ThermalStates determineTempState(F32 tempCelsius); //!< Function to determine the temperature state (IDLE, WARNING, FAULT) based on the temperature in Celsius
 
