@@ -5,11 +5,19 @@ module scalesSvc {
         @ Bind the ThermalStateMachine to McpManager
         state machine instance mcp_thermalStateMachine: ThermalStateMachine
 
+        ###############################################################################
+        #                                 General Ports                               #
+        ###############################################################################
+
         @ Output port allowing to connect to an I2c bus driver for writeRead operations to the mcp9808 temp sensors
         output port mcpWriteRead: Drv.I2cWriteRead
 
         @ Async scheduler input port to poll temp data from the sensors
         async input port run: Svc.Sched
+
+        ###############################################################################
+        #                                 Telemetry                                   #
+        ###############################################################################
 
         @ Telemetry to log imx_temp data
         telemetry IMX_TEMP: ThermalReading id 0
@@ -19,7 +27,30 @@ module scalesSvc {
 
         @ Telemetry to log Jetson temp data
         telemetry JETSON_TEMP: ThermalReading id 2
-    
+
+
+        @ Telmetry for IDLE state low threshold
+        telemetry MCP_IDLE_LOW: F32 id 0x10
+
+        @ Telmetry for IDLE state high threshold
+        telemetry MCP_IDLE_HIGH: F32 id 0x11
+
+        @ Telmetry for WARNING state low threshold
+        telemetry MCP_WARN_LOW: F32 id 0x12
+
+        @ Telmetry for WARNING state high threshold
+        telemetry MCP_WARN_HIGH: F32 id 0x13
+
+        @ Telmetry for FAULT state low threshold
+        telemetry MCP_FAULT_LOW: F32 id 0x14
+
+        @ Telmetry for FAULT state high threshold
+        telemetry MCP_FAULT_HIGH: F32 id 0x15
+
+        ###############################################################################
+        #                                 Parameters                                  #
+        ###############################################################################
+
         @ IDLE Low temperature threshold
         param MCP_IDLE_LOW: F32 \
             default 10 \
@@ -62,23 +93,24 @@ module scalesSvc {
             set opcode 0x11 \
             save opcode 0x12
         
-        @ Telmetry for IDLE state low threshold
-        telemetry MCP_IDLE_LOW: F32 id 0x10
 
-        @ Telmetry for IDLE state high threshold
-        telemetry MCP_IDLE_HIGH: F32 id 0x11
+        ###############################################################################
+        #                                 Events                                      #
+        ###############################################################################
+        event FAIL_TO_READ_TEMP_AT(
+            location: string @< The location of the sensor that failed to read
+        ) \
+            severity warning high \
+            id 0x00 \
+            format "Failed to read temperature from sensor at location: {}"
+        
+        event FAIL_TO_READ_TEMP(
 
-        @ Telmetry for WARNING state low threshold
-        telemetry MCP_WARN_LOW: F32 id 0x12
+        ) \
+            severity warning high \
+            id 0x01 \
+            format "Failed to read temperature from one or more sensors"
 
-        @ Telmetry for WARNING state high threshold
-        telemetry MCP_WARN_HIGH: F32 id 0x13
-
-        @ Telmetry for FAULT state low threshold
-        telemetry MCP_FAULT_LOW: F32 id 0x14
-
-        @ Telmetry for FAULT state high threshold
-        telemetry MCP_FAULT_HIGH: F32 id 0x15
 
         ###############################################################################
         # Standard AC Ports: Required for Channels, Events, Commands, and Parameters  #
