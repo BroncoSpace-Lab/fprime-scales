@@ -17,7 +17,9 @@ namespace scalesSvc {
     InaManager(const char* const compName) :
       InaManagerComponentBase(compName)
   {
-
+    jetsonData.set_sourceId(INA260_I2C_ADDRESS_JETSON);
+    obcData.set_sourceId(INA260_I2C_ADDRESS_OBC);
+    peripheralData.set_sourceId(INA260_I2C_ADDRESS_PERIPHERAL);
   }
 
   InaManager ::
@@ -55,15 +57,24 @@ namespace scalesSvc {
 
     // Write to the telemetry channel for each INA260 sensor
     if (this->readSensorOnce(jetsonData)) {
+      jetsonData.set_location(Fw::String("JETSON"));
       this->tlmWrite_INA260_Jetson(jetsonData);
+    } else {
+      this->log_WARNING_HI_FAIL_TO_READ_TEMP_AT(Fw::String("JETSON"));
     }
 
     if (this->readSensorOnce(obcData)) {
+      obcData.set_location(Fw::String("OBC"));
       this->tlmWrite_INA260_OBC(obcData);
+    } else {
+      this->log_WARNING_HI_FAIL_TO_READ_TEMP_AT(Fw::String("OBC"));
     }
 
     if (this->readSensorOnce(peripheralData)) {
+      peripheralData.set_location(Fw::String("PERIPHERAL"));
       this->tlmWrite_INA260_Peripheral(peripheralData);
+    } else {
+      this->log_WARNING_HI_FAIL_TO_READ_TEMP_AT(Fw::String("PERIPHERAL"));
     }
   }
 
