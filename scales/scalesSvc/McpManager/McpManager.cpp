@@ -128,6 +128,9 @@ namespace scalesSvc {
     printf("Failed to read from sensor. Logging failure event...\n");
     this->log_WARNING_HI_FAIL_TO_READ_TEMP(); // Log event for read failure
     m_successfulRead = true; // Reset successful read flag to true to try reading again on next tick
+    for (int i = 0; i < 3; i++){
+      m_successfulReads[i] = true; // Reset successful reads array to true for all sensors to try reading again on next tick
+    }
     this->mcp_thermalStateMachine_sendSignal_success(); // Transition back to initial state to try reading again on next tick
   }
 
