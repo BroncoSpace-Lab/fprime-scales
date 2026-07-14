@@ -6,7 +6,7 @@ module scalesSvc {
         state machine instance thermalStateMachine: ThermalStateMachine
 
         @ asynchronous input port to handle incoming imx cpu temp
-        async input port imxCpuTemp: Svc.Sched
+        async input port run: Svc.Sched
 
         @ output port to send imx thermal state to spacecraft state machine
         output port imxThermalStateOut: ThermalStateOut
@@ -61,6 +61,13 @@ module scalesSvc {
             id 0x05 \ 
             set opcode 0x11 \
             save opcode 0x12
+        
+        event FAIL_TO_READ_TEMP(
+
+        ) \
+            severity warning high \
+            id 0x01 \
+            format "Failed to read temperature at IMX CPU from OSAL"
 
         ###############################################################################
         # Standard AC Ports: Required for Channels, Events, Commands, and Parameters  #

@@ -23,9 +23,9 @@ set(SOURCE_FILES
 # `Ref/SignalGen/CMakeLists.txt` will be named `Ref_SignalGen`.  `Ref/SignalGen`
 # is an acceptable alternative and will be internally converted to `Ref_SignalGen`.
 #
-# set(MOD_DEPS
-#   MyPackage_MyOtherModule
-# )
+set(MOD_DEPS
+  Os_File
+)
 
 register_fprime_module()
 

@@ -18,10 +18,6 @@ namespace scalesSvc {
 
     public:
 
-      void setTempPath(const char* path) {
-        this->tempPath = path;
-  }
-
       // ----------------------------------------------------------------------
       // Component construction and destruction
       // ----------------------------------------------------------------------
@@ -37,23 +33,10 @@ namespace scalesSvc {
     private:
 
       
-      //! Handler implementation for imxCpuTemp
-    void imxCpuTemp_handler(FwIndexType portNum,  //!< The port number
+      //! Handler implementation for run
+      void run_handler(FwIndexType portNum,  //!< The port number
                             U32 context           //!< The call order
                             ) override;
-          
-      
-    scalesSvc::ThermalReading m_cpu_thermal_read;
-    Fw::ParamValid m_paramValid = Fw::ParamValid::VALID;
-    F32 m_tempMilliC = 0.0f;
-    F32 m_tempC = 0.0f;
-    U32  m_startTime = 0;
-    bool m_justBooted = true;
-    const char* tempPath = "/sys/class/thermal/thermal_zone0/temp";
-
-    scalesSvc::ThermalStates m_idleState = scalesSvc::ThermalStates::IDLE;
-    scalesSvc::ThermalStates m_warnState = scalesSvc::ThermalStates::WARN;
-    scalesSvc::ThermalStates m_faultState = scalesSvc::ThermalStates::FAULT;
 
     //! Implementation for action doRead of state machine scalesSvc_ThermalStateMachine
       void scalesSvc_ThermalStateMachine_action_doRead(
@@ -72,6 +55,20 @@ namespace scalesSvc {
           SmId smId, //!< The state machine id
           scalesSvc_ThermalStateMachine::Signal signal //!< The signal
       ) override;
+
+      //! Helper function to read temperature files with OSAL
+      bool readTemperatureFile();
+    
+    private:
+    
+      //! Class instance variables
+      scalesSvc::ThermalReading m_cpu_thermal_read;
+      Fw::ParamValid m_paramValid = Fw::ParamValid::VALID;
+      F32 m_tempMilliC = 0.0f;
+      F32 m_tempC = 0.0f;
+      U32  m_startTime = 0;
+      bool m_justBooted = true;
+      bool m_successfulRead = true;
 
 
   };
