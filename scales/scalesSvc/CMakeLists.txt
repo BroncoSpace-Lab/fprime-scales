@@ -1,5 +1,6 @@
 add_fprime_subdirectory("${CMAKE_CURRENT_LIST_DIR}/JetsonPowerModeManager")
 add_fprime_subdirectory("${CMAKE_CURRENT_LIST_DIR}/HubComAdapter/")
+add_fprime_subdirectory("${CMAKE_CURRENT_LIST_DIR}/GdsUartMirror/")
 add_fprime_subdirectory("${CMAKE_CURRENT_LIST_DIR}/McpManager/")
 # add_fprime_subdirectory("${CMAKE_CURRENT_LIST_DIR}/FPManager/")
 # add_fprime_subdirectory("${CMAKE_CURRENT_LIST_DIR}/WatchdogManager/")
