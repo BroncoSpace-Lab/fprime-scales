@@ -111,6 +111,25 @@ module scalesSvc {
             id 0x01 \
             format "Failed to read temperature from one or more sensors"
 
+        ###############################################################################
+        #                                 DATA PRODUCTS                               #
+        ###############################################################################
+
+        @ Data product for getting temperature record from the MCP9808 temp sensors
+        product record ImxTemperatureRecord: ThermalReading id 0
+        product record JetsonTemperatureRecord: ThermalReading id 1
+        product record PeripheralTemperatureRecord: ThermalReading id 2
+
+        @ Data prodcut container containing temperature records
+        product container TemperatureContainer id 0 default priority 10
+
+        @ Port to ask buffer manager to allocate memory for the container synchronously
+        product get port productGetOut  
+
+        @ Port to send the filled container to the data product writer
+        product send port productSendOut
+
+
 
         ###############################################################################
         # Standard AC Ports: Required for Channels, Events, Commands, and Parameters  #

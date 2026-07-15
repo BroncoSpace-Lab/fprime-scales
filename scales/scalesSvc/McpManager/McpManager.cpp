@@ -9,12 +9,20 @@
 
 F32 convertRawTemp(U8 *rawData); // Forward decleration 
 
-std::unordered_map<U8, std::string> indexToLocation = {
-    {0, "OBC"},
-    {1, "PERIPHERAL"},
-    {2, "JETSON"}
+enum tempLocation{
+    OBC = 0,
+    PERIPHERAL = 1,
+    JETSON = 2
 };
 
+std::unordered_map<U8, std::string> indexToLocation = {
+    {OBC, "OBC"},
+    {PERIPHERAL, "PERIPHERAL"},
+    {JETSON, "JETSON"}
+};
+
+const FwSizeType CONTAINER_SIZE = RECORD_COUNT * (scalesSvc::ThermalReading::SERIALIZED_SIZE + sizeof(FwDpIdType)) *
+                                  NUM_TEMP_SENSORS; // Define the size of the data product container
 
 namespace scalesSvc {
 
@@ -26,11 +34,14 @@ namespace scalesSvc {
     McpManagerComponentBase(compName), 
     m_successfulRead(true), // Initialize successful read flag to true as default
     m_successfulReads{true, true, true}, // Initialize successful reads array to true for all sensors
-    m_justBooted(true)
+    m_justBooted(true),
+    m_container(),
+    m_containerValid(false),
+    m_recordCount(0)
   {
-    deviceAddrs[0] = IMX_TEMP_ADDR;
-    deviceAddrs[1] = PERIPHERAL_TEMP_ADDR;
-    deviceAddrs[2] = JETSON_TEMP_ADDR;
+    deviceAddrs[OBC] = IMX_TEMP_ADDR;
+    deviceAddrs[PERIPHERAL] = PERIPHERAL_TEMP_ADDR;
+    deviceAddrs[JETSON] = JETSON_TEMP_ADDR;
   }
 
   McpManager :: ~McpManager() {
@@ -43,6 +54,18 @@ namespace scalesSvc {
 
   void McpManager :: run_handler(FwIndexType portNum, U32 context)
   { 
+
+    if(!m_containerValid){
+      // Initialize the data product container if it is not valid
+      if(this->dpGet_TemperatureContainer(CONTAINER_SIZE, this->m_container) == Fw::Success::SUCCESS){
+        printf("Successfully initialized data product container for temperature readings.\n");
+        this->m_containerValid = true;
+        this->m_container.setTimeTag(this->getTime());
+      } else {
+        printf("Failed to initialize data product container for temperature readings.\n");
+      }
+    }
+
     this->mcp_thermalStateMachine_sendSignal_tick(); // Trigger state machine tick 
   }
 
@@ -67,7 +90,7 @@ namespace scalesSvc {
       this->FAULT_HIGH_THR = this->paramGet_MCP_FAULT_HIGH(m_paramIsValid);
     } else {
         // Read temp data from sensors and log to telemetry
-        for (int i = 0; i < 3; i++){
+        for (int i = 0; i < NUM_TEMP_SENSORS; i++){
 
           F32 tempCelsius;
           if (this->readTemp(deviceAddrs[i], indexToLocation[i], tempCelsius)){
@@ -82,7 +105,7 @@ namespace scalesSvc {
           this->m_thermalReadings[i].set_timestamp(this->getTime().getSeconds()- m_startTime); // Log uptime in seconds as the timestamp for telemetry
           this->m_thermalReadings[i].set_location(Fw::String(indexToLocation[i].c_str()));
         }
-        m_successfulRead = m_successfulReads[0] && m_successfulReads[1] && m_successfulReads[2]; // Update the overall successful read flag based on individual sensor reads
+        m_successfulRead = m_successfulReads[OBC] && m_successfulReads[PERIPHERAL] && m_successfulReads[JETSON]; // Update the overall successful read flag based on individual sensor reads
 
         this->mcp_thermalStateMachine_sendSignal_success(); // Transition to next state to evaluate the readings
     }
@@ -92,7 +115,7 @@ namespace scalesSvc {
   void McpManager :: scalesSvc_ThermalStateMachine_action_doEvaluate(SmId smId, scalesSvc_ThermalStateMachine::Signal signal)
   {
     // printf("Evaluating thermal readings against thresholds...\n");
-    for (int i = 0; i < 3; i++){
+    for (int i = 0; i < NUM_TEMP_SENSORS; i++){
 
       if(m_successfulReads[i]){ // Only evaluate if this sensor readding was successful, otherwise the temp state is already set to FAULT
         scalesSvc::ThermalStates tempState = this->determineTempState(this->m_thermalReadings[i].get_temperature());
@@ -100,18 +123,24 @@ namespace scalesSvc {
       }
       
       switch(i){
-        case 0:
-          this->tlmWrite_IMX_TEMP(m_thermalReadings[0]);
+        case OBC:
+          this->tlmWrite_IMX_TEMP(m_thermalReadings[OBC]);
           break;
-        case 1:
-          this->tlmWrite_PERIPHERAL_TEMP(m_thermalReadings[1]);
+        case PERIPHERAL:
+          this->tlmWrite_PERIPHERAL_TEMP(m_thermalReadings[PERIPHERAL]);
           break;
-        case 2:
-          this->tlmWrite_JETSON_TEMP(m_thermalReadings[2]);
+        case JETSON:
+          this->tlmWrite_JETSON_TEMP(m_thermalReadings[JETSON]);
           break;
         default:
           printf("Warning: Unrecognized sensor index %d. No telemetry was logged for this sensor.\n", i);
           break;
+      }
+    }
+    
+    if (this->m_containerValid ){
+      if(this->serialize_send(this->m_thermalReadings[OBC], this->m_thermalReadings[PERIPHERAL], this->m_thermalReadings[JETSON])){
+        printf("Successfully serialized and sent temperature readings to data product container.\n");
       }
     }
     
@@ -128,7 +157,7 @@ namespace scalesSvc {
     printf("Failed to read from sensor. Logging failure event...\n");
     this->log_WARNING_HI_FAIL_TO_READ_TEMP(); // Log event for read failure
     m_successfulRead = true; // Reset successful read flag to true to try reading again on next tick
-    for (int i = 0; i < 3; i++){
+    for (int i = 0; i < NUM_TEMP_SENSORS; i++){
       m_successfulReads[i] = true; // Reset successful reads array to true for all sensors to try reading again on next tick
     }
     this->mcp_thermalStateMachine_sendSignal_success(); // Transition back to initial state to try reading again on next tick
@@ -171,6 +200,42 @@ namespace scalesSvc {
   // ----------------------------------------------------------------------
   // Helper functions
   // ----------------------------------------------------------------------
+
+  bool McpManager :: serialize_send(scalesSvc::ThermalReading& ocbReading, 
+                                    scalesSvc::ThermalReading& perifReading, 
+                                    scalesSvc::ThermalReading& jetsonReading)
+  {
+    // Serialize the records into the data product container
+
+    Fw::SerializeStatus status = this->m_container.serializeRecord_ImxTemperatureRecord(ocbReading);
+    if (status != Fw::SerializeStatus::FW_SERIALIZE_OK) {
+      printf("Error serializing IMX temperature record: %d\n", status);
+      return false;
+    }
+    
+    status = this->m_container.serializeRecord_PeripheralTemperatureRecord(perifReading);
+    if (status != Fw::SerializeStatus::FW_SERIALIZE_OK) {
+      printf("Error serializing Peripheral temperature record: %d\n", status);
+      return false;
+    }
+
+    status = this->m_container.serializeRecord_JetsonTemperatureRecord(jetsonReading);
+    if (status != Fw::SerializeStatus::FW_SERIALIZE_OK) {
+      printf("Error serializing Jetson temperature record: %d\n", status);
+      return false;
+    }
+
+    this->m_recordCount++;
+    // If we've reached the record count, send the full product
+    if(this->m_recordCount == RECORD_COUNT){
+      printf("Data product sent!");
+      this->dpSend(this->m_container);
+      this->m_recordCount = 0; // Reset the record count after sending
+      this->m_containerValid = false; // Invalidate the container to force reinitialization on next tick
+    }
+
+    return true;
+  }
 
   bool McpManager ::readTemp(U8 deviceAddr, std::string& location, F32& temperature)
   {

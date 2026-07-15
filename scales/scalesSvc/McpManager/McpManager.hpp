@@ -10,6 +10,11 @@
 #include "scales/scalesSvc/McpManager/McpManagerComponentAc.hpp"
 #include <string>
 
+#define NUM_TEMP_SENSORS 3 //!< Number of temperature sensors to read from
+
+constexpr static const FwSizeType RECORD_COUNT = 100;  //!< Number of records of each type in the data product
+// If we have n record types, then the total number of records in the data product will be n * RECORD_COUNT
+
 namespace scalesSvc {
 
   class McpManager :
@@ -55,14 +60,15 @@ namespace scalesSvc {
       static constexpr U8 TEMP_REG_ADDR = 0x05; //!< Register address for temperature data
 
       /* Implementation-specific members */
-      scalesSvc::ThermalReading m_thermalReadings[3]; //!< The 3 thermal readings to be logged to telemetry 
-      
-      /* Determines whether the device has just booted, valid parameter values, and read fail state */
+      scalesSvc::ThermalReading m_thermalReadings[NUM_TEMP_SENSORS]; //!< The 3 thermal readings to be logged to telemetry 
       bool m_justBooted;
-      bool m_successfulReads[3]; // Array to track whether each sensor read was successful, used to determine state machine transitions
-      bool m_successfulRead; // Flag to track whether the most recent read was successful, used to determine state machine transitions
+      bool m_successfulReads[NUM_TEMP_SENSORS]; //! Array to track whether each sensor read was successful, used to determine state machine transitions
+      bool m_successfulRead; //! Flag to track whether the most recent read was successful, used to determine state machine transitions
       U32  m_startTime = 0;
       Fw::ParamValid m_paramIsValid = Fw::ParamValid::VALID;
+      DpContainer m_container; //! Tracked container state
+      FwSizeType m_recordCount;       //!< Count of serialized records
+      bool m_containerValid;    //!< Whether the container is valid
 
       /* Telemetry values for temperature thresholds */
       F32 IDLE_LOW_THR;
@@ -110,6 +116,10 @@ namespace scalesSvc {
       // ----------------------------------------------------------------------
       // Class helper functions
       // ----------------------------------------------------------------------
+
+      bool serialize_send(scalesSvc::ThermalReading& ocbReading, 
+                          scalesSvc::ThermalReading& perifReading, 
+                          scalesSvc::ThermalReading& jetsonReading); //!< Function to serialize and send the data product container
 
       bool readTemp(U8 deviceAddr, std::string& location, F32& temperature); //!< Function to read temperature from a given I2C device address
 
