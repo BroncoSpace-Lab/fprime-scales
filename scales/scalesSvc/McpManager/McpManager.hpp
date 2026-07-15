@@ -12,7 +12,7 @@
 
 #define NUM_TEMP_SENSORS 3 //!< Number of temperature sensors to read from
 
-constexpr static const FwSizeType RECORD_COUNT = 100;  //!< Number of records of each type in the data product
+constexpr static const FwSizeType RECORD_COUNT = 50;  //!< Number of records of each type in the data product
 // If we have n record types, then the total number of records in the data product will be n * RECORD_COUNT
 
 namespace scalesSvc {

@@ -21,8 +21,6 @@ std::unordered_map<U8, std::string> indexToLocation = {
     {JETSON, "JETSON"}
 };
 
-const FwSizeType CONTAINER_SIZE = RECORD_COUNT * (scalesSvc::ThermalReading::SERIALIZED_SIZE + sizeof(FwDpIdType)) *
-                                  NUM_TEMP_SENSORS; // Define the size of the data product container
 
 namespace scalesSvc {
 
@@ -56,6 +54,9 @@ namespace scalesSvc {
   { 
 
     if(!m_containerValid){
+      const FwSizeType CONTAINER_SIZE = RECORD_COUNT * (scalesSvc::ThermalReading::SERIALIZED_SIZE + sizeof(FwDpIdType)) *
+                                  NUM_TEMP_SENSORS; // Define the size of the data product container
+                                  
       // Initialize the data product container if it is not valid
       if(this->dpGet_TemperatureContainer(CONTAINER_SIZE, this->m_container) == Fw::Success::SUCCESS){
         printf("Successfully initialized data product container for temperature readings.\n");
