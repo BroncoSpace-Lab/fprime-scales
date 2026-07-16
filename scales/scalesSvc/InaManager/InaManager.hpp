@@ -50,9 +50,9 @@ namespace scalesSvc {
       static constexpr U32 INA260_I2C_ADDRESS_OBC = 0x41; // OBC subsystem INA260 address
       static constexpr U32 INA260_I2C_ADDRESS_PERIPHERAL = 0x45; // Peripheral subsystem INA260 address
 
-      PowerReading jetsonData = {0, 0, 0, INA260_I2C_ADDRESS_JETSON, 0};
-      PowerReading obcData = {0, 0, 0, INA260_I2C_ADDRESS_OBC, 0};
-      PowerReading peripheralData = {0, 0, 0, INA260_I2C_ADDRESS_PERIPHERAL, 0};
+      PowerReading jetsonData;
+      PowerReading obcData;
+      PowerReading peripheralData;
 
       // Functions to convert raw data from registers to usable values
       F32 convertCurrentRawToAmps(U16 raw) const;

@@ -8,22 +8,15 @@
 #define scalesSvc_McpManager_HPP
 
 #include "scales/scalesSvc/McpManager/McpManagerComponentAc.hpp"
+#include <string>
+
+#define NUM_SENSORS 3
 
 namespace scalesSvc {
 
   class McpManager :
     public McpManagerComponentBase
   {
-
-    // Device Address and Target Register Addresses for MCP9808
-    public:
-    
-      static constexpr U8 IMX_TEMP_ADDR = 0x19; //!< I2C address for IMX temperature sensor
-      static constexpr U8 PERIPHERAL_TEMP_ADDR = 0x1A; //!< I2C address for peripheral temperature sensor
-      static constexpr U8 JETSON_TEMP_ADDR = 0x1B; //!< I2C address for Jetson temperature sensor
-      U8 deviceAddrs[3]; //!< Array of device addresses for iterating through sensors
-      
-      static constexpr U8 TEMP_REG_ADDR = 0x05; //!< Register address for temperature data
 
     public:
 
@@ -54,12 +47,21 @@ namespace scalesSvc {
       ) override;
 
     private:
+      
+      /* Device Address and Target Register Addresses for MCP9808 */
+      static constexpr U8 IMX_TEMP_ADDR = 0x19; //!< I2C address for IMX temperature sensor
+      static constexpr U8 PERIPHERAL_TEMP_ADDR = 0x1A; //!< I2C address for peripheral temperature sensor
+      static constexpr U8 JETSON_TEMP_ADDR = 0x1B; //!< I2C address for Jetson temperature sensor
+      U8 deviceAddrs[3]; //!< Array of device addresses for iterating through sensors
+      
+      static constexpr U8 TEMP_REG_ADDR = 0x05; //!< Register address for temperature data
 
       /* Implementation-specific members */
-      scalesSvc::ThermalReading m_thermalReadings[3]; //!< The 3 thermal readings to be logged to telemetry 
+      scalesSvc::ThermalReading m_thermalReadings[NUM_SENSORS]; //!< The 3 thermal readings to be logged to telemetry 
       
       /* Determines whether the device has just booted, valid parameter values, and read fail state */
       bool m_justBooted;
+      bool m_successfulReads[NUM_SENSORS]; // Array to track whether each sensor read was successful, used to determine state machine transitions
       bool m_successfulRead; // Flag to track whether the most recent read was successful, used to determine state machine transitions
       U32  m_startTime = 0;
       Fw::ParamValid m_paramIsValid = Fw::ParamValid::VALID;
@@ -111,7 +113,7 @@ namespace scalesSvc {
       // Class helper functions
       // ----------------------------------------------------------------------
 
-      bool readTemp(U8 deviceAddr, F32& temperature); //!< Function to read temperature from a given I2C device address
+      bool readTemp(U8 deviceAddr, std::string& location, F32& temperature); //!< Function to read temperature from a given I2C device address
 
       scalesSvc::ThermalStates determineTempState(F32 tempCelsius); //!< Function to determine the temperature state (IDLE, WARNING, FAULT) based on the temperature in Celsius
 

@@ -35,7 +35,7 @@ namespace scalesSvc {
   // Handler implementations for commands
   // ----------------------------------------------------------------------
 
-  void ImxThermalManager ::imxCpuTemp_handler(FwIndexType portNum, U32 context) {
+  void ImxThermalManager ::run_handler(FwIndexType portNum, U32 context) {
       this->thermalStateMachine_sendSignal_tick();
 }
 

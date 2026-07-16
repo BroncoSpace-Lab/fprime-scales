@@ -8,8 +8,6 @@
 
 namespace scalesSvc {
 
-    
-    constexpr U32 JETSON_POWER_OFF_DELAY_TICKS = 5;
     const Fw::Logic JETSON_POWER_GPIO_ON = Fw::Logic::HIGH;
     const Fw::Logic JETSON_POWER_GPIO_OFF = Fw::Logic::LOW;
 
@@ -58,6 +56,7 @@ namespace scalesSvc {
     this->tlmWrite_JetsonPowerState(stateNow);
 
     if (!m_hasPendingPowerCmd) {
+      printf("Not waiting for any power command\n");
       return; // Not waiting for a power state change confirmation, ignore
     }
 
@@ -113,8 +112,10 @@ namespace scalesSvc {
     // Delay before physically cutting Jetson power after shutdown acknowledgment
     if (m_waitingToCutJetsonPower) {
       m_powerOffDelayTicks++;
+      printf("JetsonManager: Waiting to cut Jetson power, tick %d\n", m_powerOffDelayTicks);
 
-      if (m_powerOffDelayTicks >= JETSON_POWER_OFF_DELAY_TICKS) {
+      if (m_powerOffDelayTicks >= this->paramGet_JETSON_POWER_OFF_DELAY_TICKS(m_paramIsValid)) {
+        printf("JetsonManager: Cutting Jetson power after shutdown acknowledgment\n");
         this->gpioSet_out(0, JETSON_POWER_GPIO_OFF);
 
         this->cmdResponse_out(
@@ -211,19 +212,25 @@ namespace scalesSvc {
         // Jetson is possibly off, so it cannot receive a port call.
         // Power it on directly from the IMX GPIO and wait for the Jetson app
         // to boot and report ON through currentJetsonPwrState_handler.
+        printf("Requesting Jetson power state change to ON\n");
         this->gpioSet_out(0, JETSON_POWER_GPIO_ON);
         this->tlmWrite_JetsonPowerState(jetsonState);
         m_hasPendingPowerCmd = false;
+
+        // Report command completed
+        this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
+
       } else if (jetsonState.e == JetsonPowerStateID::OFF) {
         // Jetson is currently on, so ask it to shut down
         // After it acknowledges OFF, this component will cut power with GPIO
-        this->gpioSet_out(0, JETSON_POWER_GPIO_OFF);  
-        this->reqJetsonPwrState_out(0, jetsonState);
-        m_hasPendingPowerCmd = false;
+        printf("Requesting Jetson power state change to OFF\n");
+        this->reqJetsonPwrState_out(0, jetsonState); // Request Jetson to shut down, and hand the off tick in schedIn to call CMD ok response.
+
       } else {
         this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::VALIDATION_ERROR);
         m_hasPendingPowerCmd = false;
       }
+
     }
 
 }
