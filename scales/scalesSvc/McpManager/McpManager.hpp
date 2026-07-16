@@ -10,6 +10,8 @@
 #include "scales/scalesSvc/McpManager/McpManagerComponentAc.hpp"
 #include <string>
 
+#define NUM_SENSORS 3
+
 namespace scalesSvc {
 
   class McpManager :
@@ -55,11 +57,11 @@ namespace scalesSvc {
       static constexpr U8 TEMP_REG_ADDR = 0x05; //!< Register address for temperature data
 
       /* Implementation-specific members */
-      scalesSvc::ThermalReading m_thermalReadings[3]; //!< The 3 thermal readings to be logged to telemetry 
+      scalesSvc::ThermalReading m_thermalReadings[NUM_SENSORS]; //!< The 3 thermal readings to be logged to telemetry 
       
       /* Determines whether the device has just booted, valid parameter values, and read fail state */
       bool m_justBooted;
-      bool m_successfulReads[3]; // Array to track whether each sensor read was successful, used to determine state machine transitions
+      bool m_successfulReads[NUM_SENSORS]; // Array to track whether each sensor read was successful, used to determine state machine transitions
       bool m_successfulRead; // Flag to track whether the most recent read was successful, used to determine state machine transitions
       U32  m_startTime = 0;
       Fw::ParamValid m_paramIsValid = Fw::ParamValid::VALID;
