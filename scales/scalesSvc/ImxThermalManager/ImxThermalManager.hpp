@@ -69,6 +69,7 @@ namespace scalesSvc {
       U32  m_startTime = 0;
       bool m_justBooted = true;
       bool m_successfulRead = true;
+      const char* tempPath = "/sys/class/thermal/thermal_zone0/temp";
 
 
   };

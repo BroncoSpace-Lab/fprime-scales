@@ -5,8 +5,15 @@
 // ======================================================================
 
 #include "scales/scalesSvc/JetsonThermalManager/JetsonThermalManager.hpp"
+#include <Fw/Types/StringUtils.hpp>
+#include <Os/File.hpp>
+#include <cstdio>
 #include <unordered_map> // Required header for hashmap
 #include <string>
+
+namespace {
+  constexpr FwSizeType TEMP_FILE_BUFFER_SIZE = 32;
+}
 
 std::unordered_map<U8, std::string> indexToZone = {
     {0, "CPU"},
@@ -72,9 +79,11 @@ namespace scalesSvc {
           F32 temp;
           if (this->readTemp(i, temp)) {
             this->m_jetsonThermalReadings[i].set_temperature(temp);
+            this->m_jetsonThermalReadings[i].set_tempState(this->determineTempState(temp));
           }
           else {
-            this->m_jetsonThermalReadings[i].set_temperature(0.0f);
+            this->m_jetsonThermalReadings[i].set_temperature(0.0F);
+            this->m_jetsonThermalReadings[i].set_tempState(scalesSvc::ThermalStates::NOT_USED);
             // this->m_successfulRead = false;
           }
           this->m_jetsonThermalReadings[i].set_sensorId(i); 
@@ -96,8 +105,10 @@ namespace scalesSvc {
   {
     printf("Evaluating temperature readings against thresholds and updating telemetry...\n");
     for (int i = 0; i < 9; i++){
-        scalesSvc::ThermalStates tempState = this->determineTempState(this->m_jetsonThermalReadings[i].get_temperature());
-        this->m_jetsonThermalReadings[i].set_tempState(tempState); // Set the temp state
+        if (this->m_jetsonThermalReadings[i].get_tempState() != scalesSvc::ThermalStates::NOT_USED) {
+          scalesSvc::ThermalStates tempState = this->determineTempState(this->m_jetsonThermalReadings[i].get_temperature());
+          this->m_jetsonThermalReadings[i].set_tempState(tempState); // Set the temp state
+        }
         
         switch(i){
           case 0:
@@ -172,24 +183,47 @@ namespace scalesSvc {
   }
 
   bool JetsonThermalManager :: readTemp(U8 index, F32& temp) {
-    float tempMilliC = 0.0f;
-    char path[128];
-    std::snprintf(path, sizeof(path), "/sys/class/thermal/thermal_zone%u/temp", index);
-    std::ifstream tempFile(path);
+    CHAR path[128];
+    std::snprintf(path, sizeof(path), this->m_tempPathTemplate, static_cast<unsigned int>(index));
 
-    if (!tempFile.is_open()) {
+    Os::File tempFile;
+    Os::File::Status fileStatus = tempFile.open(path, Os::File::Mode::OPEN_READ);
+    if (fileStatus != Os::File::Status::OP_OK) {
       printf("Could not open thermal file: %s at zone: %s\n", path, indexToZone[index].c_str());
-      temp = 0.0f; // Set temp to 0 if we fail to read so that the system defaults to IDLE state for that sensor
+      temp = 0.0F; // The caller marks failed reads as NOT_USED so this fallback is not treated as a real temperature
       return false;
     }
 
-    if (!(tempFile >> tempMilliC)) {
-      printf("Could not read thermal file: %s at zone: %s\n", path,indexToZone[index].c_str());
-      temp = 0.0f; // Set temp to 0 if we fail to read so that the system defaults to IDLE state for that sensor
+    CHAR tempBuffer[TEMP_FILE_BUFFER_SIZE] = {};
+    FwSizeType readSize = sizeof(tempBuffer) - 1;
+    fileStatus = tempFile.read(reinterpret_cast<U8*>(tempBuffer), readSize, Os::File::WaitType::NO_WAIT);
+    tempFile.close();
+    if ((fileStatus != Os::File::Status::OP_OK) || (readSize == 0)) {
+      printf("Could not read thermal file: %s at zone: %s\n", path, indexToZone[index].c_str());
+      temp = 0.0F; // The caller marks failed reads as NOT_USED so this fallback is not treated as a real temperature
+      return false;
+    }
+    tempBuffer[readSize] = '\0';
+
+    I32 tempMilliC = 0;
+    CHAR* parseEnd = nullptr;
+    Fw::StringUtils::StringToNumberStatus parseStatus =
+        Fw::StringUtils::string_to_number(tempBuffer, sizeof(tempBuffer), tempMilliC, &parseEnd, 10);
+    if ((parseStatus != Fw::StringUtils::StringToNumberStatus::SUCCESSFUL_CONVERSION) || (parseEnd == nullptr)) {
+      printf("Could not parse thermal file: %s at zone: %s\n", path, indexToZone[index].c_str());
+      temp = 0.0F; // The caller marks failed reads as NOT_USED so this fallback is not treated as a real temperature
+      return false;
+    }
+    while ((*parseEnd == ' ') || (*parseEnd == '\t') || (*parseEnd == '\r') || (*parseEnd == '\n')) {
+      parseEnd++;
+    }
+    if (*parseEnd != '\0') {
+      printf("Could not parse thermal file: %s at zone: %s\n", path, indexToZone[index].c_str());
+      temp = 0.0F; // The caller marks failed reads as NOT_USED so this fallback is not treated as a real temperature
       return false;
     }
 
-    temp = tempMilliC / 1000.0f;
+    temp = static_cast<F32>(tempMilliC) / 1000.0F;
     return true;
   }
 

@@ -10,34 +10,26 @@
 #
 ####
 
-set(SOURCE_FILES
-  "${CMAKE_CURRENT_LIST_DIR}/ImxThermalManager.fpp"
-  "${CMAKE_CURRENT_LIST_DIR}/ImxThermalManager.cpp"
+register_fprime_module(
+  AUTOCODER_INPUTS
+    "${CMAKE_CURRENT_LIST_DIR}/ImxThermalManager.fpp"
+  SOURCES
+    "${CMAKE_CURRENT_LIST_DIR}/ImxThermalManager.cpp"
+  DEPENDS
+    Os_File
 )
-
-# Uncomment and add any modules that this component depends on, else
-# they might not be available when cmake tries to build this component.
-#
-# Module names are derived from the path from the nearest project/library/framework
-# root when not specifically overridden by the developer. i.e. The module defined by
-# `Ref/SignalGen/CMakeLists.txt` will be named `Ref_SignalGen`.  `Ref/SignalGen`
-# is an acceptable alternative and will be internally converted to `Ref_SignalGen`.
-#
-set(MOD_DEPS
-  Os_File
-)
-
-register_fprime_module()
 
 
 ### Unit Tests ###
-set(UT_SOURCE_FILES
-  "${CMAKE_CURRENT_LIST_DIR}/ImxThermalManager.fpp"
-  "${CMAKE_CURRENT_LIST_DIR}/test/ut/ImxThermalManagerTestMain.cpp"
-  "${CMAKE_CURRENT_LIST_DIR}/test/ut/ImxThermalManagerTester.cpp"
+register_fprime_ut(
+  AUTOCODER_INPUTS
+    "${CMAKE_CURRENT_LIST_DIR}/ImxThermalManager.fpp"
+  SOURCES
+    "${CMAKE_CURRENT_LIST_DIR}/test/ut/ImxThermalManagerTestMain.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/test/ut/ImxThermalManagerTester.cpp"
+  DEPENDS
+    STest
+  CHOOSES_IMPLEMENTATIONS
+    Os_File_Posix
+  UT_AUTO_HELPERS
 )
-set(UT_MOD_DEPS
-  STest
-)
-set(UT_AUTO_HELPERS ON)
-register_fprime_ut()
