@@ -76,7 +76,9 @@ FwOpcodeType GdsCmdAuthMux ::extractOpcode(Fw::ComBuffer& data) const {
     Fw::CmdPacket cmdPkt;
     data.resetDeser();
     const Fw::SerializeStatus status = cmdPkt.deserializeFrom(data);
-    return (status == Fw::FW_SERIALIZE_OK) ? cmdPkt.getOpCode() : UNKNOWN_OPCODE;
+    const FwOpcodeType opcode = (status == Fw::FW_SERIALIZE_OK) ? cmdPkt.getOpCode() : UNKNOWN_OPCODE;
+    data.resetDeser();
+    return opcode;
 }
 
 void GdsCmdAuthMux ::rejectCommand(CommandSource source, Fw::ComBuffer& data, U32 context) {

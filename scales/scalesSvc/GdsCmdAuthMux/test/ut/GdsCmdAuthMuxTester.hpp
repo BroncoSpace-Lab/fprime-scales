@@ -67,6 +67,7 @@ class GdsCmdAuthMuxTester final : public GdsCmdAuthMuxGTestBase {
     void startWithTcp(bool connected);
     void setTcpStatus(bool connected);
     Fw::ComBuffer buildCommand(FwOpcodeType opcode);
+    FwOpcodeType extractForwardedOpcode(FwSizeType index);
     void invokeSwitchToTcp(U32 cmdSeq);
 
   private:

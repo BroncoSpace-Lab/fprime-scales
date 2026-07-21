@@ -67,6 +67,15 @@ Fw::ComBuffer GdsCmdAuthMuxTester ::buildCommand(FwOpcodeType opcode) {
     return data;
 }
 
+FwOpcodeType GdsCmdAuthMuxTester ::extractForwardedOpcode(FwSizeType index) {
+    FW_ASSERT(index < this->fromPortHistory_cmdOut->size(), static_cast<FwAssertArgType>(index));
+    Fw::ComBuffer data = this->fromPortHistory_cmdOut->at(index).data;
+    Fw::CmdPacket cmdPkt;
+    data.resetDeser();
+    EXPECT_EQ(cmdPkt.deserializeFrom(data), Fw::FW_SERIALIZE_OK);
+    return cmdPkt.getOpCode();
+}
+
 void GdsCmdAuthMuxTester ::invokeSwitchToTcp(U32 cmdSeq) {
     Fw::CmdArgBuffer args;
     this->component.get_cmdIn_InputPort(0)->invoke(this->component.getIdBase(), cmdSeq, args);
@@ -113,6 +122,7 @@ void GdsCmdAuthMuxTester ::commandGatingAndResponseRouting() {
     Fw::ComBuffer tcpCommand = this->buildCommand(this->component.getIdBase() + 1);
     this->invoke_to_tcpCmdIn(0, tcpCommand, 10);
     ASSERT_from_cmdOut_SIZE(1);
+    ASSERT_EQ(this->extractForwardedOpcode(0), this->component.getIdBase() + 1);
     ASSERT_from_tcpCmdResponseOut_SIZE(0);
 
     Fw::ComBuffer inactiveUartCommand = this->buildCommand(this->component.getIdBase() + 2);
@@ -133,6 +143,7 @@ void GdsCmdAuthMuxTester ::commandGatingAndResponseRouting() {
     Fw::ComBuffer uartCommand = this->buildCommand(this->component.getIdBase() + 2);
     this->invoke_to_uartCmdIn(0, uartCommand, 20);
     ASSERT_from_cmdOut_SIZE(2);
+    ASSERT_EQ(this->extractForwardedOpcode(1), this->component.getIdBase() + 2);
     Fw::ComBuffer rejectedTcpCommand = this->buildCommand(this->component.getIdBase() + 1);
     this->invoke_to_tcpCmdIn(0, rejectedTcpCommand, 21);
     ASSERT_from_tcpCmdResponseOut_SIZE(2);
