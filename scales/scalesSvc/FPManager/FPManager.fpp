@@ -52,6 +52,9 @@ module scalesSvc {
         @ Enable HPC Mode. Jetson power-on requests are gated until this succeeds.
         async command ENABLE_HPC_MODE opcode 0x00
 
+        @ Disable HPC Mode and return to Safe Mode. The Jetson is powered off.
+        async command DISABLE_HPC_MODE opcode 0x01
+
         ##############################################################################
         #### Events and telemetry ####################################################
         ##############################################################################
@@ -79,7 +82,7 @@ module scalesSvc {
             format "FPManager emergency shutdown asserted"
 
         @ Current FP state for downlink and diagnostics.
-        telemetry FP_STATE: U8 id 0x00
+        telemetry FP_STATE: FPManagerState id 0x00
 
         @ Number of Jetson thermal readings currently held by FPManager.
         telemetry JETSON_VALID_READING_COUNT: U8 id 0x01

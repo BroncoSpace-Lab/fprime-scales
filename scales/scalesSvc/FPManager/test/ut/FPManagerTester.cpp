@@ -33,7 +33,7 @@ void FPManagerTester::initializeSafeMode() {
   this->invoke_to_run(0, 0);
   this->drainStateMachine();
   ASSERT_TLM_FP_STATE_SIZE(1);
-  ASSERT_EQ(this->tlmHistory_FP_STATE->at(0).arg, 1U);
+  ASSERT_EQ(this->tlmHistory_FP_STATE->at(0).arg, FPManagerState::SAFE);
 }
 
 void FPManagerTester::enterHpcMode() {
@@ -51,8 +51,7 @@ void FPManagerTester::initializesSafeModeAndGatesJetsonOn() {
       this->invoke_to_jetsonPowerAuthorizeIn(0, JetsonPowerStateID::ON);
   ASSERT_EQ(result, Fw::Success::FAILURE);
   ASSERT_EVENTS_JETSON_POWER_REQUEST_REJECTED_SIZE(1);
-  ASSERT_from_jetsonPowerRequestOut_SIZE(1);
-  ASSERT_from_jetsonPowerRequestOut(0, JetsonPowerStateID::OFF);
+  ASSERT_from_jetsonPowerRequestOut_SIZE(0);
 }
 
 void FPManagerTester::entersHpcModeAndAcceptsJetsonOn() {
@@ -62,6 +61,27 @@ void FPManagerTester::entersHpcModeAndAcceptsJetsonOn() {
       this->invoke_to_jetsonPowerAuthorizeIn(0, JetsonPowerStateID::ON);
   ASSERT_EQ(result, Fw::Success::SUCCESS);
   ASSERT_EVENTS_JETSON_POWER_REQUEST_REJECTED_SIZE(0);
+}
+
+void FPManagerTester::disablesHpcModeAndGatesJetsonOn() {
+  this->initializeSafeMode();
+  this->enterHpcMode();
+  this->invoke_to_jetsonPowerStateIn(0, JetsonPowerStateID::ON);
+
+  this->sendCmd_DISABLE_HPC_MODE(0, 1);
+  this->drainStateMachine();
+
+  ASSERT_CMD_RESPONSE_SIZE(2);
+  ASSERT_EQ(this->cmdResponseHistory->at(1).response, Fw::CmdResponse::OK);
+  ASSERT_from_jetsonPowerRequestOut_SIZE(1);
+  ASSERT_from_jetsonPowerRequestOut(0, JetsonPowerStateID::OFF);
+  ASSERT_TLM_FP_STATE_SIZE(4);
+  ASSERT_EQ(this->tlmHistory_FP_STATE->at(3).arg, FPManagerState::SAFE);
+
+  const Fw::Success result =
+      this->invoke_to_jetsonPowerAuthorizeIn(0, JetsonPowerStateID::ON);
+  ASSERT_EQ(result, Fw::Success::FAILURE);
+  ASSERT_EVENTS_JETSON_POWER_REQUEST_REJECTED_SIZE(1);
 }
 
 void FPManagerTester::attributesJetsonFaultAndReturnsSafe() {
@@ -84,8 +104,8 @@ void FPManagerTester::attributesJetsonFaultAndReturnsSafe() {
   ASSERT_EVENTS_FAULT_DETECTED_SIZE(1);
   ASSERT_EVENTS_FAULT_DETECTED(0, "Jetson", 4U, 99.0F,
                                ThermalStates::FAULT, "gpu-cluster", 42U);
-  ASSERT_from_jetsonPowerRequestOut_SIZE(2);
-  ASSERT_from_jetsonPowerRequestOut(1, JetsonPowerStateID::OFF);
+  ASSERT_from_jetsonPowerRequestOut_SIZE(1);
+  ASSERT_from_jetsonPowerRequestOut(0, JetsonPowerStateID::OFF);
 }
 
 void FPManagerTester::fatalShutdownForwardsAndLatches() {
@@ -96,7 +116,8 @@ void FPManagerTester::fatalShutdownForwardsAndLatches() {
   ASSERT_EVENTS_EMERGENCY_SHUTDOWN_SIZE(1);
   ASSERT_from_fatalOut_SIZE(1);
   ASSERT_from_fatalOut(0, static_cast<FwEventIdType>(0x1234));
-  ASSERT_from_jetsonPowerRequestOut_SIZE(2);
+  ASSERT_from_jetsonPowerRequestOut_SIZE(1);
+  ASSERT_from_jetsonPowerRequestOut(0, JetsonPowerStateID::OFF);
   ASSERT_from_peripheralPowerOff_SIZE(1);
 
   const Fw::Success result =

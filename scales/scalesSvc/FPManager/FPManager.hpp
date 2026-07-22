@@ -17,7 +17,6 @@ class FPManager final : public FPManagerComponentBase {
     ~FPManager() override;
 
   private:
-    enum class Mode : U8 { INIT = 0, SAFE = 1, HPC = 2, FAULT = 3, EMERGENCY = 4 };
     static constexpr FwSizeType JETSON_SENSOR_COUNT = 9;
 
     void run_handler(FwIndexType portNum, U32 context) override;
@@ -36,6 +35,7 @@ class FPManager final : public FPManagerComponentBase {
                                     const JetsonPowerStateID& stateNow) override;
 
     void ENABLE_HPC_MODE_cmdHandler(FwOpcodeType opCode, U32 cmdSeq) override;
+    void DISABLE_HPC_MODE_cmdHandler(FwOpcodeType opCode, U32 cmdSeq) override;
 
     void scalesSvc_FPStateMachine_action_initializeSafeMode(
         SmId smId, scalesSvc_FPStateMachine::Signal signal) override;
@@ -44,6 +44,8 @@ class FPManager final : public FPManagerComponentBase {
     void scalesSvc_FPStateMachine_action_hpcModeHealthCheck(
         SmId smId, scalesSvc_FPStateMachine::Signal signal) override;
     void scalesSvc_FPStateMachine_action_enableHpcMode(
+        SmId smId, scalesSvc_FPStateMachine::Signal signal) override;
+    void scalesSvc_FPStateMachine_action_disableHpcMode(
         SmId smId, scalesSvc_FPStateMachine::Signal signal) override;
     void scalesSvc_FPStateMachine_action_confirmJetsonFaultAndPowerOff(
         SmId smId, scalesSvc_FPStateMachine::Signal signal) override;
@@ -58,7 +60,7 @@ class FPManager final : public FPManagerComponentBase {
     void reportReadingFault();
     void writeStateTelemetry();
 
-    Mode m_mode;
+    FPManagerState m_mode;
     ThermalReading m_imxReading;
     ThermalReading m_peripheralReading;
     ThermalReading m_jetsonReadings[JETSON_SENSOR_COUNT];

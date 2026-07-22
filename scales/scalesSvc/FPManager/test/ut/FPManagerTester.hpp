@@ -17,6 +17,7 @@ class FPManagerTester final : public FPManagerGTestBase {
 
     void initializesSafeModeAndGatesJetsonOn();
     void entersHpcModeAndAcceptsJetsonOn();
+    void disablesHpcModeAndGatesJetsonOn();
     void attributesJetsonFaultAndReturnsSafe();
     void fatalShutdownForwardsAndLatches();
 

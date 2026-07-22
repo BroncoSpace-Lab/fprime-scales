@@ -9,7 +9,7 @@ namespace scalesSvc {
 
 FPManager::FPManager(const char* const compName)
     : FPManagerComponentBase(compName),
-      m_mode(Mode::INIT),
+      m_mode(FPManagerState::INIT),
       m_imxReading(),
       m_peripheralReading(),
       m_jetsonReadings{},
@@ -93,13 +93,13 @@ Fw::Success FPManager::jetsonPowerAuthorizeIn_handler(
             stateReq, Fw::String("Unsupported Jetson power state"));
         return Fw::Success::FAILURE;
     }
-    if (stateReq.e == JetsonPowerStateID::ON && this->m_mode != Mode::HPC) {
+    if (stateReq.e == JetsonPowerStateID::ON && this->m_mode != FPManagerState::HPC) {
         this->log_WARNING_HI_JETSON_POWER_REQUEST_REJECTED(
             stateReq, Fw::String("Jetson ON requires HPC Mode"));
         return Fw::Success::FAILURE;
     }
 
-    if (this->m_mode == Mode::EMERGENCY) {
+    if (this->m_mode == FPManagerState::EMERGENCY) {
         this->log_WARNING_HI_JETSON_POWER_REQUEST_REJECTED(
             stateReq, Fw::String("Emergency Shutdown is latched"));
         return Fw::Success::FAILURE;
@@ -109,7 +109,7 @@ Fw::Success FPManager::jetsonPowerAuthorizeIn_handler(
 }
 
 void FPManager::ENABLE_HPC_MODE_cmdHandler(FwOpcodeType opCode, U32 cmdSeq) {
-    if (this->m_mode != Mode::SAFE || !this->m_safeModeHealthy) {
+    if (this->m_mode != FPManagerState::SAFE || !this->m_safeModeHealthy) {
         this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::VALIDATION_ERROR);
         return;
     }
@@ -117,19 +117,34 @@ void FPManager::ENABLE_HPC_MODE_cmdHandler(FwOpcodeType opCode, U32 cmdSeq) {
     this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
 }
 
+void FPManager::DISABLE_HPC_MODE_cmdHandler(FwOpcodeType opCode, U32 cmdSeq) {
+    if (this->m_mode == FPManagerState::SAFE) {
+        this->writeStateTelemetry();
+        this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
+        return;
+    }
+
+    if (this->m_mode != FPManagerState::HPC) {
+        this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::VALIDATION_ERROR);
+        return;
+    }
+
+    this->fpStateMachine_sendSignal_hpcMode_dis();
+    this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
+}
+
 void FPManager::scalesSvc_FPStateMachine_action_initializeSafeMode(
     SmId smId, scalesSvc_FPStateMachine::Signal signal) {
-    this->m_mode = Mode::SAFE;
+    this->m_mode = FPManagerState::SAFE;
     this->m_hasFault = false;
     this->m_safeModeHealthy = false;
     this->m_faultSource = Fw::String("");
-    this->jetsonPowerRequestOut_out(0, JetsonPowerStateID::OFF);
     this->writeStateTelemetry();
 }
 
 void FPManager::scalesSvc_FPStateMachine_action_safeModeHealthCheck(
     SmId smId, scalesSvc_FPStateMachine::Signal signal) {
-    this->m_mode = Mode::SAFE;
+    this->m_mode = FPManagerState::SAFE;
     ThermalReading faultReading;
     if (this->m_imxReadingValid && this->readingIsFault(this->m_imxReading)) {
         this->m_safeModeHealthy = false;
@@ -141,13 +156,14 @@ void FPManager::scalesSvc_FPStateMachine_action_safeModeHealthCheck(
         this->fpStateMachine_sendSignal_failure();
     } else {
         this->m_safeModeHealthy = true;
+        this->writeStateTelemetry();
         this->fpStateMachine_sendSignal_healthy();
     }
 }
 
 void FPManager::scalesSvc_FPStateMachine_action_hpcModeHealthCheck(
     SmId smId, scalesSvc_FPStateMachine::Signal signal) {
-    this->m_mode = Mode::HPC;
+    this->m_mode = FPManagerState::HPC;
     ThermalReading faultReading;
     const bool imxFault = this->m_imxReadingValid && readingIsFault(this->m_imxReading);
     const bool peripheralFault =
@@ -165,13 +181,25 @@ void FPManager::scalesSvc_FPStateMachine_action_hpcModeHealthCheck(
         }
         this->fpStateMachine_sendSignal_failure();
     } else {
+        this->writeStateTelemetry();
         this->fpStateMachine_sendSignal_healthy();
     }
 }
 
 void FPManager::scalesSvc_FPStateMachine_action_enableHpcMode(
     SmId smId, scalesSvc_FPStateMachine::Signal signal) {
-    this->m_mode = Mode::HPC;
+    this->m_mode = FPManagerState::HPC;
+    this->writeStateTelemetry();
+}
+
+void FPManager::scalesSvc_FPStateMachine_action_disableHpcMode(
+    SmId smId, scalesSvc_FPStateMachine::Signal signal) {
+    if (this->m_jetsonPowerState == JetsonPowerStateID::ON) {
+        this->jetsonPowerRequestOut_out(0, JetsonPowerStateID::OFF);
+    }
+    this->m_jetsonPowerState = JetsonPowerStateID::OFF;
+    this->m_mode = FPManagerState::SAFE;
+    this->m_safeModeHealthy = false;
     this->writeStateTelemetry();
 }
 
@@ -185,24 +213,24 @@ void FPManager::scalesSvc_FPStateMachine_action_confirmJetsonFaultAndPowerOff(
     this->rememberFault("JETSON", faultReading);
     this->reportReadingFault();
     this->jetsonPowerRequestOut_out(0, JetsonPowerStateID::OFF);
-    this->m_mode = Mode::SAFE;
+    this->m_mode = FPManagerState::SAFE;
     this->writeStateTelemetry();
     this->fpStateMachine_sendSignal_success();
 }
 
 void FPManager::scalesSvc_FPStateMachine_action_reportFault(
     SmId smId, scalesSvc_FPStateMachine::Signal signal) {
-    this->m_mode = Mode::FAULT;
+    this->m_mode = FPManagerState::FAULT;
     this->reportReadingFault();
     this->writeStateTelemetry();
 }
 
 void FPManager::scalesSvc_FPStateMachine_action_SHUTDOWN(
     SmId smId, scalesSvc_FPStateMachine::Signal signal) {
-    if (this->m_mode == Mode::EMERGENCY) {
+    if (this->m_mode == FPManagerState::EMERGENCY) {
         return;
     }
-    this->m_mode = Mode::EMERGENCY;
+    this->m_mode = FPManagerState::EMERGENCY;
     this->log_WARNING_HI_EMERGENCY_SHUTDOWN();
     this->jetsonPowerRequestOut_out(0, JetsonPowerStateID::OFF);
     this->peripheralPowerOff_out(0);
@@ -243,7 +271,7 @@ void FPManager::reportReadingFault() {
 }
 
 void FPManager::writeStateTelemetry() {
-    this->tlmWrite_FP_STATE(static_cast<U8>(this->m_mode));
+    this->tlmWrite_FP_STATE(this->m_mode);
 }
 
 }  // namespace scalesSvc

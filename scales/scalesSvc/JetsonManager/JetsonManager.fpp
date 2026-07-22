@@ -17,13 +17,16 @@ module scalesSvc {
         @ Synchronous authorization gate for REQUEST_JETSON_POWER_STATE.
         output port fpJetsonPowerAuthorize: JetsonPowerStateAuthorize
 
+        @ Current Jetson power state report to FPManager.
+        output port fpJetsonPowerStateOut: JetsonPowerStateSend
+
         @ Port that receives the rate group tick
         sync input port schedIn: Svc.Sched
 
         @ Port for sending power mode change requests to JetsonPowerModeManager
         output port reqPwrMode: PowerModeReceive
 
-         @ Port for sending Jetson Power on/off requests to JetsonPowerModeManager
+         @ Jetson-side graceful power-state request path for commanded OFF.
         output port reqJetsonPwrState: JetsonPowerStateReceive
 
           @ Port for driving GPIO to control hardware power

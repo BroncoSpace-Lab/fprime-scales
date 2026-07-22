@@ -27,6 +27,9 @@ module scalesSvc {
         @ Signal to switch to HPC Mode
         signal hpcMode_en
 
+        @ Signal to leave HPC Mode and return to Safe Mode.
+        signal hpcMode_dis
+
         @ Signal that the Jetson has a thermal or power fault while in HPC Mode.
         signal jetson_fault
 
@@ -46,6 +49,9 @@ module scalesSvc {
 
         @ Enable HPC Mode and permit Jetson power-on requests.
         action enableHpcMode
+
+        @ Disable HPC Mode, power off the Jetson, and return to Safe Mode.
+        action disableHpcMode
 
         @ Confirm the Jetson fault, report its source, and power it off.
         action confirmJetsonFaultAndPowerOff
@@ -78,6 +84,7 @@ module scalesSvc {
         @ HPC Mode. All thermal and power sources are checked.
         state hpcMode {
             on tick do {hpcModeHealthCheck}
+            on hpcMode_dis do {disableHpcMode} enter safeMode
             on jetson_fault enter jetsonFaultRecovery
             on failure do {reportFault} enter faultMode
             on $fatal do {SHUTDOWN} enter emergencyShutdown

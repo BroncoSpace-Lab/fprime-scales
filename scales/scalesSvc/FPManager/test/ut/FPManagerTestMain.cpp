@@ -10,6 +10,11 @@ TEST(FPManager, EntersHpcModeAndAcceptsJetsonOn) {
   tester.entersHpcModeAndAcceptsJetsonOn();
 }
 
+TEST(FPManager, DisablesHpcModeAndGatesJetsonOn) {
+  scalesSvc::FPManagerTester tester;
+  tester.disablesHpcModeAndGatesJetsonOn();
+}
+
 TEST(FPManager, AttributesJetsonFaultAndReturnsSafe) {
   scalesSvc::FPManagerTester tester;
   tester.attributesJetsonFaultAndReturnsSafe();
