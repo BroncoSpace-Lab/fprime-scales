@@ -115,10 +115,11 @@ namespace scalesSvc {
         case JETSON:
           this->tlmWrite_JETSON_TEMP(m_thermalReadings[JETSON]);
           break;
-        default:
+          default:
           printf("Warning: Unrecognized sensor index %d. No telemetry was logged for this sensor.\n", i);
           break;
       }
+      this->thermalReadingOut_out(0, this->m_thermalReadings[i]);
     }
     
     if(m_successfulRead){

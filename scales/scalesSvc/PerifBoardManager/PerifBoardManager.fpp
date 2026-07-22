@@ -7,6 +7,9 @@ module scalesSvc {
         @ input port to run the manager
         async input port run: Svc.Sched
 
+        @ Latched emergency power-off request from FPManager.
+        sync input port emergencyPowerOff: EmergencyPowerOff
+
         @ output port  sending calls to the GPIO driver
         output port gpioSet: Drv.GpioWrite
 

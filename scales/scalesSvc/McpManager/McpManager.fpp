@@ -15,6 +15,9 @@ module scalesSvc {
         @ Async scheduler input port to poll temp data from the sensors
         async input port run: Svc.Sched
 
+        @ Complete readings for the i.MX, peripheral, and Jetson-board sensors.
+        output port thermalReadingOut: ThermalReadingPort
+
         ###############################################################################
         #                                 Telemetry                                   #
         ###############################################################################

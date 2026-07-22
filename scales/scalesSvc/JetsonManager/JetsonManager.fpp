@@ -11,6 +11,12 @@ module scalesSvc {
         @ Port for receiving current Jetson power state from JetsonPowerModeManager
         async input port currentJetsonPwrState: JetsonPowerStateSend
 
+        @ Internal power-off request from FPManager during recovery or shutdown.
+        sync input port fpJetsonPowerRequestIn: JetsonPowerStateReceive
+
+        @ Synchronous authorization gate for REQUEST_JETSON_POWER_STATE.
+        output port fpJetsonPowerAuthorize: JetsonPowerStateAuthorize
+
         @ Port that receives the rate group tick
         sync input port schedIn: Svc.Sched
 

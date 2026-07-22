@@ -99,30 +99,35 @@ void ImxThermalManager::scalesSvc_ThermalStateMachine_action_doEvaluate( SmId sm
   if(paramGet_IMX_CPU_FAULT_LOW(m_paramValid) <= this->m_tempC && this->m_tempC < paramGet_IMX_CPU_WARN_LOW(m_paramValid)){
     this->m_cpu_thermal_read.set_tempState(scalesSvc::ThermalStates::FAULT); // Set the thermal state to FAULT
     this->tlmWrite_imx_cpu_temp_read(this->m_cpu_thermal_read); // emit the telemetry with the state
+    this->imxThermalReadingOut_out(0, this->m_cpu_thermal_read);
     
       this->thermalStateMachine_sendSignal_success();
   }
   if(paramGet_IMX_CPU_WARN_LOW(m_paramValid) <= this->m_tempC && this->m_tempC < paramGet_IMX_CPU_IDLE_LOW(m_paramValid)){
     this->m_cpu_thermal_read.set_tempState(scalesSvc::ThermalStates::WARN); // Set the thermal state to WARN
     this->tlmWrite_imx_cpu_temp_read(this->m_cpu_thermal_read); // emit the telemetry with the state
+    this->imxThermalReadingOut_out(0, this->m_cpu_thermal_read);
 
       this->thermalStateMachine_sendSignal_success();
   }
   if(paramGet_IMX_CPU_IDLE_LOW(m_paramValid) <= this->m_tempC && this->m_tempC < paramGet_IMX_CPU_IDLE_HIGH(m_paramValid)){
     this->m_cpu_thermal_read.set_tempState(scalesSvc::ThermalStates::IDLE); // Set the thermal state to IDLE
     this->tlmWrite_imx_cpu_temp_read(this->m_cpu_thermal_read); // emit the telemetry with the state
+    this->imxThermalReadingOut_out(0, this->m_cpu_thermal_read);
 
       this->thermalStateMachine_sendSignal_success();
   }
   if(paramGet_IMX_CPU_IDLE_HIGH(m_paramValid) <= this->m_tempC && this->m_tempC < paramGet_IMX_CPU_WARN_HIGH(m_paramValid)){
     this->m_cpu_thermal_read.set_tempState(scalesSvc::ThermalStates::WARN); // Set the thermal state to WARN
     this->tlmWrite_imx_cpu_temp_read(this->m_cpu_thermal_read); // emit the telemetry with the state
+    this->imxThermalReadingOut_out(0, this->m_cpu_thermal_read);
 
       this->thermalStateMachine_sendSignal_success();
   }
   if(paramGet_IMX_CPU_WARN_HIGH(m_paramValid) <= this->m_tempC && this->m_tempC < paramGet_IMX_CPU_FAULT_HIGH(m_paramValid)){
     this->m_cpu_thermal_read.set_tempState(scalesSvc::ThermalStates::FAULT); // Set the thermal state to FAULT
     this->tlmWrite_imx_cpu_temp_read(this->m_cpu_thermal_read); // emit the telemetry with the state
+    this->imxThermalReadingOut_out(0, this->m_cpu_thermal_read);
    
       this->thermalStateMachine_sendSignal_success();
   }

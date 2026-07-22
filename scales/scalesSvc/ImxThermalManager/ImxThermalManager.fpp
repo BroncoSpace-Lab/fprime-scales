@@ -10,6 +10,9 @@ module scalesSvc {
 
         @ output port to send imx thermal state to spacecraft state machine
         output port imxThermalStateOut: ThermalStateOut
+
+        @ output port to send the complete i.MX thermal reading to FPManager
+        output port imxThermalReadingOut: ThermalReadingPort
        
        @ telemetry channel for imx thermal state
         telemetry imx_thermal_state: ThermalStates \

@@ -8,6 +8,9 @@ module scalesSvc {
          @ Synchronous input port to handle incoming jetson temp readings
         async input port run: Svc.Sched
 
+        @ Output the complete reading for each Jetson sensor to the FPManager.
+        output port jetsonThermalReadingOut: ThermalReadingPort
+
         @ telemetry channel for Jetson CPU temp data
         telemetry jetson_cpu_temp_read: ThermalReading \
             id 0x00

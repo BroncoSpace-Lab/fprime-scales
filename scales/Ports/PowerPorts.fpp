@@ -13,4 +13,10 @@ module scalesSvc{
 
     @ Port for sending current power state of the Jetson
     port JetsonPowerStateSend(stateNow: JetsonPowerStateID)
+
+    @ Synchronous authorization for a Jetson power command.
+    port JetsonPowerStateAuthorize(stateReq: JetsonPowerStateID) -> Fw.Success
+
+    @ Latched emergency power-off request for protected peripheral hardware.
+    port EmergencyPowerOff
 }

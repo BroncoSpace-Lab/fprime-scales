@@ -43,6 +43,11 @@ namespace scalesSvc {
           const scalesSvc::JetsonPowerStateID& stateNow
       ) override;
 
+      void fpJetsonPowerRequestIn_handler(
+          FwIndexType portNum,
+          const scalesSvc::JetsonPowerStateID& stateReq
+      ) override;
+
       //! Handler implementation for currentPwrMode
       //!
       //! Port for receiving current power mode from JetsonPowerModeManager
@@ -117,6 +122,7 @@ namespace scalesSvc {
       U32 m_powerTimeoutTicks;  //!< Ticks elapsed since the power state change request was sent
       bool m_waitingToCutJetsonPower; //!< True if we've sent a shutdown command and are waiting to cut power after a delay
       U32 m_powerOffDelayTicks; //!< Ticks elapsed since sending the shutdown command, used to delay cutting power to allow for graceful shutdown
+      bool m_pendingPowerCmdRespond; //!< Whether the pending power request has a command sequence to complete
 
   };
 

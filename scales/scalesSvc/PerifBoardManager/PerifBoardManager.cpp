@@ -29,12 +29,28 @@ namespace scalesSvc {
   // Handler implementations for typed input ports
   // ----------------------------------------------------------------------
 
+  void PerifBoardManager::emergencyPowerOff_handler(
+      FwIndexType portNum
+  ) {
+    m_emergencyShutdown = true;
+    m_powerMode = Fw::On::OFF;
+    m_onOff = Fw::On::OFF;
+    this->gpioSet_out(0, Fw::Logic::LOW);
+    this->tlmWrite_gpioState(Fw::Logic::LOW);
+  }
+
   void PerifBoardManager ::
     run_handler(
         FwIndexType portNum,
         U32 context
     )
   {
+    if (m_emergencyShutdown) {
+      this->gpioSet_out(0, Fw::Logic::LOW);
+      this->tlmWrite_gpioState(Fw::Logic::LOW);
+      return;
+    }
+
     switch (m_powerMode) { //switch case for gpio state
       case Fw::On::ON:
           this->gpioSet_out(0, Fw::Logic::HIGH); //keep on

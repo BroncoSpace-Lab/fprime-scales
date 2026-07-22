@@ -30,7 +30,8 @@ namespace scalesSvc {
       m_requestedPowerState(scalesSvc::JetsonPowerStateID::OFF),
       m_powerTimeoutTicks(0),
       m_waitingToCutJetsonPower(false),
-      m_powerOffDelayTicks(0)
+      m_powerOffDelayTicks(0),
+      m_pendingPowerCmdRespond(false)
       // instantiate private members in a constructor.
   {
 
@@ -45,6 +46,29 @@ namespace scalesSvc {
   // ----------------------------------------------------------------------
   // Handler implementations for typed input ports
   // ----------------------------------------------------------------------
+
+  void JetsonManager::fpJetsonPowerRequestIn_handler(
+      FwIndexType portNum,
+      const scalesSvc::JetsonPowerStateID& stateReq
+  ) {
+    if (stateReq.e != JetsonPowerStateID::OFF) {
+      return;
+    }
+
+    m_pendingPowerOpCode = 0;
+    m_pendingPowerCmdSeq = 0;
+    m_requestedPowerState = stateReq;
+    m_hasPendingPowerCmd = true;
+    m_pendingPowerCmdRespond = false;
+    m_powerTimeoutTicks = 0;
+    m_waitingToCutJetsonPower = false;
+    m_powerOffDelayTicks = 0;
+    // Protection requests must remove the physical power immediately. The
+    // normal GDS command path retains its graceful shutdown/acknowledgement flow.
+    this->gpioSet_out(0, JETSON_POWER_GPIO_OFF);
+    this->tlmWrite_JetsonPowerState(JetsonPowerStateID::OFF);
+    this->reqJetsonPwrState_out(0, stateReq);
+  }
 
   void JetsonManager ::
     currentJetsonPwrState_handler(
@@ -118,11 +142,10 @@ namespace scalesSvc {
         printf("JetsonManager: Cutting Jetson power after shutdown acknowledgment\n");
         this->gpioSet_out(0, JETSON_POWER_GPIO_OFF);
 
-        this->cmdResponse_out(
-          m_pendingPowerOpCode,
-          m_pendingPowerCmdSeq,
-          Fw::CmdResponse::OK
-        );
+        if (m_pendingPowerCmdRespond) {
+          this->cmdResponse_out(m_pendingPowerOpCode, m_pendingPowerCmdSeq,
+                                Fw::CmdResponse::OK);
+        }
 
         m_waitingToCutJetsonPower = false;
         m_hasPendingPowerCmd = false;
@@ -145,11 +168,10 @@ namespace scalesSvc {
         }
         
 
-        this->cmdResponse_out(
-          m_pendingPowerOpCode,
-          m_pendingPowerCmdSeq,
-          Fw::CmdResponse::OK
-        );
+        if (m_pendingPowerCmdRespond) {
+          this->cmdResponse_out(m_pendingPowerOpCode, m_pendingPowerCmdSeq,
+                                Fw::CmdResponse::OK);
+        }
 
         m_hasPendingPowerCmd = false;
         m_powerTimeoutTicks = 0;
@@ -193,6 +215,12 @@ namespace scalesSvc {
         scalesSvc::JetsonPowerStateID jetsonState
     )
   {
+      const Fw::Success authorization = this->fpJetsonPowerAuthorize_out(0, jetsonState);
+      if (authorization != Fw::Success::SUCCESS) {
+        this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::VALIDATION_ERROR);
+        return;
+      }
+
       if (m_hasPendingPowerCmd) {
         this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::BUSY);
         return;
@@ -205,6 +233,7 @@ namespace scalesSvc {
       m_powerTimeoutTicks = 0;
       m_waitingToCutJetsonPower = false;
       m_powerOffDelayTicks = 0;
+      m_pendingPowerCmdRespond = true;
 
       this->log_ACTIVITY_HI_JETSON_POWER_STATE_REQUESTED(jetsonState);
 

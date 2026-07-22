@@ -139,6 +139,7 @@ namespace scalesSvc {
             this->tlmWrite_jetson_tj_temp_read(this->m_jetsonThermalReadings[i]);
             break;
         }
+        this->jetsonThermalReadingOut_out(0, this->m_jetsonThermalReadings[i]);
     }
 
     this->jetson_thermalStateMachine_sendSignal_success(); // Transition back to initial state to read temp again on next tick

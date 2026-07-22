@@ -38,6 +38,9 @@ namespace scalesSvc {
       Fw::On m_powerMode = Fw::On::ON; //!< Power mode of the board, default to ON
       U32 m_startTimeSec;
       Fw::On m_onOff = Fw::On::ON; //instantiate on type for command handler
+      bool m_emergencyShutdown = false;
+
+      void emergencyPowerOff_handler(FwIndexType portNum) override;
       //! Handler implementation for run
       //!
       //! input port to run the manager
