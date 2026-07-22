@@ -15,6 +15,9 @@ module scalesSvc {
         @ Async scheduler input port to poll temp data from the sensors
         async input port run: Svc.Sched
 
+        @ Output to send all of thermal readings to DataProducer
+        output port mcpThermalReadOut: McpThermalReadings
+
         ###############################################################################
         #                                 Telemetry                                   #
         ###############################################################################

@@ -120,6 +120,9 @@ namespace scalesSvc {
           break;
       }
     }
+
+    // Send thermal readings to DataProducer
+    this->mcpThermalReadOut_out(0, m_thermalReadings[OBC], m_thermalReadings[PERIF], m_thermalReadings[JETSON]);
     
     if(m_successfulRead){
       this->mcp_thermalStateMachine_sendSignal_success(); // Transition back to initial state to read temp again on next tick
