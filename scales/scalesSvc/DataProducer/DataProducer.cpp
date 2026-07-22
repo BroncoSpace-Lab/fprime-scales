@@ -34,7 +34,7 @@ void DataProducer ::McpThermalReadingIn_handler(FwIndexType portNum,
 
     if(this->m_mcpTempContainerValid){
         if(!this->mcpSerialize_Send(obcThermalReading, perifThermalReading, jetsonThermalReading)){
-            printf("[ERROR] Couldn't serialize and send data products");
+            printf("[ERROR] Couldn't serialize and send data products\n");
         }
     }
 }
@@ -43,7 +43,7 @@ void DataProducer ::run_handler(FwIndexType portNum, U32 context) {
     
     if(!this->m_mcpTempContainerValid){
         if(!this->initMcpContainer()){
-            printf("[ERROR] Failed to initialize mcp temp container");
+            printf("[ERROR] Failed to initialize mcp temp container\n");
         }
     }
 }
@@ -56,7 +56,7 @@ bool DataProducer ::initMcpContainer(){
     if(this->dpGet_McpTemperatureContainer(MCP_CONTAINER_SIZE, this->m_mcpTempContainer) == Fw::Success::SUCCESS){
         this->m_mcpTempContainerValid = true;
         this->m_mcpTempContainer.setTimeTag(this->getTime());
-        printf("Initialized MCP container successfully");
+        printf("Initialized MCP container successfully\n");
         return true;
     }
     
@@ -91,7 +91,7 @@ bool DataProducer ::mcpSerialize_Send(const scalesSvc::ThermalReading& obcTherma
     // If we've reached the record count, send the full product
     if(this->m_mcpRecordCount == RECORD_COUNT){
         this->dpSend(this->m_mcpTempContainer);
-        printf("MCP data product sent");
+        printf("MCP data product sent\n");
         
         // Resets mcp container attributes to be initalizd on next tick
         this->m_mcpRecordCount = 0;
