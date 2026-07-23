@@ -50,6 +50,11 @@ TEST(FPManager, JetsonFaultReadingTriggersRecoveryInHpc) {
   tester.jetsonFaultReadingTriggersRecoveryInHpc();
 }
 
+TEST(FPManager, JetsonFaultRecoveryClearsCachedReadingsBeforeHpcReentry) {
+  scalesSvc::FPManagerTester tester;
+  tester.jetsonFaultRecoveryClearsCachedReadingsBeforeHpcReentry();
+}
+
 TEST(FPManager, AttributesJetsonFaultAndReturnsSafe) {
   scalesSvc::FPManagerTester tester;
   tester.attributesJetsonFaultAndReturnsSafe();

@@ -129,6 +129,9 @@ void FPManager::remoteJetsonCmdResponseIn_handler(
 void FPManager::jetsonPowerStateIn_handler(FwIndexType portNum,
                                            const JetsonPowerStateID& stateNow) {
     this->m_jetsonPowerState = stateNow;
+    if (stateNow == JetsonPowerStateID::OFF) {
+        this->invalidateJetsonReadings();
+    }
 }
 
 Fw::Success FPManager::jetsonPowerAuthorizeIn_handler(
@@ -218,6 +221,8 @@ void FPManager::scalesSvc_FPStateMachine_action_hpcModeHealthCheck(
     } else if (peripheralFault) {
         if (jetsonFault) {
             this->jetsonPowerRequestOut_out(0, JetsonPowerStateID::OFF);
+            this->m_jetsonPowerState = JetsonPowerStateID::OFF;
+            this->invalidateJetsonReadings();
         }
         this->triggerPeripheralEmergencyShutdown(this->m_peripheralReading);
     } else if (jetsonFault) {
@@ -242,6 +247,7 @@ void FPManager::scalesSvc_FPStateMachine_action_disableHpcMode(
         this->jetsonPowerRequestOut_out(0, JetsonPowerStateID::OFF);
     }
     this->m_jetsonPowerState = JetsonPowerStateID::OFF;
+    this->invalidateJetsonReadings();
     this->m_mode = FPManagerState::SAFE;
     this->m_safeModeHealthy = false;
     this->writeStateTelemetry();
@@ -258,6 +264,8 @@ void FPManager::scalesSvc_FPStateMachine_action_confirmJetsonFaultAndPowerOff(
     this->rememberFault("JETSON", faultReading);
     this->reportReadingFault();
     this->jetsonPowerRequestOut_out(0, JetsonPowerStateID::OFF);
+    this->m_jetsonPowerState = JetsonPowerStateID::OFF;
+    this->invalidateJetsonReadings();
     this->m_mode = FPManagerState::SAFE;
     this->m_jetsonFaultSignalPending = false;
     this->writeStateTelemetry();
@@ -285,6 +293,8 @@ void FPManager::scalesSvc_FPStateMachine_action_faultModeHealthCheck(
         this->rememberFault("JETSON", jetsonFaultReading);
         this->reportReadingFault();
         this->jetsonPowerRequestOut_out(0, JetsonPowerStateID::OFF);
+        this->m_jetsonPowerState = JetsonPowerStateID::OFF;
+        this->invalidateJetsonReadings();
         this->m_mode = FPManagerState::FAULT;
         this->writeStateTelemetry();
         return;
@@ -312,6 +322,8 @@ void FPManager::scalesSvc_FPStateMachine_action_SHUTDOWN(
     }
     this->m_shutdownOutputsAsserted = true;
     this->jetsonPowerRequestOut_out(0, JetsonPowerStateID::OFF);
+    this->m_jetsonPowerState = JetsonPowerStateID::OFF;
+    this->invalidateJetsonReadings();
     this->peripheralPowerOff_out(0);
 }
 
@@ -337,6 +349,14 @@ FwOpcodeType FPManager::extractOpcode(Fw::ComBuffer& data) const {
         (status == Fw::FW_SERIALIZE_OK) ? cmdPkt.getOpCode() : UNKNOWN_OPCODE;
     data.resetDeser();
     return opcode;
+}
+
+void FPManager::invalidateJetsonReadings() {
+    for (FwIndexType i = 0; i < JETSON_SENSOR_COUNT; i++) {
+        this->m_jetsonReadingValid[i] = false;
+    }
+    this->m_jetsonFaultSignalPending = false;
+    this->tlmWrite_JETSON_VALID_READING_COUNT(0);
 }
 
 void FPManager::rememberFault(const char* source, const ThermalReading& reading) {

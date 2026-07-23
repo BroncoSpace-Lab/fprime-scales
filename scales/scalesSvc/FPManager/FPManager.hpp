@@ -66,6 +66,7 @@ class FPManager final : public FPManagerComponentBase {
     bool readingIsFault(const ThermalReading& reading) const;
     bool findJetsonFault(ThermalReading& faultReading) const;
     FwOpcodeType extractOpcode(Fw::ComBuffer& data) const;
+    void invalidateJetsonReadings();
     void rememberFault(const char* source, const ThermalReading& reading);
     void triggerImxEmergencyShutdown(const ThermalReading& reading);
     void triggerPeripheralEmergencyShutdown(const ThermalReading& reading);

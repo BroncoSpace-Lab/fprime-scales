@@ -25,6 +25,7 @@ class FPManagerTester final : public FPManagerGTestBase {
     void faultModeJetsonFaultRequestsOffAndStaysFault();
     void faultModeImxFaultOverridesJetsonAndPeripheral();
     void jetsonFaultReadingTriggersRecoveryInHpc();
+    void jetsonFaultRecoveryClearsCachedReadingsBeforeHpcReentry();
     void attributesJetsonFaultAndReturnsSafe();
     void fatalShutdownForwardsAndLatches();
     void rejectsRemoteJetsonCommandWhenJetsonOff();

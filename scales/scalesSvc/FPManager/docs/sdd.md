@@ -32,6 +32,10 @@ die. A Jetson fault is asserted when any valid Jetson reading has
 system-level aggregation. While FPManager is in HPC Mode, a newly received
 Jetson `FAULT` reading immediately asserts the Jetson fault signal; the system
 does not need to wait for the next FPManager health-check tick.
+Whenever FPManager commands or observes Jetson `OFF`, it invalidates the cached
+Jetson readings and writes `JETSON_VALID_READING_COUNT=0`. This prevents a
+pre-shutdown Jetson `FAULT` reading from being reused when the operator later
+re-enters HPC Mode; a new Jetson fault requires a new reading after power-on.
 
 The Jetson is not permitted to be powered on by command in Safe Mode. A Jetson
 power-on request is accepted only in HPC Mode. `DISABLE_HPC_MODE` returns the
@@ -524,6 +528,7 @@ authoritative port wiring is in `ImxDeployment/Top/topology.fpp`.
 | `faultModeJetsonFaultRequestsOffAndStaysFault` | While already in Fault Mode, sends a Jetson `FAULT` and verifies redundant Jetson protection. | Jetson fault event, Jetson OFF, `FP_STATE=FAULT`, no fatal forwarding | FP-010, FP-011 |
 | `faultModeImxFaultOverridesJetsonAndPeripheral` | While already in Fault Mode with Jetson also faulted, sends an i.MX `FAULT` and verifies i.MX priority. | i.MX fault event, emergency shutdown event, Jetson OFF, peripheral OFF, fatal forwarding, `FP_STATE=EMERGENCY` | FP-007, FP-010 |
 | `jetsonFaultReadingTriggersRecoveryInHpc` | Sends a Jetson `FAULT` reading while in HPC and verifies the input handler asserts recovery without waiting for the next HPC health-check tick. | Jetson fault event, Jetson OFF request, `FP_STATE=SAFE` | FP-004, FP-005 |
+| `jetsonFaultRecoveryClearsCachedReadingsBeforeHpcReentry` | Recreates the operator sequence of HPC ON, Jetson ON, Jetson FAULT, recovery to Safe, and HPC re-entry without new Jetson readings. | Jetson cache invalidated, no repeated stale fault, `FP_STATE=HPC` after re-entry | FP-004, FP-005 |
 | `attributesJetsonFaultAndReturnsSafe` | Aggregates the nine Jetson sensor readings, identifies sensor 4, reports its full reading, powers off the Jetson, and returns to Safe Mode. | Fault event with source, sensor ID, temperature, state, location, and timestamp; Jetson OFF | FP-004, FP-005 |
 | `fatalShutdownForwardsAndLatches` | Routes `$fatal` to the terminal emergency shutdown path, forwards the fatal event, emits emergency shutdown, powers down protected devices, and rejects later Jetson ON requests. | Fatal forwarding, shutdown event, Jetson OFF, peripheral OFF, authorization failure | FP-007, FP-008 |
 | `rejectsRemoteJetsonCommandWhenJetsonOff` | Sends a remote Jetson command while FPManager's Jetson power state is `OFF`. | No hub command output, local `BUSY` response, rejection event | FP-013 |
@@ -537,8 +542,8 @@ The FPManager UT target is built with `fprime-util generate imx8x --ut --disable
 | FP-001 | The first tick after startup shall initialize the system in Safe Mode. | `initializesSafeModeAndGatesJetsonOn` |
 | FP-002 | Safe Mode shall reject Jetson power-on commands until HPC Mode is enabled. | `initializesSafeModeAndGatesJetsonOn` |
 | FP-003 | Jetson power-on shall be accepted only in HPC Mode. | `initializesSafeModeAndGatesJetsonOn`, `entersHpcModeAndAcceptsJetsonOn` |
-| FP-004 | Any Jetson `ThermalStates.FAULT` reading shall assert the Jetson fault condition while FPManager is in HPC Mode. | `attributesJetsonFaultAndReturnsSafe`, `jetsonFaultReadingTriggersRecoveryInHpc` |
-| FP-005 | Jetson fault recovery shall preserve and report the offending full `ThermalReading`. | `attributesJetsonFaultAndReturnsSafe`, `jetsonFaultReadingTriggersRecoveryInHpc` |
+| FP-004 | Any Jetson `ThermalStates.FAULT` reading shall assert the Jetson fault condition while FPManager is in HPC Mode. Cached Jetson readings shall be invalidated when Jetson OFF is commanded or observed so stale faults cannot retrigger on HPC re-entry. | `attributesJetsonFaultAndReturnsSafe`, `jetsonFaultReadingTriggersRecoveryInHpc`, `jetsonFaultRecoveryClearsCachedReadingsBeforeHpcReentry` |
+| FP-005 | Jetson fault recovery shall preserve and report the offending full `ThermalReading` before clearing the Jetson reading cache and returning to Safe Mode. | `attributesJetsonFaultAndReturnsSafe`, `jetsonFaultReadingTriggersRecoveryInHpc`, `jetsonFaultRecoveryClearsCachedReadingsBeforeHpcReentry` |
 | FP-006 | Peripheral thermal FAULT shall latch the peripheral board off and enter Fault Mode without system Emergency Shutdown; recovery requires a valid non-FAULT peripheral reading and no cached Jetson FAULT. | `peripheralFaultPowersOffPeripheralOnly`, `peripheralFaultRecoversToSafeMode` |
 | FP-007 | `$fatal` or i.MX thermal FAULT shall immediately enter terminal Emergency Shutdown and shall not enter Fault Mode. | `fatalShutdownForwardsAndLatches`, `imxFaultTriggersEmergencyShutdown` |
 | FP-008 | Emergency Shutdown shall power off the protected Jetson and peripheral outputs and rely on board-level reset or satellite power cycling for full system recovery. | `fatalShutdownForwardsAndLatches`, `imxFaultTriggersEmergencyShutdown`; deployment-level power-cycle test remains pending |
@@ -567,3 +572,4 @@ The FPManager UT target is built with `fprime-util generate imx8x --ut --disable
 | 2026-07-23 | Added redundant Jetson FAULT monitoring while already in Fault Mode; Jetson faults are reported, commanded OFF, and keep FPManager faulted until cleared. |
 | 2026-07-23 | Added `FP_STATE_CHANGED` transition events for operator-visible mode changes. |
 | 2026-07-23 | Routed remote Jetson commands through FPManager so commands are rejected locally while the Jetson is known OFF instead of being sent into the hub transport. |
+| 2026-07-23 | Invalidated cached Jetson thermal readings whenever Jetson OFF is commanded or observed, preventing stale Jetson FAULT readings from retriggering on HPC re-entry. |

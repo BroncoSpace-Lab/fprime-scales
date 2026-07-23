@@ -258,6 +258,48 @@ void FPManagerTester::jetsonFaultReadingTriggersRecoveryInHpc() {
   ASSERT_EQ(this->tlmHistory_FP_STATE->at(3).arg, FPManagerState::SAFE);
 }
 
+void FPManagerTester::jetsonFaultRecoveryClearsCachedReadingsBeforeHpcReentry() {
+  this->initializeSafeMode();
+  this->enterHpcMode();
+  this->invoke_to_jetsonPowerStateIn(0, JetsonPowerStateID::ON);
+  this->drainStateMachine();
+
+  this->invoke_to_jetsonThermalReadingIn(
+      0, this->reading(0, ThermalStates::FAULT, 44.9F, "CPU", 455));
+  this->drainStateMachine();
+  this->invoke_to_run(0, 0);
+  this->drainStateMachine();
+
+  ASSERT_EVENTS_FAULT_DETECTED_SIZE(1);
+  ASSERT_EVENTS_FAULT_DETECTED(0, "JETSON", 0U, 44.9F,
+                               ThermalStates::FAULT, "CPU", 455U);
+  ASSERT_from_jetsonPowerRequestOut_SIZE(1);
+  ASSERT_from_jetsonPowerRequestOut(0, JetsonPowerStateID::OFF);
+  ASSERT_GT(this->tlmHistory_FP_STATE->size(), 0U);
+  ASSERT_EQ(this->tlmHistory_FP_STATE->at(this->tlmHistory_FP_STATE->size() - 1).arg,
+            FPManagerState::SAFE);
+  ASSERT_GT(this->tlmHistory_JETSON_VALID_READING_COUNT->size(), 0U);
+  ASSERT_EQ(this->tlmHistory_JETSON_VALID_READING_COUNT
+                ->at(this->tlmHistory_JETSON_VALID_READING_COUNT->size() - 1)
+                .arg,
+            0U);
+
+  this->invoke_to_run(0, 0);
+  this->drainStateMachine();
+  this->sendCmd_ENABLE_HPC_MODE(0, 1);
+  this->drainStateMachine();
+  this->invoke_to_run(0, 0);
+  this->drainStateMachine();
+
+  ASSERT_CMD_RESPONSE_SIZE(2);
+  ASSERT_EQ(this->cmdResponseHistory->at(1).response, Fw::CmdResponse::OK);
+  ASSERT_EVENTS_FAULT_DETECTED_SIZE(1);
+  ASSERT_from_jetsonPowerRequestOut_SIZE(1);
+  ASSERT_GT(this->tlmHistory_FP_STATE->size(), 0U);
+  ASSERT_EQ(this->tlmHistory_FP_STATE->at(this->tlmHistory_FP_STATE->size() - 1).arg,
+            FPManagerState::HPC);
+}
+
 void FPManagerTester::attributesJetsonFaultAndReturnsSafe() {
   this->initializeSafeMode();
   this->enterHpcMode();
