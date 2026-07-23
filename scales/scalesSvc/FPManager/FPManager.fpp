@@ -42,6 +42,7 @@ module scalesSvc {
         @ Emergency power-off request for the peripheral board.
         output port peripheralPowerOff: EmergencyPowerOff
 
+
         @ Current Jetson power state used by health checks.
         async input port jetsonPowerStateIn: JetsonPowerStateSend
 

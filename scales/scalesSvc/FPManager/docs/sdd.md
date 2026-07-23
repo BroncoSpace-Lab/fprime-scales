@@ -46,11 +46,13 @@ the Jetson, or forward `fatalOut`. A Jetson-only `ThermalStates.FAULT` enters
 `jetsonFaultRecovery`, powers off the Jetson, reports the offending reading,
 and returns to Safe Mode.
 
-The current implementation does not directly power off the i.MX hardware.
-After FPManager runs its protection action, it forwards the fatal event to
-F Prime's Linux `Svc.FatalHandler`, which delays briefly and aborts/exits the
-process. A complete i.MX hardware power-off still requires a board-level
-shutdown path, PMIC control, watchdog reset, or external satellite power cycle.
+For an i.MX thermal `FAULT`, FPManager first emits
+`EMERGENCY_SHUTDOWN`, then requests Jetson/peripheral protection. FPManager
+starts a short-delay child process that will execute `/sbin/shutdown -h now`,
+forwards `fatalOut`, and allows F Prime's Linux `Svc.FatalHandler` to terminate
+the flight-software process. The child then executes the hardware shutdown
+after the fatal event has been forwarded. The ImxDeployment process runs as
+root, so no `sudo` wrapper is required.
 
 ## Functional Diagrams
 
@@ -338,8 +340,9 @@ sequenceDiagram
     FPM->>GDS: FP_STATE EMERGENCY
     FPM->>FH: fatalOut
     FH->>FH: abort or exit FSW process
-    Note over FPM,HW: FPManager does not directly power off i.MX hardware
-    HW-->>FPM: external power cycle resets latch
+    FPM->>HW: delayed child executes /sbin/shutdown -h now
+    Note over FPM,FH: EMERGENCY_SHUTDOWN and fatalOut precede hardware shutdown
+    HW-->>FPM: satellite power cycle resets latch
 ```
 
 ### Operating Rules
@@ -390,6 +393,7 @@ sequenceDiagram
 - [x] Make FP recovery and emergency Jetson power-off requests synchronous so
   protection GPIO actions are not left behind in a queue.
 - [x] Make peripheral emergency power-off synchronous and latched.
+- [x] Issue direct i.MX Linux shutdown before fatal forwarding for i.MX thermal FAULT.
 - [x] Add FPManager unit tests for Safe Mode, HPC gating, i.MX emergency
   shutdown, peripheral-only shutdown, Jetson recovery, and fatal shutdown.
   Runtime execution requires an ARM64 target or emulator.

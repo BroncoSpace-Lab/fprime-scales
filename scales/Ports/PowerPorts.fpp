@@ -19,4 +19,5 @@ module scalesSvc{
 
     @ Latched emergency power-off request for protected peripheral hardware.
     port EmergencyPowerOff
+
 }

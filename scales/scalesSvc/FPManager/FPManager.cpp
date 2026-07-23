@@ -5,6 +5,10 @@
 
 #include "scales/scalesSvc/FPManager/FPManager.hpp"
 
+#include <cstdlib>
+#include <sys/types.h>
+#include <unistd.h>
+
 namespace scalesSvc {
 
 FPManager::FPManager(const char* const compName)
@@ -260,6 +264,21 @@ void FPManager::triggerImxEmergencyShutdown(const ThermalReading& reading) {
     this->scalesSvc_FPStateMachine_action_SHUTDOWN(
         FPManagerComponentBase::SmId::fpStateMachine,
         scalesSvc_FPStateMachine::Signal::fatal);
+#ifndef BUILD_UT
+    // FatalHandler aborts this process and may not return. Schedule the
+    // platform shutdown in a child so fatalOut can be forwarded first and the
+    // child can still turn off the i.MX after the GDS event has been emitted.
+    const pid_t shutdownChild = ::fork();
+    if (shutdownChild == 0) {
+        ::sleep(1);
+        ::execl("/sbin/shutdown", "shutdown", "-h", "now", static_cast<char*>(nullptr));
+        ::_exit(127);
+    }
+    if (shutdownChild < 0) {
+        // Preserve the hardware-shutdown attempt if process creation fails.
+        (void)std::system("/bin/sh -c 'sleep 1; /sbin/shutdown -h now' &");
+    }
+#endif
     this->fpStateMachine_sendSignal_fatal();
     this->fatalOut_out(0, this->getIdBase() + EVENTID_EMERGENCY_SHUTDOWN);
 }
