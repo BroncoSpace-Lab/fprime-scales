@@ -7,4 +7,9 @@ module scalesSvc{
         jetsonThermalReading: ThermalReading @< Thermal Reading at Jetson
     )
 
+    @ Port for ImxThermalManager thermal readings data
+    port CpuThermalReadings(
+        cpuThermalReading: ThermalReading @< Thermal Reading at the IMX CPU
+    )
+
 }

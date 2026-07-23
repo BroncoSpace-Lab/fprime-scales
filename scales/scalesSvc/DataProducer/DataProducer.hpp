@@ -13,6 +13,7 @@
 constexpr static const FwSizeType RECORD_COUNT = 50;  //!< Number of records of each type in the data product
 
 #define MCP_TEMP_RECORDS 3
+#define IMX_CPU_TEMP_RECORDS 1
 
 namespace scalesSvc {
 
@@ -33,9 +34,16 @@ class DataProducer final : public DataProducerComponentBase {
   private:
     
     /* Implementation-specific members */
+
+    // -- McpManager related --
     DpContainer m_mcpTempContainer; //! Tracked temperature container state
     FwSizeType m_mcpRecordCount;       //!< Count of serialized records
     bool m_mcpTempContainerValid;    //!< Whether the container is valid 
+
+    // -- ImxThermalManager related --
+    DpContainer m_cpuTempContainer; //! Tracked temperature container state
+    FwSizeType m_cpuRecordCount;       //!< Count of serialized records
+    bool m_cpuTempContainerValid;    //!< Whether the container is valid 
   
 
   private:
@@ -52,6 +60,23 @@ class DataProducer final : public DataProducerComponentBase {
         const scalesSvc::ThermalReading& perifThermalReading,  //!< Thermal Reading at Peripheral
         const scalesSvc::ThermalReading& jetsonThermalReading  //!< Thermal Reading at Jetson
         ) override;
+    
+    //! Handler implementation for cpuThermalReadIn
+    //!
+    //! Input port to receive ImxThermalManager thermal readings
+    void cpuThermalReadIn_handler(
+        FwIndexType portNum,                                //!< The port number
+        const scalesSvc::ThermalReading& cpuThermalReading  //!< Thermal Reading at the IMX CPU
+        ) override;
+    
+    //! Handler implementation for inaPowerReadIn
+    //!
+    //! Input port to receive InaManager power readings
+    void inaPowerReadIn_handler(FwIndexType portNum,                               //!< The port number
+                                const scalesSvc::PowerReading& obcPowerReading,    //!< Power Reading of OBC
+                                const scalesSvc::PowerReading& perifPowerReading,  //!< Power Reading of Peripheral
+                                const scalesSvc::PowerReading& jetsonPowerReading  //!< Power Reading of Jetson
+                                ) override;
 
     //! Handler implementation for run
     //!
@@ -68,6 +93,10 @@ class DataProducer final : public DataProducerComponentBase {
     bool mcpSerialize_Send(const scalesSvc::ThermalReading& obcThermalReading,
                            const scalesSvc::ThermalReading& perifThermalReading,
                            const scalesSvc::ThermalReading& jetsonThermalReading); //! serialize and send mcp temp records
+    
+    bool initCpuContainer(); //! Intialize and allocate memory for imx_cpu container
+
+    bool cpuSerialize_Send(const scalesSvc::ThermalReading& cpuThermalReading); //! serialize and send cpu temp records
 
   
 };

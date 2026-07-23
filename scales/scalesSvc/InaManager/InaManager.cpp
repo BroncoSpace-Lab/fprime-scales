@@ -76,6 +76,9 @@ namespace scalesSvc {
     } else {
       this->log_WARNING_HI_FAIL_TO_READ_TEMP_AT(Fw::String("PERIPHERAL"));
     }
+
+    // Send to DataProducer
+    this->inaPowerReadOut_out(0, obcData, peripheralData, jetsonData);
   }
 
   // ----------------------------------------------------------------------

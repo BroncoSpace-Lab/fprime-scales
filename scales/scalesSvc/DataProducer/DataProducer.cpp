@@ -16,7 +16,11 @@ DataProducer ::DataProducer(const char* const compName) :
     DataProducerComponentBase(compName),
     m_mcpTempContainer(),
     m_mcpTempContainerValid(false),
-    m_mcpRecordCount(0)
+    m_mcpRecordCount(0),
+
+    m_cpuTempContainer(),
+    m_cpuTempContainerValid(false),
+    m_cpuRecordCount(0)
 {
 
 }
@@ -34,9 +38,24 @@ void DataProducer ::McpThermalReadingIn_handler(FwIndexType portNum,
 
     if(this->m_mcpTempContainerValid){
         if(!this->mcpSerialize_Send(obcThermalReading, perifThermalReading, jetsonThermalReading)){
-            printf("[ERROR] Couldn't serialize and send data products\n");
+            printf("[ERROR] Couldn't serialize and send mcp data products\n");
         }
     }
+}
+
+void DataProducer ::cpuThermalReadIn_handler(FwIndexType portNum, const scalesSvc::ThermalReading& cpuThermalReading) {
+    if(this->m_cpuTempContainerValid){
+        if(!this->cpuSerialize_Send(cpuThermalReading)){
+            printf("[ERROR] Couldn't serialize and send cpu data products\n");
+        }
+    }
+}
+
+void DataProducer ::inaPowerReadIn_handler(FwIndexType portNum,
+                                           const scalesSvc::PowerReading& obcPowerReading,
+                                           const scalesSvc::PowerReading& perifPowerReading,
+                                           const scalesSvc::PowerReading& jetsonPowerReading) {
+    // TODO
 }
 
 void DataProducer ::run_handler(FwIndexType portNum, U32 context) {
@@ -44,6 +63,12 @@ void DataProducer ::run_handler(FwIndexType portNum, U32 context) {
     if(!this->m_mcpTempContainerValid){
         if(!this->initMcpContainer()){
             printf("[ERROR] Failed to initialize mcp temp container\n");
+        }
+    }
+
+    if(!this->m_cpuTempContainerValid){
+        if(!this->initCpuContainer()){
+            printf("[ERROR] Failed to initialize cpu temp container\n");
         }
     }
 }
@@ -60,6 +85,22 @@ bool DataProducer ::initMcpContainer(){
         return true;
     }
     
+    return false;
+
+}
+
+bool DataProducer ::initCpuContainer(){
+    const FwSizeType IMX_CPU_CONTAINER_SIZE = RECORD_COUNT *
+                                              IMX_CPU_TEMP_RECORDS *
+                                              (scalesSvc::ThermalReading::SERIALIZED_SIZE + sizeof(FwDpIdType));
+    
+    if(this->dpGet_CpuTemperatureContainer(IMX_CPU_CONTAINER_SIZE, this->m_cpuTempContainer) == Fw::Success::SUCCESS){
+        this->m_cpuTempContainerValid = true;
+        this->m_cpuTempContainer.setTimeTag(this->getTime());
+        printf("Initialized CPU container successfully\n");
+        return true;
+    }
+
     return false;
 
 }
@@ -96,6 +137,30 @@ bool DataProducer ::mcpSerialize_Send(const scalesSvc::ThermalReading& obcTherma
         // Resets mcp container attributes to be initalizd on next tick
         this->m_mcpRecordCount = 0;
         this->m_mcpTempContainerValid = false;
+    }
+
+    return true;
+
+}
+
+bool DataProducer ::cpuSerialize_Send(const scalesSvc::ThermalReading& cpuThermalReading){
+
+    Fw::SerializeStatus status = this->m_cpuTempContainer.serializeRecord_CpuTemperatureRecord(cpuThermalReading);
+    if (status != Fw::SerializeStatus::FW_SERIALIZE_OK) {
+        printf("Error serializing IMX_CPU temperature record: %d\n", status);
+        return false;
+    }
+
+    this->m_cpuRecordCount++;
+
+    // If we've reached the record count, send the full product
+    if(this->m_cpuRecordCount == RECORD_COUNT){
+        this->dpSend(this->m_cpuTempContainer);
+        printf("IMX_CPU data product sent\n");
+        
+        // Resets cpu container attributes to be initalizd on next tick
+        this->m_cpuRecordCount = 0;
+        this->m_cpuTempContainerValid = false;
     }
 
     return true;

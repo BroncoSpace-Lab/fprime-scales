@@ -13,4 +13,11 @@ module scalesSvc{
 
     @ Port for sending current power state of the Jetson
     port JetsonPowerStateSend(stateNow: JetsonPowerStateID)
+
+    @ Port Ina readings for DataProducer
+    port InaPowerReadings(
+        obcPowerReading: PowerReading @< Power Reading of OBC
+        perifPowerReading: PowerReading @< Power Reading of Peripheral
+        jetsonPowerReading: PowerReading @< Power Reading of Jetson
+    )
 }
