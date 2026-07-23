@@ -20,7 +20,11 @@ DataProducer ::DataProducer(const char* const compName) :
 
     m_cpuTempContainer(),
     m_cpuTempContainerValid(false),
-    m_cpuRecordCount(0)
+    m_cpuRecordCount(0),
+
+    m_inaPowerContainer(),
+    m_inaPowerContainerValid(false),
+    m_inaRecordCount(0)
 {
 
 }
@@ -55,7 +59,11 @@ void DataProducer ::inaPowerReadIn_handler(FwIndexType portNum,
                                            const scalesSvc::PowerReading& obcPowerReading,
                                            const scalesSvc::PowerReading& perifPowerReading,
                                            const scalesSvc::PowerReading& jetsonPowerReading) {
-    // TODO
+    if(this->m_inaPowerContainerValid){
+        if(!this->inaSerialize_Send(obcPowerReading, perifPowerReading, jetsonPowerReading)){
+            printf("[ERROR] Couldn't serialize and send ina data products\n");
+        }
+    }
 }
 
 void DataProducer ::run_handler(FwIndexType portNum, U32 context) {
@@ -69,6 +77,12 @@ void DataProducer ::run_handler(FwIndexType portNum, U32 context) {
     if(!this->m_cpuTempContainerValid){
         if(!this->initCpuContainer()){
             printf("[ERROR] Failed to initialize cpu temp container\n");
+        }
+    }
+
+    if(!this->m_inaPowerContainerValid){
+        if(!this->initInaContainer()){
+            printf("[ERROR] Failed to initialize ina power container\n");
         }
     }
 }
@@ -103,6 +117,21 @@ bool DataProducer ::initCpuContainer(){
 
     return false;
 
+}
+
+bool DataProducer ::initInaContainer(){
+    const FwSizeType INA_CONTAINER_SIZE = RECORD_COUNT *
+                                          INA_POWER_RECORDS *
+                                          (scalesSvc::PowerReading::SERIALIZED_SIZE + sizeof(FwDpIdType));
+
+    if(this->dpGet_InaPowerContainer(INA_CONTAINER_SIZE, this->m_inaPowerContainer) == Fw::Success::SUCCESS){
+        this->m_inaPowerContainerValid = true;
+        this->m_inaPowerContainer.setTimeTag(this->getTime());
+        printf("Initalized INA container successfully\n");
+        return true;
+    }
+
+    return false;
 }
 
 bool DataProducer ::mcpSerialize_Send(const scalesSvc::ThermalReading& obcThermalReading,
@@ -167,4 +196,40 @@ bool DataProducer ::cpuSerialize_Send(const scalesSvc::ThermalReading& cpuTherma
 
 }
 
+bool DataProducer ::inaSerialize_Send(const scalesSvc::PowerReading& obcPowerReading,
+                           const scalesSvc::PowerReading& perifPowerReading,
+                           const scalesSvc::PowerReading& jetsonPowerReading){
+
+    Fw::SerializeStatus status = this->m_inaPowerContainer.serializeRecord_ObcPowerRecord(obcPowerReading);
+    if (status != Fw::SerializeStatus::FW_SERIALIZE_OK) {
+        printf("Error Serializing OBC POWER READING RECORD\n");
+        return false;
+    }
+
+    status = this->m_inaPowerContainer.serializeRecord_PerifPowerRecord(perifPowerReading);
+    if (status != Fw::SerializeStatus::FW_SERIALIZE_OK){
+        printf("Error Serializing PERIF POWER READING RECORD\n");
+        return false;
+    }
+
+    status = this->m_inaPowerContainer.serializeRecord_JetsonPowerRecord(jetsonPowerReading);
+    if (status != Fw::SerializeStatus::FW_SERIALIZE_OK){
+        printf("Error Serializing JETSON POWER READING RECORD\n");
+        return false;
+    }
+
+    this->m_inaRecordCount++;
+    
+    // If we've reached the record count, send the full product
+    if(m_inaRecordCount == RECORD_COUNT){
+        this->dpSend(this->m_inaPowerContainer);
+        printf("Power Reading Data Product Sent!\n");
+
+        // Resets ina container attributes to be initalizd on next tick
+        this->m_inaPowerContainerValid = false;
+        this->m_inaRecordCount = 0;
+    }
+
+    return true;
+}
 }  // namespace scalesSvc

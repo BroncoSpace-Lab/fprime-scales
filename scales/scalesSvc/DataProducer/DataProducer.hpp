@@ -14,6 +14,7 @@ constexpr static const FwSizeType RECORD_COUNT = 50;  //!< Number of records of 
 
 #define MCP_TEMP_RECORDS 3
 #define IMX_CPU_TEMP_RECORDS 1
+#define INA_POWER_RECORDS 3
 
 namespace scalesSvc {
 
@@ -44,6 +45,11 @@ class DataProducer final : public DataProducerComponentBase {
     DpContainer m_cpuTempContainer; //! Tracked temperature container state
     FwSizeType m_cpuRecordCount;       //!< Count of serialized records
     bool m_cpuTempContainerValid;    //!< Whether the container is valid 
+
+    // -- InaManager related --
+    DpContainer m_inaPowerContainer; //! Tracked power container state
+    FwSizeType m_inaRecordCount;       //!< Count of serialized records
+    bool m_inaPowerContainerValid;    //!< Whether the container is valid 
   
 
   private:
@@ -97,6 +103,12 @@ class DataProducer final : public DataProducerComponentBase {
     bool initCpuContainer(); //! Intialize and allocate memory for imx_cpu container
 
     bool cpuSerialize_Send(const scalesSvc::ThermalReading& cpuThermalReading); //! serialize and send cpu temp records
+
+    bool initInaContainer(); //! Initialize and allocate memory for ina power container
+
+    bool inaSerialize_Send(const scalesSvc::PowerReading& obcPowerReading,
+                           const scalesSvc::PowerReading& perifPowerReading,
+                           const scalesSvc::PowerReading& jetsonPowerReading);
 
   
 };
