@@ -61,6 +61,9 @@ module scalesSvc {
         @ Report the component and sensor responsible for a non-recoverable fault.
         action reportFault
 
+        @ Recheck thermal health while recovering from a peripheral fault.
+        action faultModeHealthCheck
+
         @ Emergency Shutdown: emit the fatal warning and power off protected outputs.
         action SHUTDOWN
 
@@ -102,6 +105,7 @@ module scalesSvc {
 
         @ Fault Mode for non-system-fatal faults outside the Jetson-only recovery path.
         state faultMode {
+            on tick do {faultModeHealthCheck}
             on healthy enter safeMode
             on $fatal do {SHUTDOWN} enter emergencyShutdown
         }

@@ -5,6 +5,11 @@ TEST(FPManager, InitializesSafeModeAndGatesJetsonOn) {
   tester.initializesSafeModeAndGatesJetsonOn();
 }
 
+TEST(FPManager, EmitsStateTransitionEventsOnlyOnChange) {
+  scalesSvc::FPManagerTester tester;
+  tester.emitsStateTransitionEventsOnlyOnChange();
+}
+
 TEST(FPManager, EntersHpcModeAndAcceptsJetsonOn) {
   scalesSvc::FPManagerTester tester;
   tester.entersHpcModeAndAcceptsJetsonOn();
@@ -25,6 +30,26 @@ TEST(FPManager, PeripheralFaultPowersOffPeripheralOnly) {
   tester.peripheralFaultPowersOffPeripheralOnly();
 }
 
+TEST(FPManager, PeripheralFaultRecoversToSafeMode) {
+  scalesSvc::FPManagerTester tester;
+  tester.peripheralFaultRecoversToSafeMode();
+}
+
+TEST(FPManager, FaultModeJetsonFaultRequestsOffAndStaysFault) {
+  scalesSvc::FPManagerTester tester;
+  tester.faultModeJetsonFaultRequestsOffAndStaysFault();
+}
+
+TEST(FPManager, FaultModeImxFaultOverridesJetsonAndPeripheral) {
+  scalesSvc::FPManagerTester tester;
+  tester.faultModeImxFaultOverridesJetsonAndPeripheral();
+}
+
+TEST(FPManager, JetsonFaultReadingTriggersRecoveryInHpc) {
+  scalesSvc::FPManagerTester tester;
+  tester.jetsonFaultReadingTriggersRecoveryInHpc();
+}
+
 TEST(FPManager, AttributesJetsonFaultAndReturnsSafe) {
   scalesSvc::FPManagerTester tester;
   tester.attributesJetsonFaultAndReturnsSafe();
@@ -33,6 +58,16 @@ TEST(FPManager, AttributesJetsonFaultAndReturnsSafe) {
 TEST(FPManager, FatalShutdownForwardsAndLatches) {
   scalesSvc::FPManagerTester tester;
   tester.fatalShutdownForwardsAndLatches();
+}
+
+TEST(FPManager, RejectsRemoteJetsonCommandWhenJetsonOff) {
+  scalesSvc::FPManagerTester tester;
+  tester.rejectsRemoteJetsonCommandWhenJetsonOff();
+}
+
+TEST(FPManager, ForwardsRemoteJetsonCommandWhenJetsonOn) {
+  scalesSvc::FPManagerTester tester;
+  tester.forwardsRemoteJetsonCommandWhenJetsonOn();
 }
 
 int main(int argc, char** argv) {

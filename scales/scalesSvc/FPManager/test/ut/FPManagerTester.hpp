@@ -16,12 +16,19 @@ class FPManagerTester final : public FPManagerGTestBase {
     ~FPManagerTester();
 
     void initializesSafeModeAndGatesJetsonOn();
+    void emitsStateTransitionEventsOnlyOnChange();
     void entersHpcModeAndAcceptsJetsonOn();
     void disablesHpcModeAndGatesJetsonOn();
     void imxFaultTriggersEmergencyShutdown();
     void peripheralFaultPowersOffPeripheralOnly();
+    void peripheralFaultRecoversToSafeMode();
+    void faultModeJetsonFaultRequestsOffAndStaysFault();
+    void faultModeImxFaultOverridesJetsonAndPeripheral();
+    void jetsonFaultReadingTriggersRecoveryInHpc();
     void attributesJetsonFaultAndReturnsSafe();
     void fatalShutdownForwardsAndLatches();
+    void rejectsRemoteJetsonCommandWhenJetsonOff();
+    void forwardsRemoteJetsonCommandWhenJetsonOn();
 
   private:
     void connectPorts();
@@ -30,6 +37,7 @@ class FPManagerTester final : public FPManagerGTestBase {
     void drainStateMachine();
     ThermalReading reading(U8 sensorId, ThermalStates state, F32 temperature,
                            const char* location, U32 timestamp);
+    Fw::ComBuffer commandBuffer(FwOpcodeType opcode);
     void initializeSafeMode();
     void enterHpcMode();
 

@@ -34,7 +34,7 @@ Add a class diagram here
 |---|---|
 | `currentPwrMode` | Current Jetson power mode reported by the Jetson-side manager. |
 | `currentJetsonPwrState` | Current Jetson power state reported by the Jetson-side manager. |
-| `fpJetsonPowerRequestIn` | Internal FPManager recovery, HPC disable, and emergency OFF request. Only OFF is acted on, and it drives GPIO low directly. |
+| `fpJetsonPowerRequestIn` | Internal FPManager recovery, HPC disable, and emergency OFF request. Only OFF is acted on. If the Jetson is known ON and the Jetson-side request path is available, this requests graceful Jetson shutdown first; otherwise it drives GPIO low directly. |
 | `fpJetsonPowerAuthorize` | Synchronous gate called before `REQUEST_JETSON_POWER_STATE` executes. |
 | `fpJetsonPowerStateOut` | Current Jetson power state reported to FPManager after JetsonManager commands or receives a power-state update. |
 | `schedIn` | Rate-group tick used for deferred power-mode timeout handling. |
@@ -87,7 +87,7 @@ Add sequence diagrams here
 |---|---|---|
 | JM-001 | Jetson ON shall require successful FPManager authorization. | Command handler checks `fpJetsonPowerAuthorize` before GPIO ON. |
 | JM-002 | Jetson OFF shall be accepted in Safe Mode and shall not depend on the Jetson hub link when the Jetson is already known OFF. | Known-OFF requests complete through direct GPIO low. |
-| JM-003 | FPManager emergency/recovery OFF shall immediately remove Jetson power without depending on Jetson-side software. | `fpJetsonPowerRequestIn` handles OFF through direct GPIO low. |
+| JM-003 | FPManager recovery OFF shall prefer Jetson-side graceful shutdown when the Jetson is known ON, but shall fall back to direct GPIO low when the Jetson-side path is unavailable or times out. | `fpJetsonPowerRequestIn` sends `reqJetsonPwrState(OFF)` when possible; timeout/direct fallback drives GPIO low. |
 | JM-004 | Jetson power-mode requests shall be deferred until the requested mode is reported or timeout occurs. | `REQUEST_POWER_MODE`, `currentPwrMode`, and `schedIn` maintain pending command state. |
 | JM-005 | Commanded Jetson OFF while the Jetson is known ON shall request Jetson-side shutdown before cutting GPIO power. | `REQUEST_JETSON_POWER_STATE(OFF)` sends `reqJetsonPwrState(OFF)` and waits for `currentJetsonPwrState(OFF)`. |
 

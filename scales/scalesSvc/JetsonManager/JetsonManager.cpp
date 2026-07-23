@@ -64,8 +64,17 @@ namespace scalesSvc {
     m_powerTimeoutTicks = 0;
     m_waitingToCutJetsonPower = false;
     m_powerOffDelayTicks = 0;
-    // Protection requests must remove physical power immediately and must not
-    // depend on the Jetson communication link being initialized.
+    if (m_currentJetsonPowerState.e == JetsonPowerStateID::ON &&
+        this->isConnected_reqJetsonPwrState_OutputPort(0)) {
+      // FP recovery OFF is graceful when the Jetson is alive: request Jetson-side
+      // shutdown, then reuse the existing ack/timeout path to cut GPIO power.
+      m_hasPendingPowerCmd = true;
+      this->reqJetsonPwrState_out(0, stateReq);
+      return;
+    }
+
+    // If the Jetson is already off or cannot receive the request, remove
+    // physical power directly.
     this->gpioSet_out(0, JETSON_POWER_GPIO_OFF);
     m_currentJetsonPowerState = JetsonPowerStateID::OFF;
     this->tlmWrite_JetsonPowerState(JetsonPowerStateID::OFF);

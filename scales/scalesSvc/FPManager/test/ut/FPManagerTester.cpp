@@ -1,5 +1,7 @@
 #include "FPManagerTester.hpp"
 
+#include "Fw/Cmd/CmdPacket.hpp"
+
 namespace scalesSvc {
 
 FPManagerTester::FPManagerTester()
@@ -35,6 +37,17 @@ ThermalReading FPManagerTester::reading(U8 sensorId, ThermalStates state,
   return result;
 }
 
+Fw::ComBuffer FPManagerTester::commandBuffer(FwOpcodeType opcode) {
+  Fw::ComBuffer data;
+  Fw::CmdArgBuffer args;
+  EXPECT_EQ(data.serializeFrom(
+                static_cast<FwPacketDescriptorType>(Fw::ComPacketType::FW_PACKET_COMMAND)),
+            Fw::FW_SERIALIZE_OK);
+  EXPECT_EQ(data.serializeFrom(opcode), Fw::FW_SERIALIZE_OK);
+  EXPECT_EQ(data.serializeFrom(args), Fw::FW_SERIALIZE_OK);
+  return data;
+}
+
 void FPManagerTester::initializeSafeMode() {
   this->invoke_to_run(0, 0);
   this->drainStateMachine();
@@ -58,6 +71,26 @@ void FPManagerTester::initializesSafeModeAndGatesJetsonOn() {
   ASSERT_EQ(result, Fw::Success::FAILURE);
   ASSERT_EVENTS_JETSON_POWER_REQUEST_REJECTED_SIZE(1);
   ASSERT_from_jetsonPowerRequestOut_SIZE(0);
+}
+
+void FPManagerTester::emitsStateTransitionEventsOnlyOnChange() {
+  this->initializeSafeMode();
+  ASSERT_EVENTS_FP_STATE_CHANGED_SIZE(1);
+  ASSERT_EVENTS_FP_STATE_CHANGED(0, FPManagerState::INIT, FPManagerState::SAFE);
+
+  this->invoke_to_run(0, 0);
+  this->drainStateMachine();
+  ASSERT_EVENTS_FP_STATE_CHANGED_SIZE(1);
+
+  this->sendCmd_ENABLE_HPC_MODE(0, 0);
+  this->drainStateMachine();
+  ASSERT_EVENTS_FP_STATE_CHANGED_SIZE(2);
+  ASSERT_EVENTS_FP_STATE_CHANGED(1, FPManagerState::SAFE, FPManagerState::HPC);
+
+  this->sendCmd_DISABLE_HPC_MODE(0, 1);
+  this->drainStateMachine();
+  ASSERT_EVENTS_FP_STATE_CHANGED_SIZE(3);
+  ASSERT_EVENTS_FP_STATE_CHANGED(2, FPManagerState::HPC, FPManagerState::SAFE);
 }
 
 void FPManagerTester::entersHpcModeAndAcceptsJetsonOn() {
@@ -134,6 +167,97 @@ void FPManagerTester::peripheralFaultPowersOffPeripheralOnly() {
   ASSERT_EQ(this->tlmHistory_FP_STATE->at(1).arg, FPManagerState::FAULT);
 }
 
+void FPManagerTester::peripheralFaultRecoversToSafeMode() {
+  this->initializeSafeMode();
+  this->invoke_to_peripheralThermalReadingIn(
+      0, this->reading(2, ThermalStates::FAULT, 88.0F, "peripheral", 12));
+  this->invoke_to_run(0, 0);
+  this->drainStateMachine();
+
+  ASSERT_TLM_FP_STATE_SIZE(2);
+  ASSERT_EQ(this->tlmHistory_FP_STATE->at(1).arg, FPManagerState::FAULT);
+
+  this->invoke_to_peripheralThermalReadingIn(
+      0, this->reading(2, ThermalStates::IDLE, 40.0F, "peripheral", 13));
+  this->invoke_to_run(0, 0);
+  this->drainStateMachine();
+
+  ASSERT_TLM_FP_STATE_SIZE(3);
+  ASSERT_EQ(this->tlmHistory_FP_STATE->at(2).arg, FPManagerState::SAFE);
+  ASSERT_from_peripheralPowerOff_SIZE(1);
+  ASSERT_from_fatalOut_SIZE(0);
+}
+
+void FPManagerTester::faultModeJetsonFaultRequestsOffAndStaysFault() {
+  this->initializeSafeMode();
+  this->invoke_to_peripheralThermalReadingIn(
+      0, this->reading(2, ThermalStates::FAULT, 88.0F, "peripheral", 12));
+  this->invoke_to_run(0, 0);
+  this->drainStateMachine();
+
+  this->invoke_to_peripheralThermalReadingIn(
+      0, this->reading(2, ThermalStates::IDLE, 40.0F, "peripheral", 13));
+  this->invoke_to_jetsonThermalReadingIn(
+      0, this->reading(4, ThermalStates::FAULT, 99.0F, "gpu-cluster", 42));
+  this->invoke_to_run(0, 0);
+  this->drainStateMachine();
+
+  ASSERT_EVENTS_FAULT_DETECTED_SIZE(2);
+  ASSERT_EVENTS_FAULT_DETECTED(1, "JETSON", 4U, 99.0F,
+                               ThermalStates::FAULT, "gpu-cluster", 42U);
+  ASSERT_from_jetsonPowerRequestOut_SIZE(1);
+  ASSERT_from_jetsonPowerRequestOut(0, JetsonPowerStateID::OFF);
+  ASSERT_from_peripheralPowerOff_SIZE(1);
+  ASSERT_from_fatalOut_SIZE(0);
+  ASSERT_TLM_FP_STATE_SIZE(3);
+  ASSERT_EQ(this->tlmHistory_FP_STATE->at(2).arg, FPManagerState::FAULT);
+}
+
+void FPManagerTester::faultModeImxFaultOverridesJetsonAndPeripheral() {
+  this->initializeSafeMode();
+  this->invoke_to_peripheralThermalReadingIn(
+      0, this->reading(2, ThermalStates::FAULT, 88.0F, "peripheral", 12));
+  this->invoke_to_run(0, 0);
+  this->drainStateMachine();
+
+  this->invoke_to_imxThermalReadingIn(
+      0, this->reading(1, ThermalStates::FAULT, 101.0F, "imx-cpu", 14));
+  this->invoke_to_jetsonThermalReadingIn(
+      0, this->reading(4, ThermalStates::FAULT, 99.0F, "gpu-cluster", 42));
+  this->invoke_to_run(0, 0);
+  this->drainStateMachine();
+
+  ASSERT_EVENTS_FAULT_DETECTED_SIZE(2);
+  ASSERT_EVENTS_FAULT_DETECTED(1, "IMX", 1U, 101.0F,
+                               ThermalStates::FAULT, "imx-cpu", 14U);
+  ASSERT_EVENTS_EMERGENCY_SHUTDOWN_SIZE(1);
+  ASSERT_from_jetsonPowerRequestOut_SIZE(1);
+  ASSERT_from_jetsonPowerRequestOut(0, JetsonPowerStateID::OFF);
+  ASSERT_from_peripheralPowerOff_SIZE(2);
+  ASSERT_from_fatalOut_SIZE(1);
+  ASSERT_TLM_FP_STATE_SIZE(3);
+  ASSERT_EQ(this->tlmHistory_FP_STATE->at(2).arg, FPManagerState::EMERGENCY);
+}
+
+void FPManagerTester::jetsonFaultReadingTriggersRecoveryInHpc() {
+  this->initializeSafeMode();
+  this->enterHpcMode();
+
+  this->invoke_to_jetsonThermalReadingIn(
+      0, this->reading(4, ThermalStates::FAULT, 99.0F, "gpu-cluster", 42));
+  this->drainStateMachine();
+  this->invoke_to_run(0, 0);
+  this->drainStateMachine();
+
+  ASSERT_EVENTS_FAULT_DETECTED_SIZE(1);
+  ASSERT_EVENTS_FAULT_DETECTED(0, "JETSON", 4U, 99.0F,
+                               ThermalStates::FAULT, "gpu-cluster", 42U);
+  ASSERT_from_jetsonPowerRequestOut_SIZE(1);
+  ASSERT_from_jetsonPowerRequestOut(0, JetsonPowerStateID::OFF);
+  ASSERT_TLM_FP_STATE_SIZE(4);
+  ASSERT_EQ(this->tlmHistory_FP_STATE->at(3).arg, FPManagerState::SAFE);
+}
+
 void FPManagerTester::attributesJetsonFaultAndReturnsSafe() {
   this->initializeSafeMode();
   this->enterHpcMode();
@@ -173,6 +297,39 @@ void FPManagerTester::fatalShutdownForwardsAndLatches() {
   const Fw::Success result =
       this->invoke_to_jetsonPowerAuthorizeIn(0, JetsonPowerStateID::ON);
   ASSERT_EQ(result, Fw::Success::FAILURE);
+}
+
+void FPManagerTester::rejectsRemoteJetsonCommandWhenJetsonOff() {
+  this->initializeSafeMode();
+
+  const FwOpcodeType opcode = 0x10001311;
+  Fw::ComBuffer cmd = this->commandBuffer(opcode);
+  this->invoke_to_remoteJetsonCmdIn(0, cmd, 77);
+
+  ASSERT_from_remoteJetsonCmdOut_SIZE(0);
+  ASSERT_from_remoteJetsonCmdResponseOut_SIZE(1);
+  ASSERT_from_remoteJetsonCmdResponseOut(0, opcode, 77, Fw::CmdResponse::BUSY);
+  ASSERT_EVENTS_REMOTE_JETSON_COMMAND_REJECTED_SIZE(1);
+  ASSERT_EVENTS_REMOTE_JETSON_COMMAND_REJECTED(
+      0, opcode, "Jetson is not powered on");
+}
+
+void FPManagerTester::forwardsRemoteJetsonCommandWhenJetsonOn() {
+  this->initializeSafeMode();
+  this->invoke_to_jetsonPowerStateIn(0, JetsonPowerStateID::ON);
+  this->drainStateMachine();
+
+  const FwOpcodeType opcode = 0x10001311;
+  Fw::ComBuffer cmd = this->commandBuffer(opcode);
+  this->invoke_to_remoteJetsonCmdIn(0, cmd, 78);
+
+  ASSERT_from_remoteJetsonCmdOut_SIZE(1);
+  ASSERT_from_remoteJetsonCmdResponseOut_SIZE(0);
+  const Fw::CmdResponse response = Fw::CmdResponse::OK;
+  this->invoke_to_remoteJetsonCmdResponseIn(0, opcode, 78, response);
+  ASSERT_from_remoteJetsonCmdResponseOut_SIZE(1);
+  ASSERT_from_remoteJetsonCmdResponseOut(0, opcode, 78, response);
+  ASSERT_EVENTS_REMOTE_JETSON_COMMAND_REJECTED_SIZE(0);
 }
 
 }  // namespace scalesSvc

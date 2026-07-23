@@ -33,6 +33,21 @@ module scalesSvc {
         @ aggregated by sensorId inside FPManager.
         async input port jetsonThermalReadingIn: ThermalReadingPort
 
+        @ Remote Jetson command path after CmdSplitter has identified a command
+        @ as belonging to the Jetson deployment.
+        sync input port remoteJetsonCmdIn: Fw.Com
+
+        @ Remote Jetson command response path from the hub.
+        sync input port remoteJetsonCmdResponseIn: Fw.CmdResponse
+
+        @ Forwarded remote Jetson command path. This is only asserted when
+        @ FPManager believes the Jetson is powered on.
+        output port remoteJetsonCmdOut: Fw.Com
+
+        @ Response returned to CmdSplitter for forwarded or locally rejected
+        @ remote Jetson commands.
+        output port remoteJetsonCmdResponseOut: Fw.CmdResponse
+
         @ Synchronous gate called by JetsonManager before it executes the command.
         sync input port jetsonPowerAuthorizeIn: JetsonPowerStateAuthorize
 
@@ -81,6 +96,20 @@ module scalesSvc {
         @ High-priority emergency shutdown event.
         event EMERGENCY_SHUTDOWN severity warning high id 0x02 \
             format "FPManager emergency shutdown asserted"
+
+        @ FPManager state changed.
+        event FP_STATE_CHANGED(
+            previous: FPManagerState
+            current: FPManagerState
+        ) severity activity high id 0x03 \
+            format "FPManager state changed from {} to {}"
+
+        @ Remote Jetson command rejected because the Jetson command path is not safe.
+        event REMOTE_JETSON_COMMAND_REJECTED(
+            cmdOpcode: FwOpcodeType
+            reason: string size 64
+        ) severity warning high id 0x04 \
+            format "Remote Jetson command {} rejected by FPManager: {}"
 
         @ Current FP state for downlink and diagnostics.
         telemetry FP_STATE: FPManagerState id 0x00
