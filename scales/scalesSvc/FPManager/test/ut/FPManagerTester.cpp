@@ -9,11 +9,17 @@ FPManagerTester::FPManagerTester()
   this->connectPorts();
 }
 
-FPManagerTester::~FPManagerTester() {}
+FPManagerTester::~FPManagerTester() {
+  this->component.deinit();
+}
 
 void FPManagerTester::drainStateMachine() {
   for (FwSizeType i = 0; i < 20; ++i) {
-    this->component.doDispatch();
+    const FPManagerComponentBase::MsgDispatchStatus status =
+        this->dispatchCurrentMessages(this->component);
+    if (status == FPManagerComponentBase::MSG_DISPATCH_EMPTY) {
+      break;
+    }
   }
 }
 
@@ -84,6 +90,50 @@ void FPManagerTester::disablesHpcModeAndGatesJetsonOn() {
   ASSERT_EVENTS_JETSON_POWER_REQUEST_REJECTED_SIZE(1);
 }
 
+void FPManagerTester::imxFaultTriggersEmergencyShutdown() {
+  this->initializeSafeMode();
+  this->invoke_to_imxThermalReadingIn(
+      0, this->reading(1, ThermalStates::FAULT, 101.0F, "imx-cpu", 11));
+  this->drainStateMachine();
+
+  this->invoke_to_run(0, 0);
+  this->drainStateMachine();
+
+  ASSERT_EVENTS_FAULT_DETECTED_SIZE(1);
+  ASSERT_EVENTS_FAULT_DETECTED(0, "IMX", 1U, 101.0F,
+                               ThermalStates::FAULT, "imx-cpu", 11U);
+  ASSERT_EVENTS_EMERGENCY_SHUTDOWN_SIZE(1);
+  ASSERT_from_jetsonPowerRequestOut_SIZE(1);
+  ASSERT_from_jetsonPowerRequestOut(0, JetsonPowerStateID::OFF);
+  ASSERT_from_peripheralPowerOff_SIZE(1);
+  ASSERT_from_fatalOut_SIZE(1);
+  ASSERT_from_fatalOut(
+      0, static_cast<FwEventIdType>(this->component.getIdBase() +
+                                    FPManagerComponentBase::EVENTID_EMERGENCY_SHUTDOWN));
+  ASSERT_TLM_FP_STATE_SIZE(2);
+  ASSERT_EQ(this->tlmHistory_FP_STATE->at(1).arg, FPManagerState::EMERGENCY);
+}
+
+void FPManagerTester::peripheralFaultPowersOffPeripheralOnly() {
+  this->initializeSafeMode();
+  this->invoke_to_peripheralThermalReadingIn(
+      0, this->reading(2, ThermalStates::FAULT, 88.0F, "peripheral", 12));
+  this->drainStateMachine();
+
+  this->invoke_to_run(0, 0);
+  this->drainStateMachine();
+
+  ASSERT_EVENTS_FAULT_DETECTED_SIZE(1);
+  ASSERT_EVENTS_FAULT_DETECTED(0, "PERIPHERAL", 2U, 88.0F,
+                               ThermalStates::FAULT, "peripheral", 12U);
+  ASSERT_EVENTS_EMERGENCY_SHUTDOWN_SIZE(0);
+  ASSERT_from_peripheralPowerOff_SIZE(1);
+  ASSERT_from_jetsonPowerRequestOut_SIZE(0);
+  ASSERT_from_fatalOut_SIZE(0);
+  ASSERT_TLM_FP_STATE_SIZE(2);
+  ASSERT_EQ(this->tlmHistory_FP_STATE->at(1).arg, FPManagerState::FAULT);
+}
+
 void FPManagerTester::attributesJetsonFaultAndReturnsSafe() {
   this->initializeSafeMode();
   this->enterHpcMode();
@@ -94,7 +144,7 @@ void FPManagerTester::attributesJetsonFaultAndReturnsSafe() {
   }
   this->invoke_to_jetsonThermalReadingIn(
       0, this->reading(4, ThermalStates::FAULT, 99.0F, "gpu-cluster", 42));
-  this->component.doDispatch();
+  this->dispatchCurrentMessages(this->component);
 
   this->invoke_to_run(0, 0);
   this->drainStateMachine();
@@ -102,7 +152,7 @@ void FPManagerTester::attributesJetsonFaultAndReturnsSafe() {
   this->drainStateMachine();
 
   ASSERT_EVENTS_FAULT_DETECTED_SIZE(1);
-  ASSERT_EVENTS_FAULT_DETECTED(0, "Jetson", 4U, 99.0F,
+  ASSERT_EVENTS_FAULT_DETECTED(0, "JETSON", 4U, 99.0F,
                                ThermalStates::FAULT, "gpu-cluster", 42U);
   ASSERT_from_jetsonPowerRequestOut_SIZE(1);
   ASSERT_from_jetsonPowerRequestOut(0, JetsonPowerStateID::OFF);

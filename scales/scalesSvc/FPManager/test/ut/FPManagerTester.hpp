@@ -18,6 +18,8 @@ class FPManagerTester final : public FPManagerGTestBase {
     void initializesSafeModeAndGatesJetsonOn();
     void entersHpcModeAndAcceptsJetsonOn();
     void disablesHpcModeAndGatesJetsonOn();
+    void imxFaultTriggersEmergencyShutdown();
+    void peripheralFaultPowersOffPeripheralOnly();
     void attributesJetsonFaultAndReturnsSafe();
     void fatalShutdownForwardsAndLatches();
 

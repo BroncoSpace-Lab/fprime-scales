@@ -147,13 +147,9 @@ void FPManager::scalesSvc_FPStateMachine_action_safeModeHealthCheck(
     this->m_mode = FPManagerState::SAFE;
     ThermalReading faultReading;
     if (this->m_imxReadingValid && this->readingIsFault(this->m_imxReading)) {
-        this->m_safeModeHealthy = false;
-        this->rememberFault("IMX", this->m_imxReading);
-        this->fpStateMachine_sendSignal_failure();
+        this->triggerImxEmergencyShutdown(this->m_imxReading);
     } else if (this->m_peripheralReadingValid && this->readingIsFault(this->m_peripheralReading)) {
-        this->m_safeModeHealthy = false;
-        this->rememberFault("PERIPHERAL", this->m_peripheralReading);
-        this->fpStateMachine_sendSignal_failure();
+        this->triggerPeripheralEmergencyShutdown(this->m_peripheralReading);
     } else {
         this->m_safeModeHealthy = true;
         this->writeStateTelemetry();
@@ -170,16 +166,16 @@ void FPManager::scalesSvc_FPStateMachine_action_hpcModeHealthCheck(
         this->m_peripheralReadingValid && readingIsFault(this->m_peripheralReading);
     const bool jetsonFault = this->findJetsonFault(faultReading);
 
-    if (jetsonFault && !imxFault && !peripheralFault) {
+    if (imxFault) {
+        this->triggerImxEmergencyShutdown(this->m_imxReading);
+    } else if (peripheralFault) {
+        if (jetsonFault) {
+            this->jetsonPowerRequestOut_out(0, JetsonPowerStateID::OFF);
+        }
+        this->triggerPeripheralEmergencyShutdown(this->m_peripheralReading);
+    } else if (jetsonFault) {
         this->rememberFault("JETSON", faultReading);
         this->fpStateMachine_sendSignal_jetson_fault();
-    } else if (imxFault || peripheralFault) {
-        if (imxFault) {
-            this->rememberFault("IMX", this->m_imxReading);
-        } else {
-            this->rememberFault("PERIPHERAL", this->m_peripheralReading);
-        }
-        this->fpStateMachine_sendSignal_failure();
     } else {
         this->writeStateTelemetry();
         this->fpStateMachine_sendSignal_healthy();
@@ -255,6 +251,24 @@ void FPManager::rememberFault(const char* source, const ThermalReading& reading)
     this->m_faultSource = Fw::String(source);
     this->m_faultReading = reading;
     this->m_hasFault = true;
+}
+
+void FPManager::triggerImxEmergencyShutdown(const ThermalReading& reading) {
+    this->m_safeModeHealthy = false;
+    this->rememberFault("IMX", reading);
+    this->reportReadingFault();
+    this->scalesSvc_FPStateMachine_action_SHUTDOWN(
+        FPManagerComponentBase::SmId::fpStateMachine,
+        scalesSvc_FPStateMachine::Signal::fatal);
+    this->fpStateMachine_sendSignal_fatal();
+    this->fatalOut_out(0, this->getIdBase() + EVENTID_EMERGENCY_SHUTDOWN);
+}
+
+void FPManager::triggerPeripheralEmergencyShutdown(const ThermalReading& reading) {
+    this->m_safeModeHealthy = false;
+    this->rememberFault("PERIPHERAL", reading);
+    this->peripheralPowerOff_out(0);
+    this->fpStateMachine_sendSignal_failure();
 }
 
 void FPManager::reportReadingFault() {

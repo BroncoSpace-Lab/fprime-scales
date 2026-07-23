@@ -15,6 +15,16 @@ TEST(FPManager, DisablesHpcModeAndGatesJetsonOn) {
   tester.disablesHpcModeAndGatesJetsonOn();
 }
 
+TEST(FPManager, ImxFaultTriggersEmergencyShutdown) {
+  scalesSvc::FPManagerTester tester;
+  tester.imxFaultTriggersEmergencyShutdown();
+}
+
+TEST(FPManager, PeripheralFaultPowersOffPeripheralOnly) {
+  scalesSvc::FPManagerTester tester;
+  tester.peripheralFaultPowersOffPeripheralOnly();
+}
+
 TEST(FPManager, AttributesJetsonFaultAndReturnsSafe) {
   scalesSvc::FPManagerTester tester;
   tester.attributesJetsonFaultAndReturnsSafe();

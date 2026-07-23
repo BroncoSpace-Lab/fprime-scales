@@ -26,111 +26,183 @@ Startup Safe Mode does not issue a one-shot Jetson OFF request; active Jetson
 OFF requests remain available for operator disable, protection, and recovery
 actions.
 
-`$fatal` is an emergency override. FPManager performs the one-shot protection
-action before forwarding the fatal event to the standard fatal handler. The
-action emits the high-priority shutdown event, synchronously requests Jetson
-and peripheral power removal, and latches `emergencyShutdown`. It does not
-transition through `faultMode` and has no recovery transition; the standard
-fatal handler then performs the process/i.MX shutdown and the satellite power
-cycle resets the system.
+`$fatal` is an emergency override. It is invoked only when CdhCore's
+`EventManager` announces a FATAL event on `FatalAnnounce`, which is wired to
+`FPManager.fatalIn`. FPManager performs the one-shot protection action before
+forwarding the fatal event to the standard fatal handler. The action emits the
+high-priority shutdown event, synchronously requests Jetson and peripheral
+power removal, writes `FP_STATE=EMERGENCY`, and latches `emergencyShutdown`.
+It does not transition through `faultMode` and has no recovery transition.
 
-## Usage Examples
+i.MX, peripheral, and Jetson thermal faults are handled as separate fault
+domains. An i.MX `ThermalStates.FAULT` is a system-level fatal condition:
+FPManager reports the offending `ThermalReading`, immediately runs the global
+Emergency Shutdown protection action, and forwards a fatal event to the
+standard fatal handler. A peripheral `ThermalStates.FAULT` runs a *local
+peripheral emergency shutdown*: FPManager reports the offending
+`ThermalReading`, asserts the `peripheralPowerOff` emergency output, and enters
+`faultMode`. It does not emit the global `EMERGENCY_SHUTDOWN` event, power off
+the Jetson, or forward `fatalOut`. A Jetson-only `ThermalStates.FAULT` enters
+`jetsonFaultRecovery`, powers off the Jetson, reports the offending reading,
+and returns to Safe Mode.
 
-The intended lifecycle is shown in the state-machine diagram below. Any state
-can receive `$fatal` and enter `emergencyShutdown`.
+The current implementation does not directly power off the i.MX hardware.
+After FPManager runs its protection action, it forwards the fatal event to
+F Prime's Linux `Svc.FatalHandler`, which delays briefly and aborts/exits the
+process. A complete i.MX hardware power-off still requires a board-level
+shutdown path, PMIC control, watchdog reset, or external satellite power cycle.
 
-```mermaid
-stateDiagram-v2
-    [*] --> init
+## Functional Diagrams
 
-    init --> safeMode: tick / initializeSafeMode
-    init --> emergencyShutdown: fatal / SHUTDOWN
+The diagrams below separate the state machine, topology wiring, decision logic,
+and fatal path so each view stays readable.
 
-    safeMode --> safeMode: tick / safeModeHealthCheck
-    safeMode --> hpcMode: hpcMode_en / enableHpcMode
-    safeMode --> faultMode: failure / reportFault
-    safeMode --> emergencyShutdown: fatal / SHUTDOWN
+### State Machine
 
-    hpcMode --> hpcMode: tick / hpcModeHealthCheck
-    hpcMode --> safeMode: hpcMode_dis / disableHpcMode
-    hpcMode --> jetsonFaultRecovery: jetson_fault
-    hpcMode --> faultMode: failure / reportFault
-    hpcMode --> emergencyShutdown: fatal / SHUTDOWN
-
-    jetsonFaultRecovery --> jetsonFaultRecovery: tick / confirmJetsonFaultAndPowerOff
-    jetsonFaultRecovery --> safeMode: success
-    jetsonFaultRecovery --> faultMode: failure / reportFault
-    jetsonFaultRecovery --> emergencyShutdown: fatal / SHUTDOWN
-
-    faultMode --> safeMode: healthy
-    faultMode --> emergencyShutdown: fatal / SHUTDOWN
-
-    emergencyShutdown --> emergencyShutdown: latched
-```
-
-### Diagrams
-
-The state machine is defined in `FPStateMachine.fpp`. The Jetson fault-recovery
-and emergency-shutdown sequences below describe the component-level behavior.
-
-#### Component Relationships
+This is a 1:1 rendering of `FPStateMachine.fpp`. Rounded nodes are states,
+rectangular nodes are FPP actions, and labels on the arrows are FPP signals.
+The health-check outcomes that produce those signals are shown separately
+below, because they are component logic rather than additional state-machine
+transitions.
 
 ```mermaid
 flowchart LR
-    ImxThermalManager["ImxThermalManager"]
-    McpManager["McpManager / local thermal sources"]
-    Hub["GenericHub serial channels"]
-    JetsonThermal["Jetson thermal readings"]
-    JetsonManager["JetsonManager"]
-    PerifBoardManager["PerifBoardManager"]
-    FatalAdapter["CdhCore FatalAnnounce"]
-    FatalHandler["CdhCore FatalHandler"]
-    FPManager["FPManager"]
-    GDS["GDS / CdhCore telemetry, events, commands"]
+    start((initial))
+    init((init))
+    safe((safeMode))
+    hpc((hpcMode))
+    jetson((jetsonFaultRecovery))
+    fault((faultMode))
+    emergency((emergencyShutdown))
 
-    ImxThermalManager -->|ThermalReading| FPManager
-    McpManager -->|ThermalReading sensor 1/2| FPManager
-    JetsonThermal --> Hub
-    Hub -->|serialOut[4] ThermalReading| FPManager
+    initSafe[initializeSafeMode]
+    safeCheck[safeModeHealthCheck]
+    hpcCheck[hpcModeHealthCheck]
+    enable[enableHpcMode]
+    disable[disableHpcMode]
+    confirm[confirmJetsonFaultAndPowerOff]
+    report[reportFault]
+    shutdown[SHUTDOWN]
 
-    GDS -->|ENABLE_HPC_MODE / DISABLE_HPC_MODE| FPManager
-    GDS -->|REQUEST_JETSON_POWER_STATE| JetsonManager
-    JetsonManager -->|fpJetsonPowerAuthorize| FPManager
-    JetsonManager -->|fpJetsonPowerStateOut| FPManager
-    FPManager -->|jetsonPowerRequestOut OFF| JetsonManager
-    FPManager -->|peripheralPowerOff| PerifBoardManager
+    start --> init
+    init -->|tick| initSafe --> safe
+    init -->|"$fatal"| shutdown --> emergency
 
-    FatalAdapter -->|fatalIn| FPManager
-    FPManager -->|fatalOut| FatalHandler
-    FPManager -->|FP_STATE / JETSON_VALID_READING_COUNT / events| GDS
+    safe -->|tick| safeCheck --> safe
+    safe -->|hpcMode_en| enable --> hpc
+    safe -->|failure| report --> fault
+    safe -->|"$fatal"| shutdown
+
+    hpc -->|tick| hpcCheck --> hpc
+    hpc -->|hpcMode_dis| disable --> safe
+    hpc -->|jetson_fault| jetson
+    hpc -->|failure| report
+    hpc -->|"$fatal"| shutdown
+
+    jetson -->|tick| confirm -->|success| safe
+    jetson -->|failure| report
+    jetson -->|"$fatal"| shutdown
+
+    fault -->|healthy| safe
+    fault -->|"$fatal"| shutdown
+
+    shutdown --> emergency
 ```
 
-#### Health Evaluation
+### Component Relationships
+
+```mermaid
+flowchart TB
+    subgraph Cdh["CdhCore and GDS"]
+        GDS["GDS commands telemetry events"]
+        EVT["EventManager FatalAnnounce"]
+        FH["FatalHandler"]
+    end
+
+    subgraph FP["FPManager protection boundary"]
+        FPM["FPManager"]
+        SM["FPStateMachine"]
+    end
+
+    subgraph Thermal["Thermal inputs"]
+        ITM["ImxThermalManager"]
+        MCP["McpManager"]
+        HUB["GenericHub"]
+    end
+
+    subgraph Power["Power control"]
+        JM["JetsonManager"]
+        PBM["PerifBoardManager"]
+    end
+
+    ITM -->|"i.MX ThermalReading"| FPM
+    MCP -->|"MCP sensor 1 or 2 ThermalReading"| FPM
+    HUB -->|"Jetson ThermalReading channel 4"| FPM
+
+    FPM <-->|"signals and actions"| SM
+
+    GDS -->|"ENABLE_HPC_MODE or DISABLE_HPC_MODE"| FPM
+    GDS -->|"REQUEST_JETSON_POWER_STATE"| JM
+    FPM -->|"FP_STATE and fault events"| GDS
+
+    JM -->|"authorize requested Jetson state"| FPM
+    JM -->|"reported Jetson power state"| FPM
+    FPM -->|"internal OFF request"| JM
+    FPM -->|"emergency peripheral OFF"| PBM
+
+    EVT -->|"FATAL event id"| FPM
+    FPM -->|"forward FATAL event id"| FH
+```
+
+### Health Evaluation And Fault Scope
 
 ```mermaid
 flowchart TD
-    Tick["Rate-group tick"] --> Mode{"Current FP_STATE?"}
+    Tick["run tick"] --> State{"current FP state"}
 
-    Mode -->|INIT| Init["initializeSafeMode"]
-    Init --> SafeTlm["Write FP_STATE=SAFE"]
+    State -->|"INIT"| Init["initializeSafeMode"]
+    Init --> Safe["FP_STATE SAFE"]
 
-    Mode -->|SAFE| SafeCheck["Check i.MX and peripheral readings"]
-    SafeCheck --> SafeFault{"Any valid local reading FAULT?"}
-    SafeFault -->|No| SafeHealthy["m_safeModeHealthy=true<br/>Write FP_STATE=SAFE"]
-    SafeFault -->|Yes| LocalFault["rememberFault(IMX or PERIPHERAL)"]
-    LocalFault --> FaultMode["reportFault<br/>Write FP_STATE=FAULT"]
+    State -->|"SAFE"| SafeCheck["safeModeHealthCheck"]
+    SafeCheck --> SafeFault{"fault source"}
+    SafeFault -->|"none"| SafeHealthy["set safeModeHealthy true<br>write FP_STATE SAFE"]
+    SafeFault -->|"i.MX"| ImxEmergency["report IMX ThermalReading<br>SHUTDOWN<br>forward fatalOut"]
+    SafeFault -->|"peripheral"| PerifFault["peripheralPowerOff<br>local peripheral emergency shutdown"]
 
-    Mode -->|HPC| HpcCheck["Check i.MX, peripheral, and aggregate Jetson readings"]
-    HpcCheck --> HpcFault{"Fault source?"}
-    HpcFault -->|None| HpcHealthy["Write FP_STATE=HPC"]
-    HpcFault -->|Jetson only| JetsonRecovery["rememberFault(JETSON)<br/>jetson_fault"]
-    HpcFault -->|i.MX or peripheral| HpcLocalFault["rememberFault(IMX or PERIPHERAL)<br/>failure"]
-    JetsonRecovery --> JetsonOff["confirmJetsonFaultAndPowerOff<br/>Report full ThermalReading<br/>Request Jetson OFF"]
-    JetsonOff --> SafeAfterJetson["Write FP_STATE=SAFE"]
-    HpcLocalFault --> FaultMode
+    State -->|"HPC"| HpcCheck["hpcModeHealthCheck"]
+    HpcCheck --> HpcFault{"fault source"}
+    HpcFault -->|"none"| HpcHealthy["write FP_STATE HPC"]
+    HpcFault -->|"Jetson only"| JetsonFault["remember Jetson ThermalReading<br>send jetson_fault"]
+    HpcFault -->|"i.MX"| ImxEmergency
+    HpcFault -->|"peripheral"| PerifFault
+
+    ImxEmergency --> Emergency["write FP_STATE EMERGENCY"]
+    PerifFault --> FaultReport["failure signal<br>reportFault<br>write FP_STATE FAULT"]
+
+    JetsonFault --> Recovery["confirmJetsonFaultAndPowerOff"]
+    Recovery --> RecoveryOk{"Jetson FAULT still present"}
+    RecoveryOk -->|"yes"| RecoverSafe["emit FAULT_DETECTED<br>request Jetson OFF<br>write FP_STATE SAFE"]
+    RecoveryOk -->|"no"| FaultReport
 ```
 
-#### Jetson Power Authorization
+The resulting behavior is intentionally asymmetric:
+
+| Fault source | Immediate protection action | State/event result |
+| --- | --- | --- |
+| i.MX `FAULT` | Global `SHUTDOWN`; Jetson OFF; peripheral OFF; `fatalOut` | `FP_STATE=EMERGENCY`; `EMERGENCY_SHUTDOWN`; process fatal path |
+| Peripheral `FAULT` | Peripheral-only emergency output `peripheralPowerOff` | `FAULT_DETECTED`; `failure`; `FP_STATE=FAULT`; no global shutdown |
+| Jetson `FAULT` in HPC | Jetson OFF through JetsonManager recovery path | `FAULT_DETECTED`; `jetsonFaultRecovery`; `FP_STATE=SAFE` |
+| Upstream `$fatal` | Global `SHUTDOWN`; Jetson OFF; peripheral OFF; `fatalOut` | `FP_STATE=EMERGENCY`; `EMERGENCY_SHUTDOWN`; terminal latch |
+
+This table is the implementation contract. In particular, “peripheral
+emergency shutdown” means the emergency power-off of the peripheral board; it
+does not mean the global FPManager `emergencyShutdown` state. The current code
+and tests implement that local scope. If the requirement instead is for a
+peripheral fault to enter global `FP_STATE=EMERGENCY`, emit
+`EMERGENCY_SHUTDOWN`, and forward `fatalOut`, that is a different safety
+policy and must be changed in both `FPManager.cpp` and the tests.
+
+### Jetson Power Authorization
 
 ```mermaid
 sequenceDiagram
@@ -139,32 +211,27 @@ sequenceDiagram
     participant FPM as FPManager
     participant GPIO as Jetson Power GPIO
 
-    Operator->>JM: REQUEST_JETSON_POWER_STATE(ON/OFF)
-    JM->>FPM: fpJetsonPowerAuthorize(requested state)
-    alt requested state is unsupported
+    Operator->>JM: REQUEST_JETSON_POWER_STATE
+    JM->>FPM: fpJetsonPowerAuthorize
+    alt unsupported requested state
         FPM-->>JM: FAILURE
         JM-->>Operator: VALIDATION_ERROR
-    else requested ON and FP_STATE is not HPC
-        FPM-->>JM: FAILURE
-        FPM-->>Operator: JETSON_POWER_REQUEST_REJECTED
-        JM-->>Operator: VALIDATION_ERROR
-    else emergency shutdown latched
+    else ON requested outside HPC
         FPM-->>JM: FAILURE
         FPM-->>Operator: JETSON_POWER_REQUEST_REJECTED
         JM-->>Operator: VALIDATION_ERROR
-    else authorized
+    else emergency latched
+        FPM-->>JM: FAILURE
+        FPM-->>Operator: JETSON_POWER_REQUEST_REJECTED
+        JM-->>Operator: VALIDATION_ERROR
+    else request authorized
         FPM-->>JM: SUCCESS
         alt requested ON
             JM->>GPIO: HIGH
             JM->>FPM: fpJetsonPowerStateOut(ON)
             JM-->>Operator: OK
-        else requested OFF and Jetson is known ON
-            JM->>JM: reqJetsonPwrState(OFF)
-            JM->>JM: wait for currentJetsonPwrState(OFF)
-            JM->>GPIO: LOW after delay
-            JM->>FPM: fpJetsonPowerStateOut(OFF)
-            JM-->>Operator: OK
-        else requested OFF and Jetson is already known OFF
+        else requested OFF through command path
+            JM->>JM: graceful OFF if Jetson is known ON
             JM->>GPIO: LOW
             JM->>FPM: fpJetsonPowerStateOut(OFF)
             JM-->>Operator: OK
@@ -172,7 +239,7 @@ sequenceDiagram
     end
 ```
 
-#### HPC Enable And Disable
+### HPC Enable And Disable
 
 ```mermaid
 sequenceDiagram
@@ -195,9 +262,9 @@ sequenceDiagram
     alt FP_STATE=HPC
         FPM->>SM: hpcMode_dis
         SM->>FPM: disableHpcMode
-        opt JetsonPowerState is ON
+        opt Jetson is known ON
             FPM->>JM: jetsonPowerRequestOut(OFF)
-            JM->>JM: drive Jetson GPIO LOW
+            JM->>JM: direct FP protection OFF
             JM->>FPM: fpJetsonPowerStateOut(OFF)
         end
         FPM-->>Operator: OK
@@ -210,7 +277,72 @@ sequenceDiagram
     end
 ```
 
-### Typical Usage
+### Jetson Fault Recovery
+
+```mermaid
+sequenceDiagram
+    participant FPM as FPManager
+    participant SM as FPStateMachine
+    participant JM as JetsonManager
+    participant PBM as PerifBoardManager
+    actor GDS as GDS
+
+    FPM->>FPM: hpcModeHealthCheck
+    FPM->>FPM: findJetsonFault
+    alt Jetson FAULT and local health is OK
+        FPM->>FPM: rememberFault JETSON
+        FPM->>SM: jetson_fault
+        SM->>FPM: confirmJetsonFaultAndPowerOff
+        FPM->>GDS: FAULT_DETECTED with full ThermalReading
+        FPM->>JM: jetsonPowerRequestOut OFF
+        JM->>JM: direct FP protection OFF
+        FPM->>SM: success
+        FPM->>GDS: FP_STATE SAFE
+    else i.MX FAULT
+        FPM->>GDS: FAULT_DETECTED with IMX ThermalReading
+        FPM->>FPM: SHUTDOWN
+        FPM->>GDS: FP_STATE EMERGENCY
+        FPM->>JM: jetsonPowerRequestOut OFF
+    else peripheral FAULT
+        FPM->>PBM: peripheralPowerOff
+        FPM->>SM: failure
+        SM->>FPM: reportFault
+        FPM->>GDS: FAULT_DETECTED and FP_STATE FAULT
+    end
+```
+
+### Emergency Shutdown Trigger
+
+```mermaid
+sequenceDiagram
+    participant Source as Any component
+    participant Events as CdhCore EventManager
+    participant FPM as FPManager
+    participant JM as JetsonManager
+    participant PBM as PerifBoardManager
+    participant FH as F Prime FatalHandler
+    participant HW as Board power system
+    actor GDS as GDS
+
+    alt upstream fatal event
+        Source->>Events: log FATAL event or FW_ASSERT
+        Events->>FPM: FatalAnnounce to fatalIn
+    else i.MX ThermalReading FAULT
+        FPM->>FPM: safeModeHealthCheck or hpcModeHealthCheck
+        FPM->>GDS: FAULT_DETECTED with IMX ThermalReading
+    end
+    FPM->>FPM: SHUTDOWN one-shot action
+    FPM->>GDS: EMERGENCY_SHUTDOWN
+    FPM->>JM: jetsonPowerRequestOut OFF
+    FPM->>PBM: peripheralPowerOff
+    FPM->>GDS: FP_STATE EMERGENCY
+    FPM->>FH: fatalOut
+    FH->>FH: abort or exit FSW process
+    Note over FPM,HW: FPManager does not directly power off i.MX hardware
+    HW-->>FPM: external power cycle resets latch
+```
+
+### Operating Rules
 
 1. On the first scheduler tick, initialize FPManager in Safe Mode and gate
    Jetson ON commands.
@@ -225,10 +357,16 @@ sequenceDiagram
    transition requests direct Jetson OFF if Jetson is still known ON and updates
    `FP_STATE` to `SAFE`, causing subsequent Jetson ON requests to be rejected
    again.
-6. If only the Jetson is faulty, record the offending full reading, power off
+6. If the i.MX is faulty, record and report the full reading, immediately run
+   Emergency Shutdown, and forward a fatal event to the standard fatal handler.
+7. If the peripheral board is faulty, record and report the full reading, latch
+   the peripheral board off, and enter Fault Mode without shutting down the
+   whole system.
+8. If only the Jetson is faulty, record the offending full reading, power off
    the Jetson, report the cause, and return to Safe Mode.
-7. If i.MX or peripheral health fails, enter Fault Mode and report the stored
-   reading that caused the failure.
+9. If CdhCore announces a FATAL event, immediately enter Emergency Shutdown,
+   power down the protected Jetson/peripheral outputs, forward to F Prime's
+   fatal handler, and wait for an external reset/power cycle.
 
 ## Implementation Progress
 
@@ -252,8 +390,9 @@ sequenceDiagram
 - [x] Make FP recovery and emergency Jetson power-off requests synchronous so
   protection GPIO actions are not left behind in a queue.
 - [x] Make peripheral emergency power-off synchronous and latched.
-- [x] Add FPManager unit tests for Safe Mode, HPC gating, Jetson recovery, and
-  fatal shutdown. Runtime execution requires an ARM64 target or emulator.
+- [x] Add FPManager unit tests for Safe Mode, HPC gating, i.MX emergency
+  shutdown, peripheral-only shutdown, Jetson recovery, and fatal shutdown.
+  Runtime execution requires an ARM64 target or emulator.
 
 ## Component Relationships
 
@@ -269,7 +408,7 @@ authoritative port wiring is in `ImxDeployment/Top/topology.fpp`.
 |---|---|
 | Thermal reading inputs | Full `ThermalReading` values from i.MX, MCP/local peripheral, and Jetson sources. Jetson input is multi-reading and aggregated by sensor ID. |
 | Jetson power authorization | Synchronous gate called by JetsonManager before executing `REQUEST_JETSON_POWER_STATE`. |
-| Internal power output | Synchronous OFF request to JetsonManager for recovery and emergency protection; it drives the Jetson GPIO LOW immediately. |
+| Internal power output | Synchronous OFF request to JetsonManager for recovery, HPC disable, and emergency protection; this uses the direct FP protection path. |
 | Peripheral emergency output | Synchronous, latched OFF request that holds the peripheral board power down. |
 | Rate-group tick | Drives initialization and periodic health checks. |
 
@@ -280,78 +419,20 @@ authoritative port wiring is in `ImxDeployment/Top/topology.fpp`.
 | `safeMode` | Jetson power-on is gated; i.MX and peripheral health are checked. |
 | `hpcMode` | HPC enabled; i.MX, peripheral, and aggregate Jetson thermal health are checked. Jetson ON commands are authorized only here. |
 | `jetsonFaultRecovery` | Confirms and reports a Jetson fault, powers off Jetson, then returns to Safe Mode. |
-| `faultMode` | Reports non-recoverable i.MX/peripheral or general protection faults. |
+| `faultMode` | Reports and latches non-system-fatal protection faults, currently including peripheral thermal FAULT. |
 | `emergencyShutdown` | Terminal state for `$fatal`; performs the one-shot shutdown before fatal handling is forwarded. |
-
-## Sequence Diagrams
-
-### Jetson Fault Recovery
-
-```mermaid
-sequenceDiagram
-    participant Tick as Rate-group tick
-    participant FPM as FPManager
-    participant SM as FPStateMachine
-    participant JM as JetsonManager
-    actor GDS as GDS
-
-    Tick->>FPM: run
-    FPM->>FPM: hpcModeHealthCheck
-    FPM->>FPM: findJetsonFault across cached readings
-    alt Jetson-only FAULT reading found
-        FPM->>FPM: rememberFault("JETSON", full ThermalReading)
-        FPM->>SM: jetson_fault
-        SM->>FPM: confirmJetsonFaultAndPowerOff
-        FPM->>GDS: FAULT_DETECTED(source, sensorId, temp, state, location, timestamp)
-        FPM->>JM: jetsonPowerRequestOut(OFF)
-        JM->>JM: drive Jetson GPIO LOW
-        FPM->>SM: success
-        SM->>FPM: enter safeMode
-        FPM->>GDS: FP_STATE=SAFE
-    else i.MX or peripheral fault also present
-        FPM->>SM: failure
-        SM->>FPM: reportFault
-        FPM->>GDS: FAULT_DETECTED
-        FPM->>GDS: FP_STATE=FAULT
-    end
-```
-
-### Emergency Shutdown
-
-```mermaid
-sequenceDiagram
-    participant FatalAnnounce as CdhCore FatalAnnounce
-    participant FPM as FPManager
-    participant JM as JetsonManager
-    participant PBM as PerifBoardManager
-    participant FatalHandler as CdhCore FatalHandler
-    actor GDS as GDS
-    participant PowerCycle as Satellite power cycle
-
-    FatalAnnounce->>FPM: fatalIn(event id)
-    FPM->>FPM: SHUTDOWN one-shot action
-    FPM->>GDS: EMERGENCY_SHUTDOWN
-    FPM->>JM: jetsonPowerRequestOut(OFF)
-    JM->>JM: drive Jetson GPIO LOW
-    FPM->>PBM: peripheralPowerOff
-    PBM->>PBM: latch peripheral power OFF
-    FPM->>GDS: FP_STATE=EMERGENCY
-    FPM->>FatalHandler: fatalOut(event id)
-    FatalHandler->>FatalHandler: terminate process / i.MX shutdown path
-    PowerCycle->>FPM: reset clears emergency latch
-```
 
 ## Parameters
 | Name | Description |
 |---|---|
-|---|---|
+| None | FPManager currently has no configurable parameters. |
 
 ## Commands
 | Name | Description |
 |---|---|
 | HPC mode enable | Requests transition from Safe Mode to HPC Mode. The request is accepted only after Safe Mode health checks pass. |
 | HPC mode disable | Requests transition from HPC Mode back to Safe Mode. If Jetson is known ON, the request powers it off through the FPManager protection path and republishes `FP_STATE=SAFE`. |
-| Jetson power request | Requests Jetson power changes. ON is gated to HPC Mode; OFF is always permitted. |
+| Jetson power request | Requests Jetson power changes through JetsonManager. ON is gated to HPC Mode; OFF is accepted unless Emergency Shutdown is latched. |
 
 ## Events
 | Name | Description |
@@ -371,6 +452,8 @@ sequenceDiagram
 | `initializesSafeModeAndGatesJetsonOn` | First tick initializes Safe Mode and rejects a Jetson ON authorization request. | `FAILURE`, no startup Jetson OFF request, rejection event | FP-001, FP-002, FP-003 |
 | `entersHpcModeAndAcceptsJetsonOn` | Enables HPC Mode and permits a Jetson ON authorization request. | `SUCCESS` and no rejection event | FP-003 |
 | `disablesHpcModeAndGatesJetsonOn` | Tracks Jetson ON, disables HPC Mode, requests Jetson OFF, republishes `SAFE`, and rejects a later Jetson ON authorization request. | Jetson OFF, `FP_STATE=SAFE`, authorization failure | FP-002, FP-003, FP-009 |
+| `imxFaultTriggersEmergencyShutdown` | Sends an i.MX `ThermalStates.FAULT` reading and verifies the system emergency path. | Fault event, emergency shutdown event, Jetson OFF, peripheral OFF, fatal forwarding, `FP_STATE=EMERGENCY` | FP-006, FP-007, FP-008 |
+| `peripheralFaultPowersOffPeripheralOnly` | Sends a peripheral `ThermalStates.FAULT` reading and verifies only the peripheral protection path runs. | Fault event, peripheral OFF, no emergency shutdown, no Jetson OFF, `FP_STATE=FAULT` | FP-006 |
 | `attributesJetsonFaultAndReturnsSafe` | Aggregates the nine Jetson sensor readings, identifies sensor 4, reports its full reading, powers off the Jetson, and returns to Safe Mode. | Fault event with source, sensor ID, temperature, state, location, and timestamp; Jetson OFF | FP-004, FP-005 |
 | `fatalShutdownForwardsAndLatches` | Routes `$fatal` to the terminal emergency shutdown path, forwards the fatal event, emits emergency shutdown, powers down protected devices, and rejects later Jetson ON requests. | Fatal forwarding, shutdown event, Jetson OFF, peripheral OFF, authorization failure | FP-007, FP-008 |
 
@@ -384,9 +467,9 @@ The FPManager UT target is built with `fprime-util generate imx8x --ut --disable
 | FP-003 | Jetson power-on shall be accepted only in HPC Mode. | `initializesSafeModeAndGatesJetsonOn`, `entersHpcModeAndAcceptsJetsonOn` |
 | FP-004 | Any Jetson `ThermalStates.FAULT` reading shall assert the Jetson fault condition. | `attributesJetsonFaultAndReturnsSafe` |
 | FP-005 | Jetson fault recovery shall preserve and report the offending full `ThermalReading`. | `attributesJetsonFaultAndReturnsSafe` |
-| FP-006 | i.MX or peripheral faults shall enter Fault Mode. | State-machine test coverage pending |
-| FP-007 | `$fatal` shall immediately enter terminal Emergency Shutdown and shall not enter Fault Mode. | `fatalShutdownForwardsAndLatches` |
-| FP-008 | Emergency Shutdown shall power off all protected devices and rely on satellite power cycling for reset. | `fatalShutdownForwardsAndLatches`; deployment-level power-cycle test remains pending |
+| FP-006 | Peripheral thermal FAULT shall latch the peripheral board off and enter Fault Mode without system Emergency Shutdown. | `peripheralFaultPowersOffPeripheralOnly` |
+| FP-007 | `$fatal` or i.MX thermal FAULT shall immediately enter terminal Emergency Shutdown and shall not enter Fault Mode. | `fatalShutdownForwardsAndLatches`, `imxFaultTriggersEmergencyShutdown` |
+| FP-008 | Emergency Shutdown shall power off the protected Jetson and peripheral outputs and rely on board-level reset or satellite power cycling for full system recovery. | `fatalShutdownForwardsAndLatches`, `imxFaultTriggersEmergencyShutdown`; deployment-level power-cycle test remains pending |
 | FP-009 | Disabling HPC Mode shall request Jetson OFF when Jetson is known ON, return FPManager to Safe Mode, and re-gate Jetson ON requests. | `disablesHpcModeAndGatesJetsonOn` |
 
 ## Change Log
@@ -403,3 +486,4 @@ The FPManager UT target is built with `fprime-util generate imx8x --ut --disable
 | 2026-07-22 | Removed the startup Jetson OFF request from Safe Mode initialization; active Jetson OFF is reserved for recovery and emergency paths. |
 | 2026-07-22 | Added Mermaid diagrams for FPManager state transitions, component relationships, health evaluation, Jetson power authorization, HPC control, Jetson fault recovery, and emergency shutdown. |
 | 2026-07-22 | Documented graceful commanded Jetson OFF while keeping FPManager disable, recovery, and emergency OFF direct. |
+| 2026-07-22 | Split thermal fault handling by domain: i.MX FAULT enters system Emergency Shutdown, peripheral FAULT latches only peripheral power off, and Jetson FAULT uses Jetson recovery. |

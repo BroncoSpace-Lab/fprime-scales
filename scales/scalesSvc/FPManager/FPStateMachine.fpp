@@ -41,10 +41,12 @@ module scalesSvc {
         @ Initialize the outputs and enforce the Safe Mode power configuration.
         action initializeSafeMode
 
-        @ Check i.MX and peripheral health. The Jetson remains powered off.
+        @ Check i.MX and peripheral health. i.MX FAULT is system fatal;
+        @ peripheral FAULT powers off the peripheral board only.
         action safeModeHealthCheck
 
         @ Check i.MX, peripheral, Jetson, and power health in HPC Mode.
+        @ i.MX FAULT is system fatal; peripheral and Jetson faults are isolated.
         action hpcModeHealthCheck
 
         @ Enable HPC Mode and permit Jetson power-on requests.
@@ -59,7 +61,7 @@ module scalesSvc {
         @ Report the component and sensor responsible for a non-recoverable fault.
         action reportFault
 
-        @ Emergency Shutdown: emit the fatal warning and immediately power off all devices.
+        @ Emergency Shutdown: emit the fatal warning and power off protected outputs.
         action SHUTDOWN
 
 
@@ -98,7 +100,7 @@ module scalesSvc {
             on $fatal do {SHUTDOWN} enter emergencyShutdown
         }
 
-        @ Fault Mode for faults outside the Jetson-only recovery path.
+        @ Fault Mode for non-system-fatal faults outside the Jetson-only recovery path.
         state faultMode {
             on healthy enter safeMode
             on $fatal do {SHUTDOWN} enter emergencyShutdown
