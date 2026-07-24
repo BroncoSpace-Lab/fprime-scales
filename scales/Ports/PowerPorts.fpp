@@ -20,4 +20,10 @@ module scalesSvc{
         perifPowerReading: PowerReading @< Power Reading of Peripheral
         jetsonPowerReading: PowerReading @< Power Reading of Jetson
     )
+
+    @ Synchronous authorization for a Jetson power command.
+    port JetsonPowerStateAuthorize(stateReq: JetsonPowerStateID) -> Fw.Success
+
+    @ Latched emergency power-off request for protected peripheral hardware.
+    port EmergencyPowerOff
 }

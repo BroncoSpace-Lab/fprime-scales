@@ -115,10 +115,11 @@ namespace scalesSvc {
         case JETSON:
           this->tlmWrite_JETSON_TEMP(m_thermalReadings[JETSON]);
           break;
-        default:
+          default:
           printf("Warning: Unrecognized sensor index %d. No telemetry was logged for this sensor.\n", i);
           break;
       }
+      this->thermalReadingOut_out(0, this->m_thermalReadings[i]);
     }
 
     // Send thermal readings to DataProducer
@@ -203,11 +204,17 @@ namespace scalesSvc {
   }
   
   scalesSvc::ThermalStates McpManager :: determineTempState(F32 tempCelsius){
-    if (this->IDLE_LOW_THR <= tempCelsius && tempCelsius <= this->IDLE_HIGH_THR){
-      return scalesSvc::ThermalStates::IDLE;
-    } else if ((this->WARN_LOW_THR <= tempCelsius && tempCelsius < this->IDLE_LOW_THR) || (this->IDLE_HIGH_THR < tempCelsius && tempCelsius <= this->WARN_HIGH_THR)){
+    if (tempCelsius < this->FAULT_LOW_THR || this->FAULT_HIGH_THR <= tempCelsius ||
+        (this->FAULT_LOW_THR <= tempCelsius && tempCelsius < this->WARN_LOW_THR) ||
+        (this->WARN_HIGH_THR <= tempCelsius && tempCelsius < this->FAULT_HIGH_THR)) {
+      return scalesSvc::ThermalStates::FAULT;
+    } else if ((this->WARN_LOW_THR <= tempCelsius && tempCelsius < this->IDLE_LOW_THR) ||
+               (this->IDLE_HIGH_THR < tempCelsius && tempCelsius < this->WARN_HIGH_THR)) {
       return scalesSvc::ThermalStates::WARN;
+    } else if (this->IDLE_LOW_THR <= tempCelsius && tempCelsius <= this->IDLE_HIGH_THR){
+      return scalesSvc::ThermalStates::IDLE;
     } else {
+      // Treat gaps caused by invalid or overlapping parameters as unsafe.
       return scalesSvc::ThermalStates::FAULT;
     }
   }

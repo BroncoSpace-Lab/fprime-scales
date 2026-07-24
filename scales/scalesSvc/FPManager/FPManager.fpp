@@ -2,10 +2,120 @@ module scalesSvc {
     @ Fault Protection Manager for the SCALES system.
     active component FPManager {
 
-        # One async command/port is required for active components
-        # This should be overridden by the developers with a useful command/port
-        @ TODO
-        async command TODO opcode 0
+        @ Bind the FP protection state machine to FPManager.
+        state machine instance fpStateMachine: FPStateMachine
+
+        ##############################################################################
+        #### State-machine and protection inputs/outputs #############################
+        ##############################################################################
+
+        @ Rate-group input that drives initialization and health checks.
+        async input port run: Svc.Sched
+
+        @ Immediate fatal announcement input for the terminal shutdown path.
+        sync input port fatalIn: Svc.FatalEvent
+
+        @ Forwards the fatal announcement to the standard process-level handler.
+        output port fatalOut: Svc.FatalEvent
+
+        @ Latest i.MX thermal reading.
+        async input port imxThermalReadingIn: ThermalReadingPort
+
+        @ Latest peripheral thermal reading.
+        async input port peripheralThermalReadingIn: ThermalReadingPort
+
+        @ Complete local MCP readings. Sensor IDs 1 and 2 represent i.MX and
+        @ peripheral readings respectively; the Jetson-board reading is ignored
+        @ here because Jetson die aggregation is handled by Jetson readings.
+        async input port mcpThermalReadingIn: ThermalReadingPort
+
+        @ Jetson thermal readings. All nine Jetson sensors share this input and are
+        @ aggregated by sensorId inside FPManager.
+        async input port jetsonThermalReadingIn: ThermalReadingPort
+
+        @ Remote Jetson command path after CmdSplitter has identified a command
+        @ as belonging to the Jetson deployment.
+        sync input port remoteJetsonCmdIn: Fw.Com
+
+        @ Remote Jetson command response path from the hub.
+        sync input port remoteJetsonCmdResponseIn: Fw.CmdResponse
+
+        @ Forwarded remote Jetson command path. This is only asserted when
+        @ FPManager believes the Jetson is powered on.
+        output port remoteJetsonCmdOut: Fw.Com
+
+        @ Response returned to CmdSplitter for forwarded or locally rejected
+        @ remote Jetson commands.
+        output port remoteJetsonCmdResponseOut: Fw.CmdResponse
+
+        @ Synchronous gate called by JetsonManager before it executes the command.
+        sync input port jetsonPowerAuthorizeIn: JetsonPowerStateAuthorize
+
+        @ Internal recovery and emergency power request sent to JetsonManager.
+        output port jetsonPowerRequestOut: JetsonPowerStateReceive
+
+        @ Emergency power-off request for the peripheral board.
+        output port peripheralPowerOff: EmergencyPowerOff
+
+
+        @ Current Jetson power state used by health checks.
+        async input port jetsonPowerStateIn: JetsonPowerStateSend
+
+        ##############################################################################
+        #### Operator commands #######################################################
+        ##############################################################################
+
+        @ Enable HPC Mode. Jetson power-on requests are gated until this succeeds.
+        async command ENABLE_HPC_MODE opcode 0x00
+
+        @ Disable HPC Mode and return to Safe Mode. The Jetson is powered off.
+        async command DISABLE_HPC_MODE opcode 0x01
+
+        ##############################################################################
+        #### Events and telemetry ####################################################
+        ##############################################################################
+
+        @ Jetson power request rejected because FPManager is not in HPC Mode.
+        event JETSON_POWER_REQUEST_REJECTED(
+            requested: JetsonPowerStateID
+            reason: string size 64
+        ) severity warning high id 0x00 \
+            format "Jetson power request {} rejected by FPManager: {}"
+
+        @ Thermal or power fault identified by FPManager.
+        event FAULT_DETECTED(
+            source: string size 32
+            sensorId: U8
+            temperature: F32
+            thermalState: ThermalStates
+            location: string size 32
+            timestamp: U32
+        ) severity warning high id 0x01 \
+            format "Fault detected in {} sensor {} at {} C state {} location {} timestamp {}"
+
+        @ High-priority emergency shutdown event.
+        event EMERGENCY_SHUTDOWN severity warning high id 0x02 \
+            format "FPManager emergency shutdown asserted"
+
+        @ FPManager state changed.
+        event FP_STATE_CHANGED(
+            previous: FPManagerState
+            current: FPManagerState
+        ) severity activity high id 0x03 \
+            format "FPManager state changed from {} to {}"
+
+        @ Remote Jetson command rejected because the Jetson command path is not safe.
+        event REMOTE_JETSON_COMMAND_REJECTED(
+            cmdOpcode: FwOpcodeType
+            reason: string size 64
+        ) severity warning high id 0x04 \
+            format "Remote Jetson command {} rejected by FPManager: {}"
+
+        @ Current FP state for downlink and diagnostics.
+        telemetry FP_STATE: FPManagerState id 0x00
+
+        @ Number of Jetson thermal readings currently held by FPManager.
+        telemetry JETSON_VALID_READING_COUNT: U8 id 0x01
 
         ##############################################################################
         #### Uncomment the following examples to start customizing your component ####

@@ -139,6 +139,7 @@ namespace scalesSvc {
             this->tlmWrite_jetson_tj_temp_read(this->m_jetsonThermalReadings[i]);
             break;
         }
+        this->jetsonThermalReadingOut_out(0, this->m_jetsonThermalReadings[i]);
     }
 
     this->jetson_thermalStateMachine_sendSignal_success(); // Transition back to initial state to read temp again on next tick
@@ -228,11 +229,17 @@ namespace scalesSvc {
   }
 
   scalesSvc::ThermalStates JetsonThermalManager :: determineTempState(F32 tempCelsius) {
-    if (this->IDLE_LOW_THR <= tempCelsius && tempCelsius <= this->IDLE_HIGH_THR){
-      return scalesSvc::ThermalStates::IDLE;
-    } else if ((this->WARN_LOW_THR <= tempCelsius && tempCelsius < this->IDLE_LOW_THR) || (this->IDLE_HIGH_THR < tempCelsius && tempCelsius <= this->WARN_HIGH_THR)){
+    if (tempCelsius < this->FAULT_LOW_THR || this->FAULT_HIGH_THR <= tempCelsius ||
+        (this->FAULT_LOW_THR <= tempCelsius && tempCelsius < this->WARN_LOW_THR) ||
+        (this->WARN_HIGH_THR <= tempCelsius && tempCelsius < this->FAULT_HIGH_THR)) {
+      return scalesSvc::ThermalStates::FAULT;
+    } else if ((this->WARN_LOW_THR <= tempCelsius && tempCelsius < this->IDLE_LOW_THR) ||
+               (this->IDLE_HIGH_THR < tempCelsius && tempCelsius < this->WARN_HIGH_THR)) {
       return scalesSvc::ThermalStates::WARN;
+    } else if (this->IDLE_LOW_THR <= tempCelsius && tempCelsius <= this->IDLE_HIGH_THR){
+      return scalesSvc::ThermalStates::IDLE;
     } else {
+      // Treat gaps caused by invalid or overlapping parameters as unsafe.
       return scalesSvc::ThermalStates::FAULT;
     }
   }

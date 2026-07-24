@@ -17,6 +17,9 @@ module scalesSvc {
 
         @ Output to send all of thermal readings to DataProducer
         output port mcpThermalReadOut: McpThermalReadings
+        
+        @ Complete readings for the i.MX, peripheral, and Jetson-board sensors.
+        output port thermalReadingOut: ThermalReadingPort
 
         ###############################################################################
         #                                 Telemetry                                   #
