@@ -70,6 +70,7 @@ class FPManager final : public FPManagerComponentBase {
     void rememberFault(const char* source, const ThermalReading& reading);
     void triggerImxEmergencyShutdown(const ThermalReading& reading);
     void triggerPeripheralEmergencyShutdown(const ThermalReading& reading);
+    void triggerPlatformPoweroff();
     void reportReadingFault();
     void writeStateTelemetry();
 
@@ -86,6 +87,7 @@ class FPManager final : public FPManagerComponentBase {
     bool m_hasFault;
     bool m_safeModeHealthy;
     bool m_shutdownOutputsAsserted;
+    bool m_platformPoweroffTriggered;
     FPManagerState m_lastPublishedState;
     bool m_jetsonFaultSignalPending;
 };

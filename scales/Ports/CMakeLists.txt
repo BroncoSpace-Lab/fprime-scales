@@ -2,7 +2,11 @@ set(SOURCE_FILES
   "${CMAKE_CURRENT_LIST_DIR}/PowerPorts.fpp"
   "${CMAKE_CURRENT_LIST_DIR}/SystemStateData.fpp"
   "${CMAKE_CURRENT_LIST_DIR}/ThermalStatePorts.fpp"
+<<<<<<< HEAD
   "${CMAKE_CURRENT_LIST_DIR}/ThermalReadingPorts.fpp"
+=======
+  
+>>>>>>> lucadev
 )
 
 set(MOD_DEPS
