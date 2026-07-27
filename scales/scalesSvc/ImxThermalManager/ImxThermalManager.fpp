@@ -13,6 +13,9 @@ module scalesSvc {
 
         @ output port to send imx_cpu thermal readings to DataProducer
         output port cpuThermalReadOut: CpuThermalReadings
+        
+        @ output port to send the complete i.MX thermal reading to FPManager
+        output port imxThermalReadingOut: ThermalReadingPort
        
        @ telemetry channel for imx thermal state
         telemetry imx_thermal_state: ThermalStates \
