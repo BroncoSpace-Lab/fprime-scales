@@ -65,6 +65,11 @@ TEST(FPManager, FatalShutdownForwardsAndLatches) {
   tester.fatalShutdownForwardsAndLatches();
 }
 
+TEST(FPManager, EmergencyShutdownProtectedOutputsAreLatchedAcrossRepeatedFatals) {
+  scalesSvc::FPManagerTester tester;
+  tester.emergencyShutdownProtectedOutputsAreLatchedAcrossRepeatedFatals();
+}
+
 TEST(FPManager, RejectsRemoteJetsonCommandWhenJetsonOff) {
   scalesSvc::FPManagerTester tester;
   tester.rejectsRemoteJetsonCommandWhenJetsonOff();
@@ -73,6 +78,16 @@ TEST(FPManager, RejectsRemoteJetsonCommandWhenJetsonOff) {
 TEST(FPManager, ForwardsRemoteJetsonCommandWhenJetsonOn) {
   scalesSvc::FPManagerTester tester;
   tester.forwardsRemoteJetsonCommandWhenJetsonOn();
+}
+
+TEST(FPManager, RejectsSequencerRemoteJetsonCommandWhenJetsonOff) {
+  scalesSvc::FPManagerTester tester;
+  tester.rejectsSequencerRemoteJetsonCommandWhenJetsonOff();
+}
+
+TEST(FPManager, ForwardsSequencerRemoteJetsonCommandWhenJetsonOn) {
+  scalesSvc::FPManagerTester tester;
+  tester.forwardsSequencerRemoteJetsonCommandWhenJetsonOn();
 }
 
 int main(int argc, char** argv) {

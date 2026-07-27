@@ -66,13 +66,13 @@ namespace scalesSvc {
       U32  m_startTime = 0;
       Fw::ParamValid m_paramIsValid = Fw::ParamValid::VALID;
 
-      /* Telemetry values for temperature thresholds */
-      F32 IDLE_LOW_THR;
-      F32 IDLE_HIGH_THR;
-      F32 WARN_LOW_THR;
-      F32 WARN_HIGH_THR;
-      F32 FAULT_LOW_THR;
-      F32 FAULT_HIGH_THR;
+      /* Per-sensor temperature thresholds, indexed by tempLocation (OBC/PERIF/JETSON) */
+      F32 IDLE_LOW_THR[NUM_SENSORS];
+      F32 IDLE_HIGH_THR[NUM_SENSORS];
+      F32 WARN_LOW_THR[NUM_SENSORS];
+      F32 WARN_HIGH_THR[NUM_SENSORS];
+      F32 FAULT_LOW_THR[NUM_SENSORS];
+      F32 FAULT_HIGH_THR[NUM_SENSORS];
 
     private:
 
@@ -115,7 +115,7 @@ namespace scalesSvc {
 
       bool readTemp(U8 deviceAddr, std::string& location, F32& temperature); //!< Function to read temperature from a given I2C device address
 
-      scalesSvc::ThermalStates determineTempState(F32 tempCelsius); //!< Function to determine the temperature state (IDLE, WARNING, FAULT) based on the temperature in Celsius
+      scalesSvc::ThermalStates determineTempState(F32 tempCelsius, U8 sensorIndex); //!< Function to determine the temperature state (IDLE, WARNING, FAULT) based on the temperature in Celsius, using the given sensor's own thresholds
 
 
   };

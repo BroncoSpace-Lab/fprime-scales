@@ -45,22 +45,99 @@ OFF requests remain available for operator disable, protection, and recovery
 actions.
 
 Remote Jetson deployment commands are also gated on the i.MX before they reach
-the hub transport. `CmdSplitter.RemoteCmd[0]` routes through FPManager. If the
+the hub transport. There are two independent remote command sources in the
+topology -- `imx_cmdSplitter` (GDS-direct commands) and `imx_seqCmdSplitter`
+(commands issued by a running `CmdSequencer` sequence, e.g. `CS_RUN`) -- and
+both are routed through the *same* gate: `remoteJetsonCmdIn`/
+`remoteJetsonCmdOut`/`remoteJetsonCmdResponseIn`/`remoteJetsonCmdResponseOut`
+are `[2]`-sized arrays, with index 0 wired to `imx_cmdSplitter` and index 1
+wired to `imx_seqCmdSplitter`. `remoteJetsonCmdIn_handler` and
+`remoteJetsonCmdResponseIn_handler` thread the `portNum` argument straight
+through to the matching output index, so one handler implementation gates
+both sources identically -- there is no separate code path per source. If the
 last reported Jetson power state is `OFF`, FPManager rejects the command
 locally with `Fw.CmdResponse.BUSY` and emits
 `REMOTE_JETSON_COMMAND_REJECTED`. This prevents commands such as
-`JetsonThermalManager` parameter updates from being transmitted into the hub
-while the Jetson is powered off or the hub link is unavailable. If the Jetson
-is known `ON`, FPManager forwards the command to GenericHub and passes the
-remote command response back to CmdSplitter unchanged.
+`JetsonThermalManager` parameter updates -- issued directly from GDS or from a
+sequence -- from being transmitted into the hub while the Jetson is powered
+off or the hub link is unavailable. If the Jetson is known `ON`, FPManager
+forwards the command to GenericHub and passes the remote command response
+back to the originating CmdSplitter unchanged.
 
-`$fatal` is an emergency override. It is invoked only when CdhCore's
-`EventManager` announces a FATAL event on `FatalAnnounce`, which is wired to
-`FPManager.fatalIn`. FPManager performs the one-shot protection action before
-forwarding the fatal event to the standard fatal handler. The action emits the
-high-priority shutdown event, synchronously requests Jetson and peripheral
-power removal, writes `FP_STATE=EMERGENCY`, and latches `emergencyShutdown`.
-It does not transition through `faultMode` and has no recovery transition.
+Before this gate covered both sources, a sequence targeting the Jetson (e.g.
+`run-ml.bin`, which issues `JetsonDeployment.jetson_mlManager.*` commands)
+while the Jetson was powered off would route straight from
+`imx_seqCmdSplitter.RemoteCmd[0]` to `imx_hub.cmdDispIn[1]` with no gating at
+all, reach `imx_hubComStub.dataIn_handler` with the TCP link never
+established, and trip `FW_ASSERT(!this->m_reinitialize ||
+!this->isConnected_comStatusOut_OutputPort(0))` in
+`lib/fprime/Svc/ComStub/ComStub.cpp` -- crashing the whole flight software
+process instead of being rejected gracefully. Routing `imx_seqCmdSplitter`
+through the same FPManager gate as `imx_cmdSplitter` fixes this.
+
+`$fatal` is an emergency override. CdhCore's `EventManager.FatalAnnounce` and
+`Svc.FatalHandler.FatalReceive` are both scalar (non-array) ports, and
+CdhCore's subtopology always wires them together internally, so a deployment
+cannot add a second consumer of `FatalAnnounce` directly. `ImxDeployment`
+works around this with `scalesSvc.FatalRelay`
+(`CdhCoreFatalHandlerConfig.fpp`), a minimal passive component swapped in as
+CdhCore's `fatalHandler` instance: it exposes a `FatalReceive` port to satisfy
+CdhCore's internal wiring, then re-announces the event on a fresh `fatalOut`
+port that is free to route anywhere. The real path is
+`EventManager.FatalAnnounce -> FatalRelay.FatalReceive -> FatalRelay.fatalOut
+-> FPManager.fatalIn -> FPManager.fatalOut -> imx_realFatalHandler.FatalReceive`
+(a separate `Svc.FatalHandler` instance dedicated to actually terminating the
+process). See `ImxDeployment/Top/topology.fpp` and
+`ImxDeployment/SubtopologyConfig/CdhCoreFatalHandlerConfig.fpp`.
+
+`fatalIn_handler` writes `FP_STATE=EMERGENCY` and emits the high-priority
+shutdown event first, then triggers the platform poweroff directly and
+unconditionally (see "Platform Poweroff" below) before touching the state
+machine at all, then signals `$fatal` (which asserts the Jetson/peripheral
+protection outputs through the `SHUTDOWN` action) and only then forwards
+`fatalOut`. The platform poweroff call is placed first, ahead of the state
+machine dispatch and the Jetson/peripheral output calls, specifically so it
+cannot be skipped or delayed by anything else on this path succeeding or
+failing. `emergencyShutdown` has no recovery transition; FPManager does not
+transition through `faultMode` on `$fatal`.
+
+### Platform Poweroff
+
+`ImxDeployment` runs as a systemd service (`Restart=on-failure`,
+`RestartSec=5`, no capability or sandboxing restrictions). `FatalHandler`
+aborts the FSW process on any fatal condition; because this is a supervised
+service, systemd's default `KillMode=control-group` reaps every process still
+in the service's cgroup the instant the main process exits, and the
+`Restart=` policy then respawns the flight software. Earlier
+approaches -- forking a `poweroff -f` child, or asking systemd via
+`systemctl/poweroff --no-block` -- were both still racing that cgroup
+teardown or depended on which `poweroff` implementation happens to be
+installed on the image. `FPManager::triggerPlatformPoweroff()`
+(`FPManager.cpp`) instead:
+
+1. Calls `::sync()`, then the kernel's `reboot(RB_POWER_OFF)` syscall
+   directly, in this still-alive process -- no forked child needs to survive
+   this process's teardown, and no external binary or init system is
+   involved. `RB_POWER_OFF` (not `RB_AUTOBOOT`) cuts power rather than
+   restarting; on success this call does not return, so it must be (and is)
+   the last thing the shared `SHUTDOWN` action does.
+2. If that syscall fails (e.g. missing `CAP_SYS_BOOT`), logs
+   `PLATFORM_POWEROFF_SYSCALL_FAILED` with the `errno`, then falls back to
+   `systemd-run --no-block --collect -- /sbin/poweroff -f`. This hands the
+   confirmed-working `poweroff -f` command to a brand-new transient unit
+   that systemd (PID 1) spawns and owns directly, in its own cgroup outside
+   `ImxDeployment.service`, so it survives this service being torn down
+   regardless of timing. If that fallback's exit status is non-zero (or it
+   could not even spawn a shell), `PLATFORM_POWEROFF_FALLBACK_FAILED` is
+   logged with the exit code (127 typically means the command was not found
+   on this image).
+
+The call is idempotent and guarded by `m_platformPoweroffTriggered` (set on
+first entry, checked before doing any work), and is invoked directly from
+both `fatalIn_handler` and `triggerImxEmergencyShutdown` -- not only from the
+shared `SHUTDOWN` action -- so it cannot be conditioned on the state
+machine's `$fatal` dispatch, or on the Jetson/peripheral output calls,
+succeeding. Confirmed working on hardware.
 
 i.MX, peripheral, and Jetson thermal faults are handled as separate fault
 domains. An i.MX `ThermalStates.FAULT` is a system-level fatal condition:
@@ -75,14 +152,14 @@ the global `EMERGENCY_SHUTDOWN` event, power off the Jetson, or forward
 `jetsonFaultRecovery`, powers off the Jetson, reports the offending reading,
 and returns to Safe Mode.
 
-For an i.MX thermal `FAULT`, FPManager emits the detailed
-`FAULT_DETECTED` event, writes `FP_STATE=EMERGENCY`, and emits
-`EMERGENCY_SHUTDOWN` before asserting the global shutdown outputs that turn off
-the Jetson and peripheral board. FPManager forwards `fatalOut` before the
-protected outputs are cut so F Prime receives the fatal condition while the GDS
-path is still powered. After that, FPManager starts a child process that
-executes forced `/sbin/poweroff -f`. The ImxDeployment process runs as root, so
-no `sudo` wrapper is required.
+For an i.MX thermal `FAULT`, FPManager emits the detailed `FAULT_DETECTED`
+event, writes `FP_STATE=EMERGENCY`, and emits `EMERGENCY_SHUTDOWN`, then
+triggers the platform poweroff directly (see "Platform Poweroff" above)
+before signaling `$fatal` (which asserts the Jetson/peripheral protection
+outputs through `SHUTDOWN`) and forwarding `fatalOut`. The platform poweroff
+attempt is intentionally the first thing that happens after the
+events/telemetry, ahead of the Jetson/peripheral cuts and the fatal forward,
+so it cannot be skipped or delayed by anything else on this path.
 
 ## Functional Diagrams
 
@@ -149,9 +226,11 @@ flowchart LR
 flowchart TB
     subgraph Cdh["CdhCore and GDS"]
         GDS["GDS commands telemetry events"]
-        SPLIT["CmdSplitter"]
+        SPLIT["imx_cmdSplitter (GDS-direct, index 0)"]
+        SEQSPLIT["imx_seqCmdSplitter (CmdSequencer, index 1)"]
         EVT["EventManager FatalAnnounce"]
-        FH["FatalHandler"]
+        RELAY["FatalRelay (swapped in as CdhCore.fatalHandler)"]
+        FH["imx_realFatalHandler (Svc.FatalHandler)"]
     end
 
     subgraph FP["FPManager protection boundary"]
@@ -179,9 +258,12 @@ flowchart TB
     GDS -->|"ENABLE_HPC_MODE or DISABLE_HPC_MODE"| FPM
     GDS -->|"REQUEST_JETSON_POWER_STATE"| JM
     GDS -->|"remote Jetson command"| SPLIT
-    SPLIT -->|"RemoteCmd[0]"| FPM
+    GDS -->|"CS_RUN sequence"| SEQSPLIT
+    SPLIT -->|"RemoteCmd[0] -> remoteJetsonCmdIn[0]"| FPM
+    SEQSPLIT -->|"RemoteCmd[0] -> remoteJetsonCmdIn[1]"| FPM
     FPM -->|"forward only if Jetson ON"| HUB
     FPM -->|"BUSY if Jetson OFF"| SPLIT
+    FPM -->|"BUSY if Jetson OFF"| SEQSPLIT
     FPM -->|"FP_STATE and fault events"| GDS
 
     JM -->|"authorize requested Jetson state"| FPM
@@ -189,7 +271,8 @@ flowchart TB
     FPM -->|"internal OFF request"| JM
     FPM -->|"emergency peripheral OFF"| PBM
 
-    EVT -->|"FATAL event id"| FPM
+    EVT -->|"FatalAnnounce (single connection)"| RELAY
+    RELAY -->|"fatalOut"| FPM
     FPM -->|"forward FATAL event id"| FH
 ```
 
@@ -205,7 +288,7 @@ flowchart TD
     State -->|"SAFE"| SafeCheck["safeModeHealthCheck"]
     SafeCheck --> SafeFault{"fault source"}
     SafeFault -->|"none"| SafeHealthy["set safeModeHealthy true<br>write FP_STATE SAFE"]
-    SafeFault -->|"i.MX"| ImxEmergency["report IMX ThermalReading<br>FP_STATE EMERGENCY<br>EMERGENCY_SHUTDOWN<br>fatalOut"]
+    SafeFault -->|"i.MX"| ImxEmergency["report IMX ThermalReading<br>FP_STATE EMERGENCY<br>EMERGENCY_SHUTDOWN<br>trigger platform poweroff"]
     SafeFault -->|"peripheral"| PerifFault["report peripheral ThermalReading<br>FP_STATE FAULT<br>peripheralPowerOff"]
 
     State -->|"HPC"| HpcCheck["hpcModeHealthCheck"]
@@ -215,7 +298,7 @@ flowchart TD
     HpcFault -->|"i.MX"| ImxEmergency
     HpcFault -->|"peripheral"| PerifFault
 
-    ImxEmergency --> Emergency["SHUTDOWN outputs<br>Linux poweroff"]
+    ImxEmergency --> Emergency["$fatal signal: SHUTDOWN outputs (Jetson/peripheral OFF)<br>fatalOut forwarded"]
     PerifFault --> FaultReport["failure signal<br>enter faultMode"]
 
     FaultReport --> FaultCheck["faultModeHealthCheck on next tick"]
@@ -336,6 +419,8 @@ sequenceDiagram
     participant SM as FPStateMachine
     participant JM as JetsonManager
     participant PBM as PerifBoardManager
+    participant FH as imx_realFatalHandler
+    participant HW as i.MX platform power
     actor GDS as GDS
 
     FPM->>FPM: hpcModeHealthCheck
@@ -351,10 +436,12 @@ sequenceDiagram
         FPM->>GDS: FP_STATE SAFE
     else i.MX FAULT
         FPM->>GDS: FAULT_DETECTED with IMX ThermalReading
-        FPM->>GDS: FP_STATE EMERGENCY
-        FPM->>FH: fatalOut
-        FPM->>FPM: SHUTDOWN
+        FPM->>GDS: FP_STATE EMERGENCY, EMERGENCY_SHUTDOWN
+        FPM->>HW: trigger platform poweroff (direct, unconditional)
+        FPM->>FPM: $fatal -> SHUTDOWN
         FPM->>JM: jetsonPowerRequestOut OFF
+        FPM->>PBM: peripheralPowerOff
+        FPM->>FH: fatalOut
     else peripheral FAULT
         FPM->>GDS: FAULT_DETECTED with peripheral ThermalReading
         FPM->>GDS: FP_STATE FAULT
@@ -370,30 +457,32 @@ sequenceDiagram
 sequenceDiagram
     participant Source as Any component
     participant Events as CdhCore EventManager
+    participant Relay as FatalRelay (CdhCore.fatalHandler)
     participant FPM as FPManager
     participant JM as JetsonManager
     participant PBM as PerifBoardManager
-    participant FH as F Prime FatalHandler
-    participant HW as Board power system
+    participant FH as imx_realFatalHandler
+    participant HW as i.MX platform power
     actor GDS as GDS
 
     alt upstream fatal event
         Source->>Events: log FATAL event or FW_ASSERT
-        Events->>FPM: FatalAnnounce to fatalIn
+        Events->>Relay: FatalAnnounce (CdhCore's only internal connection)
+        Relay->>FPM: fatalOut to fatalIn
     else i.MX ThermalReading FAULT
         FPM->>FPM: safeModeHealthCheck or hpcModeHealthCheck
         FPM->>GDS: FAULT_DETECTED with IMX ThermalReading
     end
     FPM->>GDS: FP_STATE EMERGENCY
     FPM->>GDS: EMERGENCY_SHUTDOWN
-    FPM->>FH: fatalOut
-    FPM->>FPM: SHUTDOWN one-shot action
+    FPM->>HW: trigger platform poweroff (direct call, unconditional,\nbefore the state machine or fatalOut below)
+    FPM->>FPM: $fatal signal -> SHUTDOWN one-shot action
     FPM->>JM: jetsonPowerRequestOut OFF
     FPM->>PBM: peripheralPowerOff
-    FPM->>HW: child executes /sbin/poweroff -f
-    FH->>FH: abort or exit FSW process
-    Note over FPM,HW: FP_STATE, emergency event, and fatalOut are emitted before protected outputs and hardware shutdown
-    HW-->>FPM: satellite power cycle resets latch
+    FPM->>FH: fatalOut
+    FH->>FH: abort or exit FSW process; systemd respawns the service
+    HW->>HW: reboot(RB_POWER_OFF), or systemd-run poweroff -f fallback
+    Note over FPM,HW: The platform poweroff attempt runs first and does not depend on\nthe Jetson/peripheral outputs, the state machine, or fatalOut succeeding.\nsystemd restarting the FSW process is expected and harmless once the\nboard itself is powering off.
 ```
 
 ### Operating Rules
@@ -411,9 +500,11 @@ sequenceDiagram
    transition requests direct Jetson OFF if Jetson is still known ON and updates
    `FP_STATE` to `SAFE`, causing subsequent Jetson ON requests to be rejected
    again.
-6. If the i.MX is faulty, record and report the full reading, emit
-   Emergency Shutdown, write `FP_STATE=EMERGENCY`, forward a fatal event to the
-   standard fatal handler, and only then assert the protected shutdown outputs.
+6. If the i.MX is faulty, record and report the full reading, write
+   `FP_STATE=EMERGENCY`, emit `EMERGENCY_SHUTDOWN`, and trigger the platform
+   poweroff directly and unconditionally before doing anything else on this
+   path. Only then assert the protected Jetson/peripheral shutdown outputs
+   and forward the fatal event to the standard fatal handler.
 7. If the peripheral board is faulty, record and report the full reading, latch
    the peripheral board off, and enter Fault Mode without shutting down the
    whole system. While faulted, recheck i.MX, Jetson, and peripheral readings
@@ -423,9 +514,12 @@ sequenceDiagram
    Safe Mode.
 8. If only the Jetson is faulty, record the offending full reading, power off
    the Jetson, report the cause, and return to Safe Mode.
-9. If CdhCore announces a FATAL event, immediately enter Emergency Shutdown,
-   power down the protected Jetson/peripheral outputs, forward to F Prime's
-   fatal handler, and wait for an external reset/power cycle.
+9. If CdhCore announces a FATAL event (via `FatalRelay`), immediately enter
+   Emergency Shutdown, trigger the platform poweroff directly, power down the
+   protected Jetson/peripheral outputs, and forward to the standard fatal
+   handler. The platform poweroff is not conditioned on the state machine,
+   the protected outputs, or the fatal forward succeeding; recovery still
+   requires an operator to physically power the board back on.
 
 ## Implementation Progress
 
@@ -456,6 +550,25 @@ sequenceDiagram
 - [x] Add FPManager unit tests for Safe Mode, HPC gating, i.MX emergency
   shutdown, peripheral-only shutdown, Jetson recovery, and fatal shutdown.
   Runtime execution requires an ARM64 target or emulator.
+- [x] Fix the `FatalAnnounce`/`FatalReceive` port-arity conflict: added
+  `scalesSvc.FatalRelay`, swapped in via `CdhCoreFatalHandlerConfig.fpp` as
+  CdhCore's `fatalHandler` instance, and a dedicated `imx_realFatalHandler`
+  instance so `FPManager` sits between the announcement and the real
+  process-terminating handler without a second connection on either scalar
+  port.
+- [x] Replace the forked `poweroff -f` (and later `systemctl --no-block`)
+  platform-shutdown mechanism, both of which lost the race against
+  systemd's `KillMode=control-group` cgroup teardown of `ImxDeployment.service`,
+  with a direct `reboot(RB_POWER_OFF)` syscall and a `systemd-run`-detached
+  `poweroff -f` fallback. Confirmed working on hardware.
+- [x] Decouple `triggerPlatformPoweroff()` from the state machine's `$fatal`
+  dispatch: call it directly and unconditionally from both `fatalIn_handler`
+  and `triggerImxEmergencyShutdown`, guarded by a dedicated one-shot flag
+  (`m_platformPoweroffTriggered`), so it cannot be skipped by anything else
+  on either path failing or behaving unexpectedly.
+- [x] Add a regression test confirming a second FATAL announcement re-fires
+  the announcement/forwarding events but does not re-assert the
+  already-latched Jetson/peripheral protected outputs.
 
 ## Component Relationships
 
@@ -474,7 +587,7 @@ authoritative port wiring is in `ImxDeployment/Top/topology.fpp`.
 |---|---|
 | Thermal reading inputs | Full `ThermalReading` values from i.MX, MCP/local peripheral, and Jetson sources. Jetson input is multi-reading and aggregated by sensor ID. |
 | Jetson power authorization | Synchronous gate called by JetsonManager before executing `REQUEST_JETSON_POWER_STATE`. |
-| Remote Jetson command gate | Synchronous `Fw.Com` gate between `CmdSplitter.RemoteCmd[0]` and GenericHub. Rejects with `BUSY` while Jetson power state is `OFF`; forwards and relays responses while Jetson is `ON`. |
+| Remote Jetson command gate | Synchronous `[2]`-sized `Fw.Com` gate between GenericHub and both remote command sources: index 0 is `imx_cmdSplitter.RemoteCmd[0]` (GDS-direct), index 1 is `imx_seqCmdSplitter.RemoteCmd[0]` (`CmdSequencer`-originated). Rejects with `BUSY` while Jetson power state is `OFF`; forwards and relays responses while Jetson is `ON`. One handler implementation gates both indices identically by threading `portNum` through to the matching output. |
 | Internal power output | Synchronous OFF request to JetsonManager for recovery, HPC disable, and emergency protection; this uses the direct FP protection path. |
 | Peripheral emergency output | Synchronous, latched OFF request that holds the peripheral board power down. |
 | Rate-group tick | Drives initialization and periodic health checks. |
@@ -508,6 +621,8 @@ authoritative port wiring is in `ImxDeployment/Top/topology.fpp`.
 | Emergency shutdown | High-priority warning emitted when an i.MX thermal FAULT or `$fatal` causes the terminal shutdown action. |
 | FP state changed | Activity event emitted when the published FPManager state changes. Repeated telemetry writes in the same state do not emit this event. |
 | Remote Jetson command rejected | Warning emitted when a remote Jetson command is blocked because the Jetson is not powered on. |
+| Platform poweroff syscall failed | Warning emitted when the direct `reboot(RB_POWER_OFF)` syscall fails, with the `errno`. Compiled out under `BUILD_UT`. |
+| Platform poweroff fallback failed | Warning emitted when the `systemd-run ... poweroff -f` fallback exits non-zero or could not be spawned, with the exit code. Compiled out under `BUILD_UT`. |
 
 ## Telemetry
 | Name | Description |
@@ -531,8 +646,18 @@ authoritative port wiring is in `ImxDeployment/Top/topology.fpp`.
 | `jetsonFaultRecoveryClearsCachedReadingsBeforeHpcReentry` | Recreates the operator sequence of HPC ON, Jetson ON, Jetson FAULT, recovery to Safe, and HPC re-entry without new Jetson readings. | Jetson cache invalidated, no repeated stale fault, `FP_STATE=HPC` after re-entry | FP-004, FP-005 |
 | `attributesJetsonFaultAndReturnsSafe` | Aggregates the nine Jetson sensor readings, identifies sensor 4, reports its full reading, powers off the Jetson, and returns to Safe Mode. | Fault event with source, sensor ID, temperature, state, location, and timestamp; Jetson OFF | FP-004, FP-005 |
 | `fatalShutdownForwardsAndLatches` | Routes `$fatal` to the terminal emergency shutdown path, forwards the fatal event, emits emergency shutdown, powers down protected devices, and rejects later Jetson ON requests. | Fatal forwarding, shutdown event, Jetson OFF, peripheral OFF, authorization failure | FP-007, FP-008 |
-| `rejectsRemoteJetsonCommandWhenJetsonOff` | Sends a remote Jetson command while FPManager's Jetson power state is `OFF`. | No hub command output, local `BUSY` response, rejection event | FP-013 |
-| `forwardsRemoteJetsonCommandWhenJetsonOn` | Sends a remote Jetson command while FPManager's Jetson power state is `ON`. | Hub command output and remote response relayed unchanged | FP-013 |
+| `emergencyShutdownProtectedOutputsAreLatchedAcrossRepeatedFatals` | Sends `fatalIn` twice and verifies the second announcement re-fires the announcement/forwarding events but does not re-assert the already-latched protected outputs. | `EMERGENCY_SHUTDOWN`/`fatalOut` count 2, Jetson OFF/peripheral OFF count stays at 1, no extra `FP_STATE_CHANGED` | FP-008, FP-014 |
+| `rejectsRemoteJetsonCommandWhenJetsonOff` | Sends a remote Jetson command on port index 0 (GDS-direct) while FPManager's Jetson power state is `OFF`. | No hub command output, local `BUSY` response, rejection event | FP-013 |
+| `forwardsRemoteJetsonCommandWhenJetsonOn` | Sends a remote Jetson command on port index 0 (GDS-direct) while FPManager's Jetson power state is `ON`. | Hub command output and remote response relayed unchanged | FP-013 |
+| `rejectsSequencerRemoteJetsonCommandWhenJetsonOff` | Sends a remote Jetson command on port index 1 (`imx_seqCmdSplitter`/`CmdSequencer`-originated) while FPManager's Jetson power state is `OFF`. | No hub command output, local `BUSY` response, rejection event | FP-013, FP-015 |
+| `forwardsSequencerRemoteJetsonCommandWhenJetsonOn` | Sends a remote Jetson command on port index 1 while FPManager's Jetson power state is `ON`. | Hub command output and remote response relayed unchanged | FP-013, FP-015 |
+
+`triggerPlatformPoweroff()`'s actual `reboot(RB_POWER_OFF)` syscall and
+`systemd-run`/`poweroff -f` fallback are compiled out under `BUILD_UT`
+(`#ifndef BUILD_UT`) and are not exercised by the native unit tests -- there
+is no safe way to unit-test a real power-off. That mechanism is verified on
+hardware only; see the fault-injection procedure referenced in the Change
+Log below.
 
 The FPManager UT target is built with `fprime-util generate imx8x --ut --disable-sanitizers`; execution requires an ARM64 target or an AArch64 emulator.
 
@@ -546,12 +671,14 @@ The FPManager UT target is built with `fprime-util generate imx8x --ut --disable
 | FP-005 | Jetson fault recovery shall preserve and report the offending full `ThermalReading` before clearing the Jetson reading cache and returning to Safe Mode. | `attributesJetsonFaultAndReturnsSafe`, `jetsonFaultReadingTriggersRecoveryInHpc`, `jetsonFaultRecoveryClearsCachedReadingsBeforeHpcReentry` |
 | FP-006 | Peripheral thermal FAULT shall latch the peripheral board off and enter Fault Mode without system Emergency Shutdown; recovery requires a valid non-FAULT peripheral reading and no cached Jetson FAULT. | `peripheralFaultPowersOffPeripheralOnly`, `peripheralFaultRecoversToSafeMode` |
 | FP-007 | `$fatal` or i.MX thermal FAULT shall immediately enter terminal Emergency Shutdown and shall not enter Fault Mode. | `fatalShutdownForwardsAndLatches`, `imxFaultTriggersEmergencyShutdown` |
-| FP-008 | Emergency Shutdown shall power off the protected Jetson and peripheral outputs and rely on board-level reset or satellite power cycling for full system recovery. | `fatalShutdownForwardsAndLatches`, `imxFaultTriggersEmergencyShutdown`; deployment-level power-cycle test remains pending |
+| FP-008 | Emergency Shutdown shall power off the protected Jetson and peripheral outputs and trigger a real platform poweroff of the i.MX itself; full system recovery requires an operator to physically power the board back on. | `fatalShutdownForwardsAndLatches`, `imxFaultTriggersEmergencyShutdown` for the protected outputs; the platform poweroff call itself is compiled out under `BUILD_UT` and is confirmed on hardware only (fault-injection test, see Change Log) |
 | FP-009 | Disabling HPC Mode shall request Jetson OFF when Jetson is known ON, return FPManager to Safe Mode, and re-gate Jetson ON requests. | `disablesHpcModeAndGatesJetsonOn` |
 | FP-010 | Fault Mode shall recheck i.MX, Jetson, and peripheral health on each tick; i.MX FAULT shall escalate to Emergency Shutdown, Jetson FAULT shall request Jetson OFF and remain in Fault Mode, and recovery shall require a valid non-FAULT peripheral reading with no cached Jetson FAULT. | `peripheralFaultRecoversToSafeMode`, `faultModeJetsonFaultRequestsOffAndStaysFault`, `faultModeImxFaultOverridesJetsonAndPeripheral` |
 | FP-011 | Jetson faults observed while already in Fault Mode shall preserve fault attribution and request Jetson OFF without global Emergency Shutdown. | `faultModeJetsonFaultRequestsOffAndStaysFault` |
 | FP-013 | Remote Jetson deployment commands shall not be forwarded to GenericHub while the Jetson is known OFF; they shall receive a local command response instead. | `rejectsRemoteJetsonCommandWhenJetsonOff`, `forwardsRemoteJetsonCommandWhenJetsonOn` |
 | FP-012 | FPManager shall emit a state transition event whenever the published `FP_STATE` changes, and shall not emit transition events for repeated writes of the same state. | `emitsStateTransitionEventsOnlyOnChange` |
+| FP-014 | The protected Jetson/peripheral shutdown outputs shall be asserted at most once per process lifetime, regardless of how many times or through which path (`fatalIn`, i.MX thermal FAULT) Emergency Shutdown is re-entered. | `emergencyShutdownProtectedOutputsAreLatchedAcrossRepeatedFatals` |
+| FP-015 | The Jetson-power-state gate on remote Jetson commands (FP-013) shall apply identically regardless of which remote command source (GDS-direct via `imx_cmdSplitter`, or `CmdSequencer`-originated via `imx_seqCmdSplitter`) the command arrived through. | `rejectsSequencerRemoteJetsonCommandWhenJetsonOff`, `forwardsSequencerRemoteJetsonCommandWhenJetsonOn` |
 
 ## Change Log
 | Date | Description |
@@ -573,3 +700,7 @@ The FPManager UT target is built with `fprime-util generate imx8x --ut --disable
 | 2026-07-23 | Added `FP_STATE_CHANGED` transition events for operator-visible mode changes. |
 | 2026-07-23 | Routed remote Jetson commands through FPManager so commands are rejected locally while the Jetson is known OFF instead of being sent into the hub transport. |
 | 2026-07-23 | Invalidated cached Jetson thermal readings whenever Jetson OFF is commanded or observed, preventing stale Jetson FAULT readings from retriggering on HPC re-entry. |
+| 2026-07-27 | Fixed a CdhCore `FatalAnnounce`/`FatalReceive` port-arity conflict introduced by connecting `FPManager.fatalIn` directly to `CdhCore.events.FatalAnnounce`: added `scalesSvc.FatalRelay`, swapped in as CdhCore's `fatalHandler` instance via `CdhCoreFatalHandlerConfig.fpp`, and a dedicated `imx_realFatalHandler` instance, so the fatal path is now `EventManager -> FatalRelay -> FPManager -> imx_realFatalHandler` without a second connection on either scalar port. |
+| 2026-07-27 | Diagnosed and fixed the i.MX not actually powering off on Emergency Shutdown: `ImxDeployment` runs as a systemd service with `Restart=on-failure`, and every attempt to run `poweroff -f` from a forked child of that service (or to ask systemd via `systemctl/poweroff --no-block`) lost the race against systemd's `KillMode=control-group` reaping the service's cgroup once `FatalHandler` aborted the process. Replaced this with a direct `reboot(RB_POWER_OFF)` syscall (confirmed correct on hardware: `RB_POWER_OFF`, not `RB_AUTOBOOT`) with a `systemd-run`-detached `poweroff -f` fallback, and added `PLATFORM_POWEROFF_SYSCALL_FAILED`/`PLATFORM_POWEROFF_FALLBACK_FAILED` diagnostic events. |
+| 2026-07-27 | Decoupled `triggerPlatformPoweroff()` from the state machine's `$fatal` dispatch: it is now called directly and unconditionally from both `fatalIn_handler` and `triggerImxEmergencyShutdown`, guarded by a one-shot `m_platformPoweroffTriggered` flag, so the poweroff attempt cannot be skipped by the state machine, the Jetson/peripheral output calls, or anything else on either path. Confirmed on hardware via fault injection (`MCP_IMX_FAULT_HIGH_PRM_SET` / `IMX_CPU_FAULT_HIGH_PRM_SET`) that the i.MX now powers off instead of the flight software merely restarting. Added `emergencyShutdownProtectedOutputsAreLatchedAcrossRepeatedFatals` to cover the resulting cross-path latching behavior (FP-014). |
+| 2026-07-27 | Fixed a crash: running the `run-ml.bin` sequence while the Jetson was powered off triggered `FW_ASSERT` in `Svc::ComStub::dataIn_handler` (`lib/fprime/Svc/ComStub/ComStub.cpp:28`) and killed the flight software, because `imx_seqCmdSplitter.RemoteCmd[0]` (the `CmdSequencer`-originated remote path) was wired straight to `imx_hub.cmdDispIn[1]` with no Jetson-power-state gate at all -- only the GDS-direct path through `imx_cmdSplitter` was gated. `remoteJetsonCmdIn`/`remoteJetsonCmdOut`/`remoteJetsonCmdResponseIn`/`remoteJetsonCmdResponseOut` are now `[2]`-sized arrays (index 0 = GDS-direct, index 1 = sequencer), with `portNum` threaded straight through so the same gate rejects both sources identically with `BUSY` instead of crashing. Added `rejectsSequencerRemoteJetsonCommandWhenJetsonOff`/`forwardsSequencerRemoteJetsonCommandWhenJetsonOn` (FP-015). |

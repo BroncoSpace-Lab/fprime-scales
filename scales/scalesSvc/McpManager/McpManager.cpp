@@ -64,13 +64,27 @@ namespace scalesSvc {
       m_justBooted = false;
       m_startTime = this->getTime().getSeconds(); // Record the start time at boot to track uptime in telemetry
       printf("Device just booted. Setting up parameters...\n");
-      // Default threshold values, can be updated by sending commands
-      this->IDLE_LOW_THR = this->paramGet_MCP_IDLE_LOW(m_paramIsValid); 
-      this->IDLE_HIGH_THR = this->paramGet_MCP_IDLE_HIGH(m_paramIsValid);
-      this->WARN_LOW_THR = this->paramGet_MCP_WARN_LOW(m_paramIsValid);
-      this->WARN_HIGH_THR = this->paramGet_MCP_WARN_HIGH(m_paramIsValid);
-      this->FAULT_LOW_THR = this->paramGet_MCP_FAULT_LOW(m_paramIsValid);
-      this->FAULT_HIGH_THR = this->paramGet_MCP_FAULT_HIGH(m_paramIsValid);
+      // Default threshold values, can be updated by sending commands, one set per sensor
+      this->IDLE_LOW_THR[OBC] = this->paramGet_MCP_IMX_IDLE_LOW(m_paramIsValid);
+      this->IDLE_HIGH_THR[OBC] = this->paramGet_MCP_IMX_IDLE_HIGH(m_paramIsValid);
+      this->WARN_LOW_THR[OBC] = this->paramGet_MCP_IMX_WARN_LOW(m_paramIsValid);
+      this->WARN_HIGH_THR[OBC] = this->paramGet_MCP_IMX_WARN_HIGH(m_paramIsValid);
+      this->FAULT_LOW_THR[OBC] = this->paramGet_MCP_IMX_FAULT_LOW(m_paramIsValid);
+      this->FAULT_HIGH_THR[OBC] = this->paramGet_MCP_IMX_FAULT_HIGH(m_paramIsValid);
+
+      this->IDLE_LOW_THR[PERIF] = this->paramGet_MCP_PERIPHERAL_IDLE_LOW(m_paramIsValid);
+      this->IDLE_HIGH_THR[PERIF] = this->paramGet_MCP_PERIPHERAL_IDLE_HIGH(m_paramIsValid);
+      this->WARN_LOW_THR[PERIF] = this->paramGet_MCP_PERIPHERAL_WARN_LOW(m_paramIsValid);
+      this->WARN_HIGH_THR[PERIF] = this->paramGet_MCP_PERIPHERAL_WARN_HIGH(m_paramIsValid);
+      this->FAULT_LOW_THR[PERIF] = this->paramGet_MCP_PERIPHERAL_FAULT_LOW(m_paramIsValid);
+      this->FAULT_HIGH_THR[PERIF] = this->paramGet_MCP_PERIPHERAL_FAULT_HIGH(m_paramIsValid);
+
+      this->IDLE_LOW_THR[JETSON] = this->paramGet_MCP_JETSON_IDLE_LOW(m_paramIsValid);
+      this->IDLE_HIGH_THR[JETSON] = this->paramGet_MCP_JETSON_IDLE_HIGH(m_paramIsValid);
+      this->WARN_LOW_THR[JETSON] = this->paramGet_MCP_JETSON_WARN_LOW(m_paramIsValid);
+      this->WARN_HIGH_THR[JETSON] = this->paramGet_MCP_JETSON_WARN_HIGH(m_paramIsValid);
+      this->FAULT_LOW_THR[JETSON] = this->paramGet_MCP_JETSON_FAULT_LOW(m_paramIsValid);
+      this->FAULT_HIGH_THR[JETSON] = this->paramGet_MCP_JETSON_FAULT_HIGH(m_paramIsValid);
     } else {
         // Read temp data from sensors and log to telemetry
         for (int i = 0; i < NUM_SENSORS; i++){
@@ -101,7 +115,7 @@ namespace scalesSvc {
     for (int i = 0; i < NUM_SENSORS; i++){
 
       if(m_successfulReads[i]){ // Only evaluate if this sensor readding was successful, otherwise the temp state is already set to FAULT
-        scalesSvc::ThermalStates tempState = this->determineTempState(this->m_thermalReadings[i].get_temperature());
+        scalesSvc::ThermalStates tempState = this->determineTempState(this->m_thermalReadings[i].get_temperature(), i);
         this->m_thermalReadings[i].set_tempState(tempState); // Set the temp state in the reading struct to log to telemetry
       }
       
@@ -150,23 +164,59 @@ namespace scalesSvc {
     // Update threshold values based on parameter updates
     printf("Parameter with ID 0x%X has been updated. Updating threshold values...\n", id);
     switch(id){
-      case PARAMID_MCP_IDLE_LOW:
-        this->IDLE_LOW_THR = this->paramGet_MCP_IDLE_LOW(m_paramIsValid);
+      case PARAMID_MCP_IMX_IDLE_LOW:
+        this->IDLE_LOW_THR[OBC] = this->paramGet_MCP_IMX_IDLE_LOW(m_paramIsValid);
         break;
-      case PARAMID_MCP_IDLE_HIGH:
-        this->IDLE_HIGH_THR = this->paramGet_MCP_IDLE_HIGH(m_paramIsValid);
+      case PARAMID_MCP_IMX_IDLE_HIGH:
+        this->IDLE_HIGH_THR[OBC] = this->paramGet_MCP_IMX_IDLE_HIGH(m_paramIsValid);
         break;
-      case PARAMID_MCP_WARN_LOW:
-        this->WARN_LOW_THR = this->paramGet_MCP_WARN_LOW(m_paramIsValid);
+      case PARAMID_MCP_IMX_WARN_LOW:
+        this->WARN_LOW_THR[OBC] = this->paramGet_MCP_IMX_WARN_LOW(m_paramIsValid);
         break;
-      case PARAMID_MCP_WARN_HIGH:
-        this->WARN_HIGH_THR = this->paramGet_MCP_WARN_HIGH(m_paramIsValid);
+      case PARAMID_MCP_IMX_WARN_HIGH:
+        this->WARN_HIGH_THR[OBC] = this->paramGet_MCP_IMX_WARN_HIGH(m_paramIsValid);
         break;
-      case PARAMID_MCP_FAULT_LOW:
-        this->FAULT_LOW_THR = this->paramGet_MCP_FAULT_LOW(m_paramIsValid);
+      case PARAMID_MCP_IMX_FAULT_LOW:
+        this->FAULT_LOW_THR[OBC] = this->paramGet_MCP_IMX_FAULT_LOW(m_paramIsValid);
         break;
-      case PARAMID_MCP_FAULT_HIGH:
-        this->FAULT_HIGH_THR = this->paramGet_MCP_FAULT_HIGH(m_paramIsValid);
+      case PARAMID_MCP_IMX_FAULT_HIGH:
+        this->FAULT_HIGH_THR[OBC] = this->paramGet_MCP_IMX_FAULT_HIGH(m_paramIsValid);
+        break;
+      case PARAMID_MCP_PERIPHERAL_IDLE_LOW:
+        this->IDLE_LOW_THR[PERIF] = this->paramGet_MCP_PERIPHERAL_IDLE_LOW(m_paramIsValid);
+        break;
+      case PARAMID_MCP_PERIPHERAL_IDLE_HIGH:
+        this->IDLE_HIGH_THR[PERIF] = this->paramGet_MCP_PERIPHERAL_IDLE_HIGH(m_paramIsValid);
+        break;
+      case PARAMID_MCP_PERIPHERAL_WARN_LOW:
+        this->WARN_LOW_THR[PERIF] = this->paramGet_MCP_PERIPHERAL_WARN_LOW(m_paramIsValid);
+        break;
+      case PARAMID_MCP_PERIPHERAL_WARN_HIGH:
+        this->WARN_HIGH_THR[PERIF] = this->paramGet_MCP_PERIPHERAL_WARN_HIGH(m_paramIsValid);
+        break;
+      case PARAMID_MCP_PERIPHERAL_FAULT_LOW:
+        this->FAULT_LOW_THR[PERIF] = this->paramGet_MCP_PERIPHERAL_FAULT_LOW(m_paramIsValid);
+        break;
+      case PARAMID_MCP_PERIPHERAL_FAULT_HIGH:
+        this->FAULT_HIGH_THR[PERIF] = this->paramGet_MCP_PERIPHERAL_FAULT_HIGH(m_paramIsValid);
+        break;
+      case PARAMID_MCP_JETSON_IDLE_LOW:
+        this->IDLE_LOW_THR[JETSON] = this->paramGet_MCP_JETSON_IDLE_LOW(m_paramIsValid);
+        break;
+      case PARAMID_MCP_JETSON_IDLE_HIGH:
+        this->IDLE_HIGH_THR[JETSON] = this->paramGet_MCP_JETSON_IDLE_HIGH(m_paramIsValid);
+        break;
+      case PARAMID_MCP_JETSON_WARN_LOW:
+        this->WARN_LOW_THR[JETSON] = this->paramGet_MCP_JETSON_WARN_LOW(m_paramIsValid);
+        break;
+      case PARAMID_MCP_JETSON_WARN_HIGH:
+        this->WARN_HIGH_THR[JETSON] = this->paramGet_MCP_JETSON_WARN_HIGH(m_paramIsValid);
+        break;
+      case PARAMID_MCP_JETSON_FAULT_LOW:
+        this->FAULT_LOW_THR[JETSON] = this->paramGet_MCP_JETSON_FAULT_LOW(m_paramIsValid);
+        break;
+      case PARAMID_MCP_JETSON_FAULT_HIGH:
+        this->FAULT_HIGH_THR[JETSON] = this->paramGet_MCP_JETSON_FAULT_HIGH(m_paramIsValid);
         break;
       default:
         // Handle unexpected parameter ID
@@ -200,15 +250,22 @@ namespace scalesSvc {
     return false; // Return false if the device address is unrecognized 
   }
   
-  scalesSvc::ThermalStates McpManager :: determineTempState(F32 tempCelsius){
-    if (tempCelsius < this->FAULT_LOW_THR || this->FAULT_HIGH_THR <= tempCelsius ||
-        (this->FAULT_LOW_THR <= tempCelsius && tempCelsius < this->WARN_LOW_THR) ||
-        (this->WARN_HIGH_THR <= tempCelsius && tempCelsius < this->FAULT_HIGH_THR)) {
+  scalesSvc::ThermalStates McpManager :: determineTempState(F32 tempCelsius, U8 sensorIndex){
+    const F32 faultLow = this->FAULT_LOW_THR[sensorIndex];
+    const F32 faultHigh = this->FAULT_HIGH_THR[sensorIndex];
+    const F32 warnLow = this->WARN_LOW_THR[sensorIndex];
+    const F32 warnHigh = this->WARN_HIGH_THR[sensorIndex];
+    const F32 idleLow = this->IDLE_LOW_THR[sensorIndex];
+    const F32 idleHigh = this->IDLE_HIGH_THR[sensorIndex];
+
+    if (tempCelsius < faultLow || faultHigh <= tempCelsius ||
+        (faultLow <= tempCelsius && tempCelsius < warnLow) ||
+        (warnHigh <= tempCelsius && tempCelsius < faultHigh)) {
       return scalesSvc::ThermalStates::FAULT;
-    } else if ((this->WARN_LOW_THR <= tempCelsius && tempCelsius < this->IDLE_LOW_THR) ||
-               (this->IDLE_HIGH_THR < tempCelsius && tempCelsius < this->WARN_HIGH_THR)) {
+    } else if ((warnLow <= tempCelsius && tempCelsius < idleLow) ||
+               (idleHigh < tempCelsius && tempCelsius < warnHigh)) {
       return scalesSvc::ThermalStates::WARN;
-    } else if (this->IDLE_LOW_THR <= tempCelsius && tempCelsius <= this->IDLE_HIGH_THR){
+    } else if (idleLow <= tempCelsius && tempCelsius <= idleHigh){
       return scalesSvc::ThermalStates::IDLE;
     } else {
       // Treat gaps caused by invalid or overlapping parameters as unsafe.

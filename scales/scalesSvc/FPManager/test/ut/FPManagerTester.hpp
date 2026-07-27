@@ -28,8 +28,11 @@ class FPManagerTester final : public FPManagerGTestBase {
     void jetsonFaultRecoveryClearsCachedReadingsBeforeHpcReentry();
     void attributesJetsonFaultAndReturnsSafe();
     void fatalShutdownForwardsAndLatches();
+    void emergencyShutdownProtectedOutputsAreLatchedAcrossRepeatedFatals();
     void rejectsRemoteJetsonCommandWhenJetsonOff();
     void forwardsRemoteJetsonCommandWhenJetsonOn();
+    void rejectsSequencerRemoteJetsonCommandWhenJetsonOff();
+    void forwardsSequencerRemoteJetsonCommandWhenJetsonOn();
 
   private:
     void connectPorts();

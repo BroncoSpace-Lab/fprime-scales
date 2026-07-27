@@ -7,8 +7,10 @@
 
 #include "Fw/Cmd/CmdPacket.hpp"
 
+#include <cerrno>
 #include <cstdlib>
-#include <sys/types.h>
+#include <sys/reboot.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 namespace scalesSvc {
@@ -32,6 +34,7 @@ FPManager::FPManager(const char* const compName)
       m_hasFault(false),
       m_safeModeHealthy(false),
       m_shutdownOutputsAsserted(false),
+      m_platformPoweroffTriggered(false),
       m_lastPublishedState(FPManagerState::INIT),
       m_jetsonFaultSignalPending(false) {}
 
@@ -46,6 +49,15 @@ void FPManager::fatalIn_handler(FwIndexType portNum, FwEventIdType Id) {
     this->m_mode = FPManagerState::EMERGENCY;
     this->writeStateTelemetry();
     this->log_WARNING_HI_EMERGENCY_SHUTDOWN();
+    // Trigger the platform poweroff directly and unconditionally, right
+    // after the events/telemetry above -- do not depend on the state
+    // machine's $fatal dispatch (or on any port called further down this
+    // path) to reach it. This process is a systemd service with
+    // Restart=on-failure: once FatalHandler aborts it, systemd just
+    // respawns the flight software unless the platform is already powering
+    // off, so the poweroff attempt cannot be conditioned on anything that
+    // might not run or might fail.
+    this->triggerPlatformPoweroff();
     this->fpStateMachine_sendSignal_fatal();
     this->fatalOut_out(0, Id);
     this->scalesSvc_FPStateMachine_action_SHUTDOWN(
@@ -111,11 +123,11 @@ void FPManager::remoteJetsonCmdIn_handler(FwIndexType portNum,
         this->log_WARNING_HI_REMOTE_JETSON_COMMAND_REJECTED(
             opcode, Fw::String("Jetson is not powered on"));
         this->remoteJetsonCmdResponseOut_out(
-            0, opcode, context, Fw::CmdResponse::BUSY);
+            portNum, opcode, context, Fw::CmdResponse::BUSY);
         return;
     }
 
-    this->remoteJetsonCmdOut_out(0, data, context);
+    this->remoteJetsonCmdOut_out(portNum, data, context);
 }
 
 void FPManager::remoteJetsonCmdResponseIn_handler(
@@ -123,7 +135,7 @@ void FPManager::remoteJetsonCmdResponseIn_handler(
     FwOpcodeType opCode,
     U32 cmdSeq,
     const Fw::CmdResponse& response) {
-    this->remoteJetsonCmdResponseOut_out(0, opCode, cmdSeq, response);
+    this->remoteJetsonCmdResponseOut_out(portNum, opCode, cmdSeq, response);
 }
 
 void FPManager::jetsonPowerStateIn_handler(FwIndexType portNum,
@@ -325,6 +337,11 @@ void FPManager::scalesSvc_FPStateMachine_action_SHUTDOWN(
     this->m_jetsonPowerState = JetsonPowerStateID::OFF;
     this->invalidateJetsonReadings();
     this->peripheralPowerOff_out(0);
+    // Cut i.MX platform power last, for every Emergency Shutdown entry (not
+    // just the i.MX-thermal-fault path), once the Jetson and peripheral
+    // outputs above are already latched off. This call does not return on
+    // success, so nothing here may depend on running after it.
+    this->triggerPlatformPoweroff();
 }
 
 bool FPManager::readingIsFault(const ThermalReading& reading) const {
@@ -372,27 +389,13 @@ void FPManager::triggerImxEmergencyShutdown(const ThermalReading& reading) {
     this->m_mode = FPManagerState::EMERGENCY;
     this->writeStateTelemetry();
     // This is the terminal thermal-fault path. Emit the operator-visible
-    // emergency event after the state transition and before any fatal
-    // forwarding or platform shutdown is initiated.
+    // emergency event after the state transition.
     this->log_WARNING_HI_EMERGENCY_SHUTDOWN();
-
-#ifndef BUILD_UT
-    // FatalHandler aborts this process and may not return. Schedule the
-    // forced platform poweroff in a child so the request survives fatal
-    // forwarding.
-    const pid_t shutdownChild = ::fork();
-    if (shutdownChild == 0) {
-        ::sleep(1);
-        ::execl("/sbin/poweroff", "poweroff", "-f", static_cast<char*>(nullptr));
-        ::_exit(127);
-    }
-    if (shutdownChild < 0) {
-        // Preserve the hardware-shutdown attempt if process creation fails.
-        const int fallbackStatus =
-            std::system("/bin/sh -c 'sleep 1; /sbin/poweroff -f' &");
-        (void)fallbackStatus;
-    }
-#endif
+    // Trigger the platform poweroff directly and unconditionally, right
+    // after the events/telemetry above -- see fatalIn_handler for why this
+    // must not be conditioned on the state machine dispatch or on any other
+    // output succeeding.
+    this->triggerPlatformPoweroff();
     this->fpStateMachine_sendSignal_fatal();
     this->fatalOut_out(0, this->getIdBase() + EVENTID_EMERGENCY_SHUTDOWN);
     this->scalesSvc_FPStateMachine_action_SHUTDOWN(
@@ -408,6 +411,46 @@ void FPManager::triggerPeripheralEmergencyShutdown(const ThermalReading& reading
     this->writeStateTelemetry();
     this->peripheralPowerOff_out(0);
     this->fpStateMachine_sendSignal_failure();
+}
+
+void FPManager::triggerPlatformPoweroff() {
+    if (this->m_platformPoweroffTriggered) {
+        return;
+    }
+    this->m_platformPoweroffTriggered = true;
+#ifndef BUILD_UT
+    // Confirmed on hardware: "poweroff -f" itself immediately powers the
+    // board off when run from a context systemd doesn't tear down with it.
+    // The command was never the problem -- every previous attempt to run it
+    // FROM FPManager (a forked child, or this process calling reboot(2)
+    // directly) ran as a member of ImxDeployment.service's own cgroup, and
+    // systemd's KillMode reaps everything left in that cgroup the instant
+    // this process exits/aborts, which happens moments later via
+    // FatalHandler -- before the poweroff work could finish.
+    ::sync();
+
+    // Fastest path: ask the kernel directly first. Cheap to attempt, and if
+    // this process does hold CAP_SYS_BOOT it powers the board off
+    // immediately with no process spawn at all. On success this does not
+    // return.
+    const int rebootStatus = ::reboot(RB_POWER_OFF);
+    const int rebootErrno = errno;
+    (void)rebootStatus;
+    this->log_WARNING_HI_PLATFORM_POWEROFF_SYSCALL_FAILED(rebootErrno);
+
+    // Robust fallback: hand "poweroff -f" to a brand-new transient unit that
+    // systemd (PID 1) spawns and owns directly, in its own cgroup outside
+    // ImxDeployment.service, so it runs to completion regardless of what
+    // happens to this service afterward.
+    const int status = std::system("systemd-run --no-block --collect -- /sbin/poweroff -f");
+    if (status == -1) {
+        // std::system() itself could not run a shell at all.
+        this->log_WARNING_HI_PLATFORM_POWEROFF_FALLBACK_FAILED(-1);
+    } else if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+        const I32 exitCode = WIFEXITED(status) ? static_cast<I32>(WEXITSTATUS(status)) : -2;
+        this->log_WARNING_HI_PLATFORM_POWEROFF_FALLBACK_FAILED(exitCode);
+    }
+#endif
 }
 
 void FPManager::reportReadingFault() {

@@ -341,6 +341,40 @@ void FPManagerTester::fatalShutdownForwardsAndLatches() {
   ASSERT_EQ(result, Fw::Success::FAILURE);
 }
 
+void FPManagerTester::emergencyShutdownProtectedOutputsAreLatchedAcrossRepeatedFatals() {
+  this->initializeSafeMode();
+  this->invoke_to_fatalIn(0, 0x1234);
+  this->drainStateMachine();
+
+  ASSERT_EVENTS_EMERGENCY_SHUTDOWN_SIZE(1);
+  ASSERT_from_fatalOut_SIZE(1);
+  ASSERT_from_fatalOut(0, static_cast<FwEventIdType>(0x1234));
+  ASSERT_from_jetsonPowerRequestOut_SIZE(1);
+  ASSERT_from_jetsonPowerRequestOut(0, JetsonPowerStateID::OFF);
+  ASSERT_from_peripheralPowerOff_SIZE(1);
+  // initializeSafeMode() already logged INIT->SAFE; this fatal adds SAFE->EMERGENCY.
+  ASSERT_EVENTS_FP_STATE_CHANGED_SIZE(2);
+
+  // A second FATAL announcement (e.g. an unrelated FW_ASSERT elsewhere in the
+  // system, forwarded the same way) must not be allowed to re-assert the
+  // already-latched protected outputs, even though the announcement/
+  // forwarding machinery still reacts to it every time it is invoked.
+  this->invoke_to_fatalIn(0, 0x5678);
+  this->drainStateMachine();
+
+  ASSERT_EVENTS_EMERGENCY_SHUTDOWN_SIZE(2);
+  ASSERT_from_fatalOut_SIZE(2);
+  ASSERT_from_fatalOut(1, static_cast<FwEventIdType>(0x5678));
+  ASSERT_from_jetsonPowerRequestOut_SIZE(1);
+  ASSERT_from_peripheralPowerOff_SIZE(1);
+  // Mode stays EMERGENCY, so no additional transition event is logged.
+  ASSERT_EVENTS_FP_STATE_CHANGED_SIZE(2);
+
+  const Fw::Success result =
+      this->invoke_to_jetsonPowerAuthorizeIn(0, JetsonPowerStateID::ON);
+  ASSERT_EQ(result, Fw::Success::FAILURE);
+}
+
 void FPManagerTester::rejectsRemoteJetsonCommandWhenJetsonOff() {
   this->initializeSafeMode();
 
@@ -371,6 +405,43 @@ void FPManagerTester::forwardsRemoteJetsonCommandWhenJetsonOn() {
   this->invoke_to_remoteJetsonCmdResponseIn(0, opcode, 78, response);
   ASSERT_from_remoteJetsonCmdResponseOut_SIZE(1);
   ASSERT_from_remoteJetsonCmdResponseOut(0, opcode, 78, response);
+  ASSERT_EVENTS_REMOTE_JETSON_COMMAND_REJECTED_SIZE(0);
+}
+
+void FPManagerTester::rejectsSequencerRemoteJetsonCommandWhenJetsonOff() {
+  this->initializeSafeMode();
+
+  // Port index 1 is the CmdSequencer-originated path (imx_seqCmdSplitter),
+  // as opposed to index 0's GDS-direct path (imx_cmdSplitter). Both must be
+  // gated identically so a sequence targeting the Jetson cannot reach the
+  // hub transport while the Jetson is powered off.
+  const FwOpcodeType opcode = 0x10001311;
+  Fw::ComBuffer cmd = this->commandBuffer(opcode);
+  this->invoke_to_remoteJetsonCmdIn(1, cmd, 79);
+
+  ASSERT_from_remoteJetsonCmdOut_SIZE(0);
+  ASSERT_from_remoteJetsonCmdResponseOut_SIZE(1);
+  ASSERT_from_remoteJetsonCmdResponseOut(0, opcode, 79, Fw::CmdResponse::BUSY);
+  ASSERT_EVENTS_REMOTE_JETSON_COMMAND_REJECTED_SIZE(1);
+  ASSERT_EVENTS_REMOTE_JETSON_COMMAND_REJECTED(
+      0, opcode, "Jetson is not powered on");
+}
+
+void FPManagerTester::forwardsSequencerRemoteJetsonCommandWhenJetsonOn() {
+  this->initializeSafeMode();
+  this->invoke_to_jetsonPowerStateIn(0, JetsonPowerStateID::ON);
+  this->drainStateMachine();
+
+  const FwOpcodeType opcode = 0x10001311;
+  Fw::ComBuffer cmd = this->commandBuffer(opcode);
+  this->invoke_to_remoteJetsonCmdIn(1, cmd, 80);
+
+  ASSERT_from_remoteJetsonCmdOut_SIZE(1);
+  ASSERT_from_remoteJetsonCmdResponseOut_SIZE(0);
+  const Fw::CmdResponse response = Fw::CmdResponse::OK;
+  this->invoke_to_remoteJetsonCmdResponseIn(1, opcode, 80, response);
+  ASSERT_from_remoteJetsonCmdResponseOut_SIZE(1);
+  ASSERT_from_remoteJetsonCmdResponseOut(0, opcode, 80, response);
   ASSERT_EVENTS_REMOTE_JETSON_COMMAND_REJECTED_SIZE(0);
 }
 
