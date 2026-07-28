@@ -164,6 +164,7 @@ bool DataProducer ::initJetsonTempContainer(){
         this->m_jetsonTempContainerValid = true;
         this->m_jetsonTempContainer.setTimeTag(this->getTime());
         printf("Initialized Jetson Temp Zone container successfully\n");
+        return true;
     }
 
     return false;
