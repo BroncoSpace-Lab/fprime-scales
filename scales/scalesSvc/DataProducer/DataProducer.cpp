@@ -69,7 +69,7 @@ void DataProducer ::jetsonThermalReadIn_handler(FwIndexType portNum,
                                                 const scalesSvc::ThermalReading& jetson_soc1ThermalReading,
                                                 const scalesSvc::ThermalReading& jetson_soc2ThermalReading,
                                                 const scalesSvc::ThermalReading& jetson_tjThermalReading) {
-    // TODO
+                                                    
     if(this->m_jetsonTempContainerValid){
         if(!this->jetsonTempSerialize_Send( jetson_cpuThermalReading,
                                             jetson_gpuTheramlReading,
@@ -308,9 +308,23 @@ bool DataProducer ::jetsonTempSerialize_Send(const scalesSvc::ThermalReading& je
 
     status = this->m_jetsonTempContainer.serializeRecord_Jetson_TjTemperatureRecord(jetson_tjThermalReading);
     if (status != Fw::SerializeStatus::FW_SERIALIZE_OK) {
-        printf("Error Serializing JETSON TJ1 TEMP READING RECORD\n");
+        printf("Error Serializing JETSON TJ TEMP READING RECORD\n");
         return false;
     }
+
+    this->m_jetsonTempRecordCount++;
+
+    // If we've reached the record count, send the full product
+    if(this->m_jetsonTempRecordCount == RECORD_COUNT){
+        this->dpSend(this->m_jetsonTempContainer);   
+        printf("Jetson Temp Zone products sent!\n");
+
+        // Resets jetson temp container to be initalized on next tick
+        this->m_jetsonTempContainerValid = false;
+        this->m_jetsonTempRecordCount = 0;
+    }
+
+    return true;
 }
 
 bool DataProducer ::inaSerialize_Send(const scalesSvc::PowerReading& obcPowerReading,
