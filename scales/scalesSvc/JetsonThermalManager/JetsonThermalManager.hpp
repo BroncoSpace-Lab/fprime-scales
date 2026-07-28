@@ -83,7 +83,7 @@ namespace scalesSvc {
       // Implementations for parameters update
       // ----------------------------------------------------------------------
       void parameterUpdated(FwPrmIdType id) override;  //! Handler implementation for parameter updates, used to update threshold values when parameters are updated
-      
+
       // ----------------------------------------------------------------------
       // Helper functions
       // ----------------------------------------------------------------------
@@ -92,17 +92,15 @@ namespace scalesSvc {
 
       scalesSvc::ThermalStates determineTempState(F32 tempCelsius); //!< Function to determine the temperature state (IDLE, WARNING, FAULT) based on the temperature in Celsius
 
-      //! Returns true if the six thresholds are in a sane ascending order:
-      //! FAULT_LOW <= WARN_LOW <= IDLE_LOW <= IDLE_HIGH <= WARN_HIGH <= FAULT_HIGH
-      bool thresholdsAreOrdered(F32 faultLow, F32 warnLow, F32 idleLow,
-                                 F32 idleHigh, F32 warnHigh, F32 faultHigh) const;
+      //! Returns true if the six bounds are in a sane ascending order:
+      //! faultLow <= warnLow <= idleLow <= idleHigh <= warnHigh <= faultHigh
+      bool thresholdsAreOrdered(const scalesSvc::TempBounds& bounds) const;
 
-      //! Checks the current cached thresholds and emits
-      //! THRESHOLDS_MISCONFIGURED on the transition into a bad ordering.
-      void validateThresholds();
-
-      //! Publishes the current parameter values for GDS readback.
-      void writeParameterTelemetry();
+      //! Gate for a bounds update: adopts `candidate` as the active bounds
+      //! (shared across all nine zones, and republishes telemetry) only if
+      //! it passes thresholdsAreOrdered(); otherwise emits
+      //! THRESHOLDS_MISCONFIGURED and leaves the previous bounds in effect.
+      void applyBounds(const scalesSvc::TempBounds& candidate);
 
     private:
 
@@ -114,18 +112,13 @@ namespace scalesSvc {
       U32  m_startTime = 0;
       const char* m_tempPathTemplate = "/sys/class/thermal/thermal_zone%u/temp";
 
-      /* Telemetry values for temperature thresholds */
-      F32 IDLE_LOW_THR;
-      F32 IDLE_HIGH_THR;
-      F32 WARN_LOW_THR;
-      F32 WARN_HIGH_THR;
-      F32 FAULT_LOW_THR;
-      F32 FAULT_HIGH_THR;
-
-      //! Tracks whether the thresholds were last found to be in a sane
-      //! ascending order, so THRESHOLDS_MISCONFIGURED is only emitted on the
-      //! transition into a bad configuration, not on every check.
-      bool m_thresholdsValid = true;
+      //! Bounds currently in effect, shared across all nine zones. Only ever
+      //! updated with bounds that pass thresholdsAreOrdered() -- a rejected
+      //! PRM_SET leaves this untouched. Initialized to the compiled-in safe
+      //! default so a rejected boot-time read (e.g. a bad value saved to
+      //! non-volatile storage previously) still leaves the component with a
+      //! sane configuration.
+      scalesSvc::TempBounds m_activeBounds{-40.0F, -20.0F, 10.0F, 60.0F, 80.0F, 100.0F};
   };
 
 }

@@ -11,9 +11,9 @@ TEST(Nominal, mcpTest) {
   tester.mcpTest();
 }
 
-TEST(Nominal, thresholdsMisconfiguredEmitsOnceOnTransition) {
+TEST(Nominal, boundsUpdateGating) {
   scalesSvc::McpManagerTester tester;
-  tester.thresholdsMisconfiguredEmitsOnceOnTransition();
+  tester.boundsUpdateGating();
 }
 
 int main(int argc, char** argv) {

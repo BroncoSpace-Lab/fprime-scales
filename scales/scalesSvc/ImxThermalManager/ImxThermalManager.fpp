@@ -8,74 +8,28 @@ module scalesSvc {
         @ asynchronous input port to handle incoming imx cpu temp
         async input port run: Svc.Sched
 
-        @ output port to send imx thermal state to spacecraft state machine
-        output port imxThermalStateOut: ThermalStateOut
-
         @ output port to send imx_cpu thermal readings to DataProducer
         output port cpuThermalReadOut: CpuThermalReadings
-        
+
         @ output port to send the complete i.MX thermal reading to FPManager
         output port imxThermalReadingOut: ThermalReadingPort
-       
-       @ telemetry channel for imx thermal state
-        telemetry imx_thermal_state: ThermalStates \
-            id 0x00
-       
+
         @ telemetry channel for IMXCPUTEMP read
         telemetry imx_cpu_temp_read: ThermalReading \
             id 0x01
 
-        @ Telemetry readback for the current IMX CPU thermal thresholds
-        telemetry IMX_CPU_IDLE_LOW: F32 id 0x10
-        telemetry IMX_CPU_IDLE_HIGH: F32 id 0x11
-        telemetry IMX_CPU_WARN_LOW: F32 id 0x12
-        telemetry IMX_CPU_WARN_HIGH: F32 id 0x13
-        telemetry IMX_CPU_FAULT_LOW: F32 id 0x14
-        telemetry IMX_CPU_FAULT_HIGH: F32 id 0x15
+        @ Currently active i.MX CPU IDLE/WARN/FAULT bounds (a rejected update
+        @ never reaches this channel -- see IMX_CPU_BOUNDS parameter).
+        telemetry IMX_CPU_BOUNDS: TempBounds id 0x10
 
-        # Default Parameter bounds for IMX_CPU States
-        @ IMX_CPU_IDLE_LOW Parameter 
-        param IMX_CPU_IDLE_LOW: F32 \
-            default 10.0 \
-            id 0x00 \ 
-            set opcode 0x01 \   
+        # Default bounds for the IMX_CPU thermal states
+        @ IMX CPU IDLE/WARN/FAULT temperature bounds
+        param IMX_CPU_BOUNDS: TempBounds \
+            default { faultLow = -40.0, warnLow = -20.0, idleLow = 10.0, idleHigh = 60.0, warnHigh = 80.0, faultHigh = 100.0 } \
+            id 0x00 \
+            set opcode 0x01 \
             save opcode 0x02
-        
-        @ IMX_CPU_IDLE_HIGH Parameter 
-        param IMX_CPU_IDLE_HIGH: F32 \
-            default 60.0 \
-            id 0x01 \ 
-            set opcode 0x03 \
-            save opcode 0x04
 
-        @ IMX_CPU_WARN_LOW Parameter 
-        param IMX_CPU_WARN_LOW: F32 \
-            default -20.0 \
-            id 0x02 \ 
-            set opcode 0x05 \
-            save opcode 0x06
-
-        @ IMX_CPU_WARN_HIGH Parameter 
-        param IMX_CPU_WARN_HIGH: F32 \
-            default 80.0 \
-            id 0x03 \ 
-            set opcode 0x07 \
-            save opcode 0x08
-        
-        @ IMX_CPU_FAULT_LOW Parameter 
-        param IMX_CPU_FAULT_LOW: F32 \
-            default -40.0 \
-            id 0x04 \ 
-            set opcode 0x09 \
-            save opcode 0x10
-
-        @ IMX_CPU_FAULT_HIGH Parameter 
-        param IMX_CPU_FAULT_HIGH: F32 \
-            default 100.0 \
-            id 0x05 \ 
-            set opcode 0x11 \
-            save opcode 0x12
-        
         event FAIL_TO_READ_TEMP(
 
         ) \
@@ -83,10 +37,11 @@ module scalesSvc {
             id 0x01 \
             format "Failed to read temperature at IMX CPU from OSAL"
 
-        @ The IMX CPU IDLE/WARN/FAULT thresholds are not in a sane ascending
-        @ order (FAULT_LOW <= WARN_LOW <= IDLE_LOW <= IDLE_HIGH <= WARN_HIGH
-        @ <= FAULT_HIGH). Readings may be misclassified (e.g. reported as
-        @ FAULT when WARN or IDLE was intended) until corrected.
+        @ The IMX CPU's newly-set IDLE/WARN/FAULT bounds are not in a sane
+        @ ascending order (FAULT_LOW <= WARN_LOW <= IDLE_LOW <= IDLE_HIGH <=
+        @ WARN_HIGH <= FAULT_HIGH). The update is rejected and the last-known-
+        @ good bounds stay in effect -- fires on every rejected attempt, not
+        @ just the first, since misconfiguration never actually takes effect.
         event THRESHOLDS_MISCONFIGURED(
             source: string size 32
             faultLow: F32
@@ -98,7 +53,7 @@ module scalesSvc {
         ) \
             severity warning high \
             id 0x02 \
-            format "{} temperature thresholds are not in ascending order: FAULT_LOW={} WARN_LOW={} IDLE_LOW={} IDLE_HIGH={} WARN_HIGH={} FAULT_HIGH={}"
+            format "{} temperature bounds rejected, not in ascending order: FAULT_LOW={} WARN_LOW={} IDLE_LOW={} IDLE_HIGH={} WARN_HIGH={} FAULT_HIGH={}"
 
         ###############################################################################
         # Standard AC Ports: Required for Channels, Events, Commands, and Parameters  #

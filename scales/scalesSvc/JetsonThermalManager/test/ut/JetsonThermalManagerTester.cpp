@@ -154,19 +154,9 @@ namespace scalesSvc {
   void JetsonThermalManagerTester ::
     JetsonThermalManagerUnitTester()
   {
-    // KNOWN PRE-EXISTING ISSUE (unrelated to THRESHOLDS_MISCONFIGURED / the
-    // WARN-tracking safety check added elsewhere): the second evaluation
-    // round's assertion for zone 1 (GPU, 61C, expected WARN) currently fails,
-    // observed as FAULT. This reproduces with the original, unmodified
-    // classification logic and thresholds, so it predates and is independent
-    // of today's changes -- flagged for separate follow-up rather than
-    // investigated here.
-    this->paramSet_JETSON_IDLE_LOW(10.0f, Fw::ParamValid::VALID);
-    this->paramSet_JETSON_IDLE_HIGH(60.0f, Fw::ParamValid::VALID);
-    this->paramSet_JETSON_WARN_LOW(-20.0f, Fw::ParamValid::VALID);
-    this->paramSet_JETSON_WARN_HIGH(80.0f, Fw::ParamValid::VALID);
-    this->paramSet_JETSON_FAULT_LOW(-40.0f, Fw::ParamValid::VALID);
-    this->paramSet_JETSON_FAULT_HIGH(100.0f, Fw::ParamValid::VALID);
+    this->paramSet_JETSON_BOUNDS(
+        scalesSvc::TempBounds(-40.0F, -20.0F, 10.0F, 60.0F, 80.0F, 100.0F),
+        Fw::ParamValid::VALID);
     this->component.loadParameters();
 
     const int templateSize = std::snprintf(
@@ -182,19 +172,9 @@ namespace scalesSvc {
     this->setTestTime(Fw::Time(0, 0));
 
     this->runTickAction();
-    ASSERT_TLM_SIZE(6);
-    ASSERT_TLM_JETSON_IDLE_LOW_SIZE(1);
-    ASSERT_TLM_JETSON_IDLE_LOW(0, 10.0F);
-    ASSERT_TLM_JETSON_IDLE_HIGH_SIZE(1);
-    ASSERT_TLM_JETSON_IDLE_HIGH(0, 60.0F);
-    ASSERT_TLM_JETSON_WARN_LOW_SIZE(1);
-    ASSERT_TLM_JETSON_WARN_LOW(0, -20.0F);
-    ASSERT_TLM_JETSON_WARN_HIGH_SIZE(1);
-    ASSERT_TLM_JETSON_WARN_HIGH(0, 80.0F);
-    ASSERT_TLM_JETSON_FAULT_LOW_SIZE(1);
-    ASSERT_TLM_JETSON_FAULT_LOW(0, -40.0F);
-    ASSERT_TLM_JETSON_FAULT_HIGH_SIZE(1);
-    ASSERT_TLM_JETSON_FAULT_HIGH(0, 100.0F);
+    ASSERT_TLM_SIZE(1);
+    ASSERT_TLM_JETSON_BOUNDS_SIZE(1);
+    ASSERT_TLM_JETSON_BOUNDS(0, scalesSvc::TempBounds(-40.0F, -20.0F, 10.0F, 60.0F, 80.0F, 100.0F));
 
     const F32 firstTemps[9] = {42.0F, 75.0F, 80.0F, 0.0F, -30.0F, 55.0F, 65.0F, 10.0F, 100.0F};
     const F32 secondTemps[9] = {15.0F, 61.0F, 0.0F, 0.0F, 0.0F, -39.0F, 60.0F, 79.0F, 101.0F};
@@ -226,7 +206,7 @@ namespace scalesSvc {
       this->writeTemperatureFile(i, firstTemps[i]);
     }
     this->readAndEvaluateTemperatures();
-    ASSERT_TLM_SIZE(15);
+    ASSERT_TLM_SIZE(11); // 9 zone readings + 1 bounds republish this cycle
     for (U8 i = 0; i < 9; i++) {
       this->assertLatestReading(i, 1, firstTemps[i], locations[i], firstStates[i]);
     }
@@ -239,46 +219,47 @@ namespace scalesSvc {
       }
     }
     this->readAndEvaluateTemperatures();
-    ASSERT_TLM_SIZE(24);
+    ASSERT_TLM_SIZE(21); // + 9 zone readings + 1 bounds republish this cycle
     for (U8 i = 0; i < 9; i++) {
       this->assertLatestReading(i, 2, secondTemps[i], locations[i], secondStates[i]);
     }
   }
 
-  void JetsonThermalManagerTester :: thresholdsMisconfiguredEmitsOnceOnTransition()
+  void JetsonThermalManagerTester :: boundsUpdateGating()
   {
-    // JetsonThermalManager caches its six thresholds in its own scalar
-    // members, so this friend test can poke them directly and call the
-    // private validateThresholds() helper -- avoiding the active
-    // component's message queue/PRM_SET dispatch machinery entirely.
-    this->component.FAULT_LOW_THR = -40.0F;
-    this->component.WARN_LOW_THR = -20.0F;
-    this->component.IDLE_LOW_THR = 10.0F;
-    this->component.IDLE_HIGH_THR = 60.0F;
-    this->component.WARN_HIGH_THR = 80.0F;
-    this->component.FAULT_HIGH_THR = 100.0F;
+    // Friend access to applyBounds() lets this lightweight harness exercise
+    // the real gating logic directly, without needing to drive a real
+    // PRM_SET through cmdIn's active-component message queue/dispatch.
+
+    // A valid, distinct-from-default bounds update is adopted and
+    // republished as telemetry.
+    const scalesSvc::TempBounds goodBounds(-35.0F, -15.0F, 5.0F, 55.0F, 75.0F, 95.0F);
+    this->component.applyBounds(goodBounds);
+    ASSERT_EVENTS_THRESHOLDS_MISCONFIGURED_SIZE(0);
+    ASSERT_TLM_JETSON_BOUNDS_SIZE(1);
+    ASSERT_TLM_JETSON_BOUNDS(0, goodBounds);
 
     // Mirror the real-world mistake: lower WARN_HIGH without adjusting
-    // IDLE_HIGH to match, inverting the high band.
-    this->component.WARN_HIGH_THR = 30.0F;
-    this->component.validateThresholds();
-
+    // IDLE_HIGH to match, inverting the high band. The update must be
+    // rejected -- the component keeps using goodBounds.
+    const scalesSvc::TempBounds badBounds(-35.0F, -15.0F, 5.0F, 55.0F, 30.0F, 95.0F);
+    this->component.applyBounds(badBounds);
     ASSERT_EVENTS_THRESHOLDS_MISCONFIGURED_SIZE(1);
-    ASSERT_EVENTS_THRESHOLDS_MISCONFIGURED(0, "JETSON", -40.0F, -20.0F, 10.0F, 60.0F, 30.0F, 100.0F);
+    ASSERT_EVENTS_THRESHOLDS_MISCONFIGURED(0, "JETSON", -35.0F, -15.0F, 5.0F, 55.0F, 30.0F, 95.0F);
+    ASSERT_TLM_JETSON_BOUNDS_SIZE(1);
 
-    // Re-validating the same bad configuration must not re-emit.
-    this->component.validateThresholds();
-    ASSERT_EVENTS_THRESHOLDS_MISCONFIGURED_SIZE(1);
-
-    // Fixing the configuration clears the latch silently (no new event).
-    this->component.WARN_HIGH_THR = 80.0F;
-    this->component.validateThresholds();
-    ASSERT_EVENTS_THRESHOLDS_MISCONFIGURED_SIZE(1);
-
-    // Breaking it again now DOES re-emit, since the latch was cleared.
-    this->component.WARN_HIGH_THR = 30.0F;
-    this->component.validateThresholds();
+    // Repeating the exact same bad attempt fires again -- every rejection is
+    // its own distinct notice, since misconfiguration never takes effect.
+    this->component.applyBounds(badBounds);
     ASSERT_EVENTS_THRESHOLDS_MISCONFIGURED_SIZE(2);
+    ASSERT_TLM_JETSON_BOUNDS_SIZE(1);
+
+    // A second valid update is adopted normally.
+    const scalesSvc::TempBounds otherGoodBounds(-40.0F, -20.0F, 10.0F, 60.0F, 80.0F, 100.0F);
+    this->component.applyBounds(otherGoodBounds);
+    ASSERT_EVENTS_THRESHOLDS_MISCONFIGURED_SIZE(2);
+    ASSERT_TLM_JETSON_BOUNDS_SIZE(2);
+    ASSERT_TLM_JETSON_BOUNDS(1, otherGoodBounds);
   }
 
 }

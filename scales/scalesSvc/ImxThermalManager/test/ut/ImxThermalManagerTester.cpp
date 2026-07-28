@@ -113,7 +113,9 @@ namespace scalesSvc {
 
     this->writeTemperatureFile(fakeTempPath, 80.0F);
     this->readAndEvaluateTemperature();
-    this->assertLatestReading(4, 80.0F, scalesSvc::ThermalStates::FAULT);
+    // Exactly at WARN_HIGH (80): WARN claims its own boundary, matching
+    // WARN_LOW's inclusive boundary on the low side (see determineTempState).
+    this->assertLatestReading(4, 80.0F, scalesSvc::ThermalStates::WARN);
 
     this->writeTemperatureFile(fakeTempPath, 0.0F);
     this->readAndEvaluateTemperature();
@@ -124,31 +126,40 @@ namespace scalesSvc {
     this->assertLatestReading(6, -30.0F, scalesSvc::ThermalStates::FAULT);
   }
 
-  void ImxThermalManagerTester :: thresholdsMisconfiguredEmitsOnceOnTransition()
+  void ImxThermalManagerTester :: boundsUpdateGating()
   {
-    // ImxThermalManager reads its six thresholds live via paramGet_* on every
-    // doEvaluate tick rather than caching them (unlike McpManager/
-    // JetsonThermalManager), so there is no cached member this friend test
-    // can poke directly, and driving a real PRM_SET through cmdIn requires
-    // the active component's message queue/dispatch machinery that this
-    // lightweight harness isn't set up to exercise safely. Test the ordering
-    // predicate directly instead -- this is the exact logic validateThresholds()
-    // uses to decide whether to emit THRESHOLDS_MISCONFIGURED.
+    // Friend access to applyBounds() lets this lightweight harness exercise
+    // the real gating logic directly, without needing to drive a real
+    // PRM_SET through cmdIn's active-component message queue/dispatch.
 
-    // Defaults are in ascending order: FAULT_LOW=-40, WARN_LOW=-20, IDLE_LOW=10,
-    // IDLE_HIGH=60, WARN_HIGH=80, FAULT_HIGH=100.
-    ASSERT_TRUE(this->component.thresholdsAreOrdered(-40.0F, -20.0F, 10.0F, 60.0F, 80.0F, 100.0F));
+    // A valid, distinct-from-default bounds update is adopted and
+    // republished as telemetry.
+    const scalesSvc::TempBounds goodBounds(-35.0F, -15.0F, 5.0F, 55.0F, 75.0F, 95.0F);
+    this->component.applyBounds(goodBounds);
+    ASSERT_EVENTS_THRESHOLDS_MISCONFIGURED_SIZE(0);
+    ASSERT_TLM_IMX_CPU_BOUNDS_SIZE(1);
+    ASSERT_TLM_IMX_CPU_BOUNDS(0, goodBounds);
 
     // Mirror the real-world mistake: lower WARN_HIGH without adjusting
-    // IDLE_HIGH to match, inverting the high band.
-    ASSERT_FALSE(this->component.thresholdsAreOrdered(-40.0F, -20.0F, 10.0F, 60.0F, 30.0F, 100.0F));
+    // IDLE_HIGH to match, inverting the high band. The update must be
+    // rejected -- the component keeps using goodBounds.
+    const scalesSvc::TempBounds badBounds(-35.0F, -15.0F, 5.0F, 55.0F, 30.0F, 95.0F);
+    this->component.applyBounds(badBounds);
+    ASSERT_EVENTS_THRESHOLDS_MISCONFIGURED_SIZE(1);
+    ASSERT_EVENTS_THRESHOLDS_MISCONFIGURED(0, "IMX_CPU", -35.0F, -15.0F, 5.0F, 55.0F, 30.0F, 95.0F);
+    ASSERT_TLM_IMX_CPU_BOUNDS_SIZE(1);
 
-    // Fixing WARN_HIGH restores a sane ordering.
-    ASSERT_TRUE(this->component.thresholdsAreOrdered(-40.0F, -20.0F, 10.0F, 60.0F, 80.0F, 100.0F));
+    // Repeating the exact same bad attempt fires again -- every rejection is
+    // its own distinct notice, since misconfiguration never takes effect.
+    this->component.applyBounds(badBounds);
+    ASSERT_EVENTS_THRESHOLDS_MISCONFIGURED_SIZE(2);
+    ASSERT_TLM_IMX_CPU_BOUNDS_SIZE(1);
 
-    // ImxThermalManagerTesting() above already exercises validateThresholds()
-    // through doEvaluate() with these same (valid) defaults across five ticks
-    // and never sees THRESHOLDS_MISCONFIGURED, confirming the integration
-    // path stays silent when the ordering is sane.
+    // A second valid update is adopted normally.
+    const scalesSvc::TempBounds otherGoodBounds(-40.0F, -20.0F, 10.0F, 60.0F, 80.0F, 100.0F);
+    this->component.applyBounds(otherGoodBounds);
+    ASSERT_EVENTS_THRESHOLDS_MISCONFIGURED_SIZE(2);
+    ASSERT_TLM_IMX_CPU_BOUNDS_SIZE(2);
+    ASSERT_TLM_IMX_CPU_BOUNDS(1, otherGoodBounds);
   }
 }

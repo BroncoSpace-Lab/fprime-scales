@@ -11,9 +11,9 @@ TEST(Nominal, ImxThermalManagerTesting) {
   tester.ImxThermalManagerTesting();
 }
 
-TEST(Nominal, thresholdsMisconfiguredEmitsOnceOnTransition) {
+TEST(Nominal, boundsUpdateGating) {
   scalesSvc::ImxThermalManagerTester tester;
-  tester.thresholdsMisconfiguredEmitsOnceOnTransition();
+  tester.boundsUpdateGating();
 }
 
 int main(int argc, char** argv) {

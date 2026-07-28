@@ -39,7 +39,7 @@ namespace scalesSvc {
 
     private:
 
-      
+
       //! Handler implementation for run
       void run_handler(FwIndexType portNum,  //!< The port number
                             U32 context           //!< The call order
@@ -71,17 +71,15 @@ namespace scalesSvc {
       // ----------------------------------------------------------------------
       void parameterUpdated(FwPrmIdType id) override;
 
-      //! Returns true if the six thresholds are in a sane ascending order:
-      //! FAULT_LOW <= WARN_LOW <= IDLE_LOW <= IDLE_HIGH <= WARN_HIGH <= FAULT_HIGH
-      bool thresholdsAreOrdered(F32 faultLow, F32 warnLow, F32 idleLow,
-                                 F32 idleHigh, F32 warnHigh, F32 faultHigh) const;
+      //! Returns true if the six bounds are in a sane ascending order:
+      //! faultLow <= warnLow <= idleLow <= idleHigh <= warnHigh <= faultHigh
+      bool thresholdsAreOrdered(const scalesSvc::TempBounds& bounds) const;
 
-      //! Reads the current six thresholds and emits THRESHOLDS_MISCONFIGURED
-      //! on the transition into a bad ordering.
-      void validateThresholds();
-
-      //! Publishes the current parameter values for GDS readback.
-      void writeParameterTelemetry();
+      //! Gate for a bounds update: adopts `candidate` as the active bounds
+      //! (and republishes telemetry) only if it passes thresholdsAreOrdered();
+      //! otherwise emits THRESHOLDS_MISCONFIGURED and leaves the previous
+      //! bounds in effect.
+      void applyBounds(const scalesSvc::TempBounds& candidate);
 
     private:
 
@@ -95,10 +93,12 @@ namespace scalesSvc {
       bool m_successfulRead = true;
       const char* tempPath = "/sys/class/thermal/thermal_zone0/temp";
 
-      //! Tracks whether the thresholds were last found to be in a sane
-      //! ascending order, so THRESHOLDS_MISCONFIGURED is only emitted on the
-      //! transition into a bad configuration, not on every check.
-      bool m_thresholdsValid = true;
+      //! Bounds currently in effect. Only ever updated with bounds that pass
+      //! thresholdsAreOrdered() -- a rejected PRM_SET leaves this untouched.
+      //! Initialized to the compiled-in safe default so a rejected boot-time
+      //! read (e.g. a bad value saved to non-volatile storage previously)
+      //! still leaves the component with a sane configuration.
+      scalesSvc::TempBounds m_activeBounds{-40.0F, -20.0F, 10.0F, 60.0F, 80.0F, 100.0F};
 
 
   };

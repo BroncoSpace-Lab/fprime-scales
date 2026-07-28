@@ -52,10 +52,11 @@ namespace scalesSvc {
     // --- device will start evaluating sensor values ---
 
     // --- First case is check to evaluation for IDLE ---
-    // Set the temperature readings to be within each sensor's own IDLE threshold values
+    // Set the temperature readings to be within each sensor's own IDLE bounds
     for(int i = 0; i < 3; i++){
       this->component.m_thermalReadings[i].set_temperature(
-          (this->component.IDLE_LOW_THR[i] + this->component.IDLE_HIGH_THR[i]) / 2);
+          (this->component.m_activeBounds[i].get_idleLow() +
+           this->component.m_activeBounds[i].get_idleHigh()) / 2);
     }
 
     this->invoke_to_run(0, 0); // Trigger the component's run port
@@ -84,33 +85,40 @@ namespace scalesSvc {
     // ASSERT_FROM_PORT_HISTORY_SIZE(1);
   }
 
-  void McpManagerTester::thresholdsMisconfiguredEmitsOnceOnTransition() {
-    // Directly craft an inverted configuration for sensor 0 (IMX): WARN_HIGH
-    // set below IDLE_HIGH, mirroring the real-world mistake of lowering
-    // WARN_HIGH without adjusting IDLE_HIGH to match.
-    this->component.FAULT_LOW_THR[0] = -40.0F;
-    this->component.WARN_LOW_THR[0] = -20.0F;
-    this->component.IDLE_LOW_THR[0] = 10.0F;
-    this->component.IDLE_HIGH_THR[0] = 60.0F;
-    this->component.WARN_HIGH_THR[0] = 30.0F;
-    this->component.FAULT_HIGH_THR[0] = 100.0F;
+  void McpManagerTester::boundsUpdateGating() {
+    // A valid, distinct-from-default bounds update for sensor 0 (IMX) is
+    // adopted and republished as telemetry.
+    const scalesSvc::TempBounds goodBounds(-35.0F, -15.0F, 5.0F, 55.0F, 75.0F, 95.0F);
+    this->component.applyBounds("IMX", 0, goodBounds);
+    ASSERT_EVENTS_THRESHOLDS_MISCONFIGURED_SIZE(0);
+    ASSERT_TLM_MCP_IMX_BOUNDS_SIZE(1);
+    ASSERT_TLM_MCP_IMX_BOUNDS(0, goodBounds);
+    ASSERT_EQ(this->component.m_activeBounds[0], goodBounds);
 
-    this->component.validateThresholds("IMX", 0);
+    // Mirror the real-world mistake: lower WARN_HIGH without adjusting
+    // IDLE_HIGH to match, inverting the high band. The update must be
+    // rejected -- the sensor keeps using goodBounds, and no new telemetry
+    // is published.
+    const scalesSvc::TempBounds badBounds(-35.0F, -15.0F, 5.0F, 55.0F, 30.0F, 95.0F);
+    this->component.applyBounds("IMX", 0, badBounds);
     ASSERT_EVENTS_THRESHOLDS_MISCONFIGURED_SIZE(1);
-    ASSERT_EVENTS_THRESHOLDS_MISCONFIGURED(0, "IMX", -40.0F, -20.0F, 10.0F, 60.0F, 30.0F, 100.0F);
+    ASSERT_EVENTS_THRESHOLDS_MISCONFIGURED(0, "IMX", -35.0F, -15.0F, 5.0F, 55.0F, 30.0F, 95.0F);
+    ASSERT_TLM_MCP_IMX_BOUNDS_SIZE(1);
+    ASSERT_EQ(this->component.m_activeBounds[0], goodBounds);
 
-    // Re-validating the same bad configuration must not re-emit.
-    this->component.validateThresholds("IMX", 0);
-    ASSERT_EVENTS_THRESHOLDS_MISCONFIGURED_SIZE(1);
-
-    // Fixing the configuration clears the latch silently (no new event).
-    this->component.WARN_HIGH_THR[0] = 80.0F;
-    this->component.validateThresholds("IMX", 0);
-    ASSERT_EVENTS_THRESHOLDS_MISCONFIGURED_SIZE(1);
-
-    // Breaking it again now DOES re-emit, since the latch was cleared.
-    this->component.WARN_HIGH_THR[0] = 30.0F;
-    this->component.validateThresholds("IMX", 0);
+    // Repeating the exact same bad attempt fires again -- every rejection is
+    // its own distinct notice, since misconfiguration never takes effect.
+    this->component.applyBounds("IMX", 0, badBounds);
     ASSERT_EVENTS_THRESHOLDS_MISCONFIGURED_SIZE(2);
+    ASSERT_TLM_MCP_IMX_BOUNDS_SIZE(1);
+    ASSERT_EQ(this->component.m_activeBounds[0], goodBounds);
+
+    // A second valid update is adopted normally.
+    const scalesSvc::TempBounds otherGoodBounds(-40.0F, -20.0F, 10.0F, 60.0F, 80.0F, 100.0F);
+    this->component.applyBounds("IMX", 0, otherGoodBounds);
+    ASSERT_EVENTS_THRESHOLDS_MISCONFIGURED_SIZE(2);
+    ASSERT_TLM_MCP_IMX_BOUNDS_SIZE(2);
+    ASSERT_TLM_MCP_IMX_BOUNDS(1, otherGoodBounds);
+    ASSERT_EQ(this->component.m_activeBounds[0], otherGoodBounds);
   }
 }
