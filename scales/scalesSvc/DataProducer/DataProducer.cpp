@@ -55,6 +55,19 @@ void DataProducer ::cpuThermalReadIn_handler(FwIndexType portNum, const scalesSv
     }
 }
 
+void DataProducer ::jetsonThermalReadIn_handler(FwIndexType portNum,
+                                                const scalesSvc::ThermalReading& jetson_cpuThermalReading,
+                                                const scalesSvc::ThermalReading& jetson_gpuTheramlReading,
+                                                const scalesSvc::ThermalReading& jetson_cv0ThermalReading,
+                                                const scalesSvc::ThermalReading& jetson_cv1ThermalReading,
+                                                const scalesSvc::ThermalReading& jetson_cv2ThermalReading,
+                                                const scalesSvc::ThermalReading& jetson_soc0ThermalReading,
+                                                const scalesSvc::ThermalReading& jetson_soc1ThermalReading,
+                                                const scalesSvc::ThermalReading& jetson_soc2ThermalReading,
+                                                const scalesSvc::ThermalReading& jetson_tjThermalReading) {
+    // TODO
+}
+
 void DataProducer ::inaPowerReadIn_handler(FwIndexType portNum,
                                            const scalesSvc::PowerReading& obcPowerReading,
                                            const scalesSvc::PowerReading& perifPowerReading,
@@ -116,6 +129,16 @@ bool DataProducer ::initCpuContainer(){
     }
 
     return false;
+
+}
+
+bool DataProducer ::initJetsonTempContainer(){
+    const FwSizeType JETSON_TEMP_ZONE_CONTAINER_SIZE = RECORD_COUNT *
+                                                       JETSON_TEMP_ZONE_RECORDS *
+                                                       (scalesSvc::ThermalReading::SERIALIZED_SIZE + sizeof(FwDpIdType)); 
+    
+    
+    
 
 }
 
