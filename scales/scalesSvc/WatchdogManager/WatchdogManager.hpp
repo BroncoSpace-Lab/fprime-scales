@@ -16,6 +16,8 @@ namespace scalesSvc {
     public WatchdogManagerComponentBase
   {
 
+    friend class WatchdogManagerTester;
+
     public:
 
       // ----------------------------------------------------------------------
