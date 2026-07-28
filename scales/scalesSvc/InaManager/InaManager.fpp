@@ -12,6 +12,9 @@ module scalesSvc {
         @ Input port for sending data each tick
         async input port run: Svc.Sched
 
+        @ Output port for sending power readgins to DataProducer
+        output port inaPowerReadOut: InaPowerReadings
+
         # ----------------------------------------------------------------------
         # Telemetry
         # ----------------------------------------------------------------------

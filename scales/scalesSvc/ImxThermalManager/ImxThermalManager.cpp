@@ -123,6 +123,7 @@ void ImxThermalManager::scalesSvc_ThermalStateMachine_action_doEvaluate( SmId sm
 
   this->m_cpu_thermal_read.set_tempState(state);
   this->tlmWrite_imx_cpu_temp_read(this->m_cpu_thermal_read);
+  this->cpuThermalReadOut_out(0, this->m_cpu_thermal_read);
   this->imxThermalReadingOut_out(0, this->m_cpu_thermal_read);
   this->thermalStateMachine_sendSignal_success();
 }
