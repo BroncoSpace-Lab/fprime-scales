@@ -62,6 +62,16 @@ module scalesSvc {
         product send port productSendOut
 
         ###############################################################################
+        #                                 General Ports                               #
+        ###############################################################################
+
+        @ Command to enable data product collection 
+        sync command ENABLE_DATA_PRODUCTS opcode 0x00
+
+        @ Command to disable data product collection 
+        sync command DISABLE_DATA_PRODUCTS opcode 0x01
+
+        ###############################################################################
         # Standard AC Ports: Required for Channels, Events, Commands, and Parameters  #
         ###############################################################################
         @ Port for requesting the current time

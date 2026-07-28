@@ -36,6 +36,8 @@ class DataProducer final : public DataProducerComponentBase {
   private:
     
     /* Implementation-specific members */
+    
+    bool m_dpCollectMode;
 
     // -- McpManager related --
     DpContainer m_mcpTempContainer; //! Tracked temperature container state
@@ -113,6 +115,25 @@ class DataProducer final : public DataProducerComponentBase {
                      U32 context           //!< The call order
                      ) override;
     
+  private:
+    // ----------------------------------------------------------------------
+    // Handler implementations for commands
+    // ----------------------------------------------------------------------
+
+    //! Handler implementation for command ENABLE_DATA_PRODUCTS
+    //!
+    //! Command to enable data product collection
+    void ENABLE_DATA_PRODUCTS_cmdHandler(FwOpcodeType opCode,  //!< The opcode
+                                         U32 cmdSeq            //!< The command sequence number
+                                         ) override;
+
+    //! Handler implementation for command DISABLE_DATA_PRODUCTS
+    //!
+    //! Command to disable data product collection
+    void DISABLE_DATA_PRODUCTS_cmdHandler(FwOpcodeType opCode,  //!< The opcode
+                                          U32 cmdSeq            //!< The command sequence number
+                                          ) override;
+
     // ----------------------------------------------------------------------
     // Helper Functions
     // ----------------------------------------------------------------------

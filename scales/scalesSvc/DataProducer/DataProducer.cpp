@@ -14,6 +14,8 @@ namespace scalesSvc {
 
 DataProducer ::DataProducer(const char* const compName) : 
     DataProducerComponentBase(compName),
+    m_dpCollectMode(false),
+
     m_mcpTempContainer(),
     m_mcpTempContainerValid(false),
     m_mcpRecordCount(0),
@@ -34,6 +36,26 @@ DataProducer ::DataProducer(const char* const compName) :
 }
 
 DataProducer ::~DataProducer() {}
+
+// ----------------------------------------------------------------------
+// Handler implementations for commands
+// ----------------------------------------------------------------------
+
+void DataProducer ::ENABLE_DATA_PRODUCTS_cmdHandler(FwOpcodeType opCode, U32 cmdSeq) {
+    
+    this->m_dpCollectMode = true;
+    this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
+}
+
+void DataProducer ::DISABLE_DATA_PRODUCTS_cmdHandler(FwOpcodeType opCode, U32 cmdSeq) {
+    
+    this->m_dpCollectMode = false;
+    this->m_cpuTempContainerValid = false;
+    this->m_mcpTempContainerValid = false;
+    this->m_inaPowerContainerValid = false;
+    this->m_jetsonTempContainerValid = false;
+    this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
+}
 
 // ----------------------------------------------------------------------
 // Handler implementations for typed input ports
@@ -97,7 +119,9 @@ void DataProducer ::inaPowerReadIn_handler(FwIndexType portNum,
 }
 
 void DataProducer ::run_handler(FwIndexType portNum, U32 context) {
-    
+
+    if(!m_dpCollectMode) {return;}
+
     if(!this->m_mcpTempContainerValid){
         if(!this->initMcpContainer()){
             printf("[ERROR] Failed to initialize mcp temp container\n");
