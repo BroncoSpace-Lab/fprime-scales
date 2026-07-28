@@ -15,16 +15,28 @@ namespace {
   constexpr FwSizeType TEMP_FILE_BUFFER_SIZE = 32;
 }
 
+enum tempLocation{
+  CPU = 0,
+  GPU = 1,
+  CV0 = 2, 
+  CV1 = 3,
+  CV2 = 4,
+  SOC0 = 5,
+  SOC1 = 6,
+  SOC2 = 7,
+  TJ = 8
+};
+
 std::unordered_map<U8, std::string> indexToZone = {
-    {0, "CPU"},
-    {1, "GPU"},
-    {2, "CV0"},
-    {3, "CV1"},
-    {4, "CV2"},
-    {5, "SOC0"},
-    {6, "SOC1"},
-    {7, "SOC2"},
-    {8, "TJ"}
+    {CPU, "CPU"},
+    {GPU, "GPU"},
+    {CV0, "CV0"},
+    {CV1, "CV1"},
+    {CV2, "CV2"},
+    {SOC0, "SOC0"},
+    {SOC1, "SOC1"},
+    {SOC2, "SOC2"},
+    {TJ, "TJ"}
 };
 
 namespace scalesSvc {
@@ -107,32 +119,32 @@ namespace scalesSvc {
         }
 
         switch(i){
-          case 0:
-            this->tlmWrite_jetson_cpu_temp_read(this->m_jetsonThermalReadings[i]);
+          case CPU:
+            this->tlmWrite_jetson_cpu_temp_read(this->m_jetsonThermalReadings[CPU]);
             break;
-          case 1:
-            this->tlmWrite_jetson_gpu_temp_read(this->m_jetsonThermalReadings[i]);
+          case GPU:
+            this->tlmWrite_jetson_gpu_temp_read(this->m_jetsonThermalReadings[GPU]);
             break;
-          case 2:
-            this->tlmWrite_jetson_cv0_temp_read(this->m_jetsonThermalReadings[i]);
+          case CV0:
+            this->tlmWrite_jetson_cv0_temp_read(this->m_jetsonThermalReadings[CV0]);
             break;
-          case 3:
-            this->tlmWrite_jetson_cv1_temp_read(this->m_jetsonThermalReadings[i]);
+          case CV1:
+            this->tlmWrite_jetson_cv1_temp_read(this->m_jetsonThermalReadings[CV1]);
             break;
-          case 4:
-            this->tlmWrite_jetson_cv2_temp_read(this->m_jetsonThermalReadings[i]);
+          case CV2:
+            this->tlmWrite_jetson_cv2_temp_read(this->m_jetsonThermalReadings[CV2]);
             break;
-          case 5:
-            this->tlmWrite_jetson_soc0_temp_read(this->m_jetsonThermalReadings[i]);
+          case SOC0:
+            this->tlmWrite_jetson_soc0_temp_read(this->m_jetsonThermalReadings[SOC0]);
             break;
-          case 6:
-            this->tlmWrite_jetson_soc1_temp_read(this->m_jetsonThermalReadings[i]);
+          case SOC1:
+            this->tlmWrite_jetson_soc1_temp_read(this->m_jetsonThermalReadings[SOC1]);
             break;
-          case 7:
-            this->tlmWrite_jetson_soc2_temp_read(this->m_jetsonThermalReadings[i]);
+          case SOC2:
+            this->tlmWrite_jetson_soc2_temp_read(this->m_jetsonThermalReadings[SOC2]);
             break;
-          case 8:
-            this->tlmWrite_jetson_tj_temp_read(this->m_jetsonThermalReadings[i]);
+          case TJ:
+            this->tlmWrite_jetson_tj_temp_read(this->m_jetsonThermalReadings[TJ]);
             break;
         }
         this->jetsonThermalReadingOut_out(0, this->m_jetsonThermalReadings[i]);
@@ -144,6 +156,19 @@ namespace scalesSvc {
     // bounds are shared across all nine zones.
     this->tlmWrite_JETSON_BOUNDS(this->m_activeBounds);
 
+    // Send readings to DataProducer
+    this->jetsonThermalReadOut_out(0,
+                                   m_jetsonThermalReadings[CPU],
+                                   m_jetsonThermalReadings[GPU],
+                                   m_jetsonThermalReadings[CV0],
+                                   m_jetsonThermalReadings[CV1],
+                                   m_jetsonThermalReadings[CV1],
+                                   m_jetsonThermalReadings[SOC0],
+                                   m_jetsonThermalReadings[SOC1],
+                                   m_jetsonThermalReadings[SOC2],
+                                   m_jetsonThermalReadings[TJ]
+                                  );
+                                  
     this->jetson_thermalStateMachine_sendSignal_success(); // Transition back to initial state to read temp again on next tick
   }
 

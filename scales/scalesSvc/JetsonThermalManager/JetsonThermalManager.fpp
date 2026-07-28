@@ -11,6 +11,9 @@ module scalesSvc {
         @ Output the complete reading for each Jetson sensor to the FPManager.
         output port jetsonThermalReadingOut: ThermalReadingPort
 
+        @ Output port for sending jetson thermal readings to data producer
+        output port jetsonThermalReadOut: JetsonThermalReadings
+
         @ telemetry channel for Jetson CPU temp data
         telemetry jetson_cpu_temp_read: ThermalReading \
             id 0x00
