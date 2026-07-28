@@ -22,6 +22,10 @@ DataProducer ::DataProducer(const char* const compName) :
     m_cpuTempContainerValid(false),
     m_cpuRecordCount(0),
 
+    m_jetsonTempContainer(),
+    m_jetsonTempRecordCount(0),
+    m_jetsonTempContainerValid(false),
+
     m_inaPowerContainer(),
     m_inaPowerContainerValid(false),
     m_inaRecordCount(0)
@@ -66,6 +70,19 @@ void DataProducer ::jetsonThermalReadIn_handler(FwIndexType portNum,
                                                 const scalesSvc::ThermalReading& jetson_soc2ThermalReading,
                                                 const scalesSvc::ThermalReading& jetson_tjThermalReading) {
     // TODO
+    if(this->m_jetsonTempContainerValid){
+        if(!this->jetsonTempSerialize_Send( jetson_cpuThermalReading,
+                                            jetson_gpuTheramlReading,
+                                            jetson_cv0ThermalReading,
+                                            jetson_cv1ThermalReading,
+                                            jetson_cv2ThermalReading,
+                                            jetson_soc0ThermalReading,
+                                            jetson_soc1ThermalReading,
+                                            jetson_soc2ThermalReading,
+                                            jetson_tjThermalReading)){
+            printf("[ERROR] Couldn't serialize and send jetson temp zone data products\n");
+        }
+    }
 }
 
 void DataProducer ::inaPowerReadIn_handler(FwIndexType portNum,
@@ -90,6 +107,12 @@ void DataProducer ::run_handler(FwIndexType portNum, U32 context) {
     if(!this->m_cpuTempContainerValid){
         if(!this->initCpuContainer()){
             printf("[ERROR] Failed to initialize cpu temp container\n");
+        }
+    }
+
+    if(!this->m_jetsonTempContainerValid){
+        if(!this->initJetsonTempContainer()){
+            printf("[ERROR] Failed to initialize jetson tmp container\n");
         }
     }
 
@@ -137,7 +160,13 @@ bool DataProducer ::initJetsonTempContainer(){
                                                        JETSON_TEMP_ZONE_RECORDS *
                                                        (scalesSvc::ThermalReading::SERIALIZED_SIZE + sizeof(FwDpIdType)); 
     
-    
+    if(this-dpGet_JetsonTemperatureZoneContainer(JETSON_TEMP_ZONE_CONTAINER_SIZE, this->m_jetsonTempContainer)){
+        this->m_jetsonTempContainerValid = true;
+        this->m_jetsonTempContainer.setTimeTag(this->getTime());
+        printf("Initialized Jetson Temp Zone container successfully\n");
+    }
+
+    return false;
     
 
 }
@@ -217,6 +246,70 @@ bool DataProducer ::cpuSerialize_Send(const scalesSvc::ThermalReading& cpuTherma
 
     return true;
 
+}
+
+bool DataProducer ::jetsonTempSerialize_Send(const scalesSvc::ThermalReading& jetson_cpuThermalReading,  
+                                  const scalesSvc::ThermalReading& jetson_gpuTheramlReading,   
+                                  const scalesSvc::ThermalReading& jetson_cv0ThermalReading,
+                                  const scalesSvc::ThermalReading& jetson_cv1ThermalReading,   
+                                  const scalesSvc::ThermalReading& jetson_cv2ThermalReading,   
+                                  const scalesSvc::ThermalReading& jetson_soc0ThermalReading,
+                                  const scalesSvc::ThermalReading& jetson_soc1ThermalReading,  
+                                  const scalesSvc::ThermalReading& jetson_soc2ThermalReading,  
+                                  const scalesSvc::ThermalReading& jetson_tjThermalReading){
+
+    Fw::SerializeStatus status = this->m_jetsonTempContainer.serializeRecord_Jetson_CpuTemperatureRecord(jetson_cpuThermalReading);
+    if (status != Fw::SerializeStatus::FW_SERIALIZE_OK) {
+        printf("Error Serializing JETSON CPU TEMP READING RECORD\n");
+        return false;
+    }
+
+    status = this->m_jetsonTempContainer.serializeRecord_Jetson_GpuTemperatureRecord(jetson_gpuTheramlReading);
+    if (status != Fw::SerializeStatus::FW_SERIALIZE_OK) {
+        printf("Error Serializing JETSON GPU TEMP READING RECORD\n");
+        return false;
+    }
+
+    status = this->m_jetsonTempContainer.serializeRecord_Jetson_Cv0TemperatureRecord(jetson_cv0ThermalReading);
+    if (status != Fw::SerializeStatus::FW_SERIALIZE_OK) {
+        printf("Error Serializing JETSON CVO TEMP READING RECORD\n");
+        return false;
+    }
+
+    status = this->m_jetsonTempContainer.serializeRecord_Jetson_Cv1TemperatureRecord(jetson_cv1ThermalReading);
+    if (status != Fw::SerializeStatus::FW_SERIALIZE_OK) {
+        printf("Error Serializing JETSON CV1 TEMP READING RECORD\n");
+        return false;
+    }
+    status = this->m_jetsonTempContainer.serializeRecord_Jetson_Cv2TemperatureRecord(jetson_cv2ThermalReading);
+    if (status != Fw::SerializeStatus::FW_SERIALIZE_OK) {
+        printf("Error Serializing JETSON CV2 TEMP READING RECORD\n");
+        return false;
+    }
+
+    status = this->m_jetsonTempContainer.serializeRecord_Jetson_Soc0TemperatureRecord(jetson_soc0ThermalReading);
+    if (status != Fw::SerializeStatus::FW_SERIALIZE_OK) {
+        printf("Error Serializing JETSON SOC0 TEMP READING RECORD\n");
+        return false;
+    }
+
+    status = this->m_jetsonTempContainer.serializeRecord_Jetson_Soc1TemperatureRecord(jetson_soc1ThermalReading);
+    if (status != Fw::SerializeStatus::FW_SERIALIZE_OK) {
+        printf("Error Serializing JETSON SOC1 TEMP READING RECORD\n");
+        return false;
+    }
+
+    status = this->m_jetsonTempContainer.serializeRecord_Jetson_Soc2TemperatureRecord(jetson_soc2ThermalReading);
+    if (status != Fw::SerializeStatus::FW_SERIALIZE_OK) {
+        printf("Error Serializing JETSON SOC2 TEMP READING RECORD\n");
+        return false;
+    }
+
+    status = this->m_jetsonTempContainer.serializeRecord_Jetson_TjTemperatureRecord(jetson_tjThermalReading);
+    if (status != Fw::SerializeStatus::FW_SERIALIZE_OK) {
+        printf("Error Serializing JETSON TJ1 TEMP READING RECORD\n");
+        return false;
+    }
 }
 
 bool DataProducer ::inaSerialize_Send(const scalesSvc::PowerReading& obcPowerReading,

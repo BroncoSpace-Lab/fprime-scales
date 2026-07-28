@@ -49,7 +49,7 @@ class DataProducer final : public DataProducerComponentBase {
 
     // -- JetsonThermalManager related --
     DpContainer m_jetsonTempContainer; //! Tracked temperature container state
-    FwSizeType m_jetsonRecordCount;       //!< Count of serialized records
+    FwSizeType m_jetsonTempRecordCount;       //!< Count of serialized records
     bool m_jetsonTempContainerValid;    //!< Whether the container is valid 
 
     // -- InaManager related --
