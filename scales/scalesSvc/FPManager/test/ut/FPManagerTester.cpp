@@ -445,4 +445,83 @@ void FPManagerTester::forwardsSequencerRemoteJetsonCommandWhenJetsonOn() {
   ASSERT_EVENTS_REMOTE_JETSON_COMMAND_REJECTED_SIZE(0);
 }
 
+void FPManagerTester::imxWarnStateEntersAndExitsWithoutShutdown() {
+  this->initializeSafeMode();
+
+  this->invoke_to_imxThermalReadingIn(
+      0, this->reading(1, ThermalStates::WARN, 75.0F, "imx-cpu", 20));
+  this->drainStateMachine();
+
+  ASSERT_EVENTS_WARN_STATE_ENTERED_SIZE(1);
+  ASSERT_EVENTS_WARN_STATE_ENTERED(0, "IMX", 1U, 75.0F, "imx-cpu", 20U);
+  ASSERT_EVENTS_WARN_STATE_EXITED_SIZE(0);
+  ASSERT_EVENTS_FAULT_DETECTED_SIZE(0);
+  ASSERT_EVENTS_EMERGENCY_SHUTDOWN_SIZE(0);
+  ASSERT_from_jetsonPowerRequestOut_SIZE(0);
+  ASSERT_from_peripheralPowerOff_SIZE(0);
+  ASSERT_from_fatalOut_SIZE(0);
+
+  // A second WARN reading must not re-fire the entered event.
+  this->invoke_to_imxThermalReadingIn(
+      0, this->reading(1, ThermalStates::WARN, 76.0F, "imx-cpu", 21));
+  this->drainStateMachine();
+  ASSERT_EVENTS_WARN_STATE_ENTERED_SIZE(1);
+
+  // Returning to IDLE exits WARN.
+  this->invoke_to_imxThermalReadingIn(
+      0, this->reading(1, ThermalStates::IDLE, 40.0F, "imx-cpu", 22));
+  this->drainStateMachine();
+  ASSERT_EVENTS_WARN_STATE_EXITED_SIZE(1);
+  ASSERT_EVENTS_WARN_STATE_EXITED(0, "IMX", 1U, 40.0F, "imx-cpu", 22U);
+}
+
+void FPManagerTester::peripheralWarnStateEntersAndExitsWithoutShutdown() {
+  this->initializeSafeMode();
+
+  this->invoke_to_peripheralThermalReadingIn(
+      0, this->reading(2, ThermalStates::WARN, 70.0F, "peripheral", 30));
+  this->drainStateMachine();
+
+  ASSERT_EVENTS_WARN_STATE_ENTERED_SIZE(1);
+  ASSERT_EVENTS_WARN_STATE_ENTERED(0, "PERIPHERAL", 2U, 70.0F, "peripheral", 30U);
+  ASSERT_EVENTS_FAULT_DETECTED_SIZE(0);
+  ASSERT_from_peripheralPowerOff_SIZE(0);
+
+  this->invoke_to_peripheralThermalReadingIn(
+      0, this->reading(2, ThermalStates::IDLE, 40.0F, "peripheral", 31));
+  this->drainStateMachine();
+  ASSERT_EVENTS_WARN_STATE_EXITED_SIZE(1);
+  ASSERT_EVENTS_WARN_STATE_EXITED(0, "PERIPHERAL", 2U, 40.0F, "peripheral", 31U);
+}
+
+void FPManagerTester::jetsonWarnStateAggregatesAcrossSensors() {
+  this->initializeSafeMode();
+
+  // Sensor 3 enters WARN: aggregate WARN entered.
+  this->invoke_to_jetsonThermalReadingIn(
+      0, this->reading(3, ThermalStates::WARN, 80.0F, "gpu", 40));
+  this->drainStateMachine();
+  ASSERT_EVENTS_WARN_STATE_ENTERED_SIZE(1);
+  ASSERT_EVENTS_WARN_STATE_ENTERED(0, "JETSON", 3U, 80.0F, "gpu", 40U);
+
+  // Sensor 5 also enters WARN while sensor 3 is still WARN: no duplicate entered event.
+  this->invoke_to_jetsonThermalReadingIn(
+      0, this->reading(5, ThermalStates::WARN, 82.0F, "soc1", 41));
+  this->drainStateMachine();
+  ASSERT_EVENTS_WARN_STATE_ENTERED_SIZE(1);
+
+  // Sensor 3 clears, but sensor 5 is still WARN: aggregate stays WARN, no exit yet.
+  this->invoke_to_jetsonThermalReadingIn(
+      0, this->reading(3, ThermalStates::IDLE, 40.0F, "gpu", 42));
+  this->drainStateMachine();
+  ASSERT_EVENTS_WARN_STATE_EXITED_SIZE(0);
+
+  // Sensor 5 clears too: aggregate exits WARN.
+  this->invoke_to_jetsonThermalReadingIn(
+      0, this->reading(5, ThermalStates::IDLE, 40.0F, "soc1", 43));
+  this->drainStateMachine();
+  ASSERT_EVENTS_WARN_STATE_EXITED_SIZE(1);
+  ASSERT_EVENTS_WARN_STATE_EXITED(0, "JETSON", 5U, 40.0F, "soc1", 43U);
+}
+
 }  // namespace scalesSvc

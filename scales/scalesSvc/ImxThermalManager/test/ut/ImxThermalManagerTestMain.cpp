@@ -11,6 +11,11 @@ TEST(Nominal, ImxThermalManagerTesting) {
   tester.ImxThermalManagerTesting();
 }
 
+TEST(Nominal, thresholdsMisconfiguredEmitsOnceOnTransition) {
+  scalesSvc::ImxThermalManagerTester tester;
+  tester.thresholdsMisconfiguredEmitsOnceOnTransition();
+}
+
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

@@ -134,6 +134,31 @@ module scalesSvc {
         ) severity warning high id 0x06 \
             format "External poweroff fallback command failed with exit code {}"
 
+        @ A monitored subsystem (i.MX, peripheral, or the aggregate Jetson
+        @ die) has entered the WARN thermal state. This is purely
+        @ informational -- FPManager takes no protective action for WARN,
+        @ only FAULT triggers shutdown.
+        event WARN_STATE_ENTERED(
+            source: string size 32
+            sensorId: U8
+            temperature: F32
+            location: string size 32
+            timestamp: U32
+        ) severity warning low id 0x07 \
+            format "{} sensor {} entered WARN state at {} C location {} timestamp {}"
+
+        @ A monitored subsystem has exited the WARN thermal state, either by
+        @ returning to IDLE, escalating to FAULT, or the reading becoming
+        @ unavailable.
+        event WARN_STATE_EXITED(
+            source: string size 32
+            sensorId: U8
+            temperature: F32
+            location: string size 32
+            timestamp: U32
+        ) severity activity high id 0x08 \
+            format "{} sensor {} exited WARN state at {} C location {} timestamp {}"
+
         @ Current FP state for downlink and diagnostics.
         telemetry FP_STATE: FPManagerState id 0x00
 

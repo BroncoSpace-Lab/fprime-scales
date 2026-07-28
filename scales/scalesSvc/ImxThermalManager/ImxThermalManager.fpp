@@ -25,6 +25,14 @@ module scalesSvc {
         telemetry imx_cpu_temp_read: ThermalReading \
             id 0x01
 
+        @ Telemetry readback for the current IMX CPU thermal thresholds
+        telemetry IMX_CPU_IDLE_LOW: F32 id 0x10
+        telemetry IMX_CPU_IDLE_HIGH: F32 id 0x11
+        telemetry IMX_CPU_WARN_LOW: F32 id 0x12
+        telemetry IMX_CPU_WARN_HIGH: F32 id 0x13
+        telemetry IMX_CPU_FAULT_LOW: F32 id 0x14
+        telemetry IMX_CPU_FAULT_HIGH: F32 id 0x15
+
         # Default Parameter bounds for IMX_CPU States
         @ IMX_CPU_IDLE_LOW Parameter 
         param IMX_CPU_IDLE_LOW: F32 \
@@ -74,6 +82,23 @@ module scalesSvc {
             severity warning high \
             id 0x01 \
             format "Failed to read temperature at IMX CPU from OSAL"
+
+        @ The IMX CPU IDLE/WARN/FAULT thresholds are not in a sane ascending
+        @ order (FAULT_LOW <= WARN_LOW <= IDLE_LOW <= IDLE_HIGH <= WARN_HIGH
+        @ <= FAULT_HIGH). Readings may be misclassified (e.g. reported as
+        @ FAULT when WARN or IDLE was intended) until corrected.
+        event THRESHOLDS_MISCONFIGURED(
+            source: string size 32
+            faultLow: F32
+            warnLow: F32
+            idleLow: F32
+            idleHigh: F32
+            warnHigh: F32
+            faultHigh: F32
+        ) \
+            severity warning high \
+            id 0x02 \
+            format "{} temperature thresholds are not in ascending order: FAULT_LOW={} WARN_LOW={} IDLE_LOW={} IDLE_HIGH={} WARN_HIGH={} FAULT_HIGH={}"
 
         ###############################################################################
         # Standard AC Ports: Required for Channels, Events, Commands, and Parameters  #

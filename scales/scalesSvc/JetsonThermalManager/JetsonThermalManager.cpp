@@ -74,6 +74,8 @@ namespace scalesSvc {
       this->WARN_HIGH_THR = this->paramGet_JETSON_WARN_HIGH(m_paramIsValid);
       this->FAULT_LOW_THR = this->paramGet_JETSON_FAULT_LOW(m_paramIsValid);
       this->FAULT_HIGH_THR = this->paramGet_JETSON_FAULT_HIGH(m_paramIsValid);
+      this->writeParameterTelemetry();
+      this->validateThresholds();
     } else {
         for (int i = 0; i < 9; i++){
           F32 temp;
@@ -179,8 +181,20 @@ namespace scalesSvc {
       default:
         // Handle unexpected parameter ID
         printf("Warning: Received update for unrecognized parameter ID 0x%X. No threshold values were updated.\n", id);
-        break;
+        return;
     }
+
+    this->writeParameterTelemetry();
+    this->validateThresholds();
+  }
+
+  void JetsonThermalManager :: writeParameterTelemetry() {
+    this->tlmWrite_JETSON_IDLE_LOW(this->paramGet_JETSON_IDLE_LOW(m_paramIsValid));
+    this->tlmWrite_JETSON_IDLE_HIGH(this->paramGet_JETSON_IDLE_HIGH(m_paramIsValid));
+    this->tlmWrite_JETSON_WARN_LOW(this->paramGet_JETSON_WARN_LOW(m_paramIsValid));
+    this->tlmWrite_JETSON_WARN_HIGH(this->paramGet_JETSON_WARN_HIGH(m_paramIsValid));
+    this->tlmWrite_JETSON_FAULT_LOW(this->paramGet_JETSON_FAULT_LOW(m_paramIsValid));
+    this->tlmWrite_JETSON_FAULT_HIGH(this->paramGet_JETSON_FAULT_HIGH(m_paramIsValid));
   }
 
   bool JetsonThermalManager :: readTemp(U8 index, F32& temp) {
@@ -241,6 +255,27 @@ namespace scalesSvc {
     } else {
       // Treat gaps caused by invalid or overlapping parameters as unsafe.
       return scalesSvc::ThermalStates::FAULT;
+    }
+  }
+
+  bool JetsonThermalManager :: thresholdsAreOrdered(F32 faultLow, F32 warnLow, F32 idleLow,
+                                                     F32 idleHigh, F32 warnHigh, F32 faultHigh) const {
+    return faultLow <= warnLow && warnLow <= idleLow && idleLow <= idleHigh &&
+           idleHigh <= warnHigh && warnHigh <= faultHigh;
+  }
+
+  void JetsonThermalManager :: validateThresholds() {
+    const bool ordered = this->thresholdsAreOrdered(
+        this->FAULT_LOW_THR, this->WARN_LOW_THR, this->IDLE_LOW_THR,
+        this->IDLE_HIGH_THR, this->WARN_HIGH_THR, this->FAULT_HIGH_THR);
+
+    if (!ordered && this->m_thresholdsValid) {
+      this->m_thresholdsValid = false;
+      this->log_WARNING_HI_THRESHOLDS_MISCONFIGURED(
+          Fw::String("JETSON"), this->FAULT_LOW_THR, this->WARN_LOW_THR, this->IDLE_LOW_THR,
+          this->IDLE_HIGH_THR, this->WARN_HIGH_THR, this->FAULT_HIGH_THR);
+    } else if (ordered) {
+      this->m_thresholdsValid = true;
     }
   }
 }

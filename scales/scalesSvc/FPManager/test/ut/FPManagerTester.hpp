@@ -33,6 +33,9 @@ class FPManagerTester final : public FPManagerGTestBase {
     void forwardsRemoteJetsonCommandWhenJetsonOn();
     void rejectsSequencerRemoteJetsonCommandWhenJetsonOff();
     void forwardsSequencerRemoteJetsonCommandWhenJetsonOn();
+    void imxWarnStateEntersAndExitsWithoutShutdown();
+    void peripheralWarnStateEntersAndExitsWithoutShutdown();
+    void jetsonWarnStateAggregatesAcrossSensors();
 
   private:
     void connectPorts();

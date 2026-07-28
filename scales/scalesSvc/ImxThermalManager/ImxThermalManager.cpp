@@ -76,9 +76,10 @@ bool ImxThermalManager::readTemperatureFile() {
 
 void ImxThermalManager::scalesSvc_ThermalStateMachine_action_doRead(SmId smId, scalesSvc_ThermalStateMachine::Signal signal) {
       
-        if (m_justBooted){
+      if (m_justBooted){
         m_startTime = this->getTime().getSeconds(); // Record the start time at boot to track uptime in telemetry
         m_justBooted = false;
+        this->writeParameterTelemetry();
       }
       
       if(this->readTemperatureFile()){ //if the file opened and parsed successfully, read the data
@@ -96,6 +97,8 @@ void ImxThermalManager::scalesSvc_ThermalStateMachine_action_doRead(SmId smId, s
   }
 
 void ImxThermalManager::scalesSvc_ThermalStateMachine_action_doEvaluate( SmId smId, scalesSvc_ThermalStateMachine::Signal signal){
+  this->validateThresholds();
+
   const F32 faultLow = paramGet_IMX_CPU_FAULT_LOW(m_paramValid);
   const F32 warnLow = paramGet_IMX_CPU_WARN_LOW(m_paramValid);
   const F32 idleLow = paramGet_IMX_CPU_IDLE_LOW(m_paramValid);
@@ -126,7 +129,7 @@ void ImxThermalManager::scalesSvc_ThermalStateMachine_action_doEvaluate( SmId sm
 }
 
   void ImxThermalManager::scalesSvc_ThermalStateMachine_action_doReadFail(SmId smId, scalesSvc_ThermalStateMachine::Signal signal){
-      
+
       if(this->readTemperatureFile()){ //if the file opened and parsed successfully, read the data
       this->thermalStateMachine_sendSignal_success();
       }
@@ -135,6 +138,44 @@ void ImxThermalManager::scalesSvc_ThermalStateMachine_action_doEvaluate( SmId sm
         this->tlmWrite_imx_cpu_temp_read(this->m_cpu_thermal_read);
         this->thermalStateMachine_sendSignal_fail();
       }
-      
+
     }
+
+  void ImxThermalManager::parameterUpdated(FwPrmIdType id) {
+    this->writeParameterTelemetry();
+    this->validateThresholds();
+  }
+
+  void ImxThermalManager::writeParameterTelemetry() {
+    this->tlmWrite_IMX_CPU_IDLE_LOW(this->paramGet_IMX_CPU_IDLE_LOW(m_paramValid));
+    this->tlmWrite_IMX_CPU_IDLE_HIGH(this->paramGet_IMX_CPU_IDLE_HIGH(m_paramValid));
+    this->tlmWrite_IMX_CPU_WARN_LOW(this->paramGet_IMX_CPU_WARN_LOW(m_paramValid));
+    this->tlmWrite_IMX_CPU_WARN_HIGH(this->paramGet_IMX_CPU_WARN_HIGH(m_paramValid));
+    this->tlmWrite_IMX_CPU_FAULT_LOW(this->paramGet_IMX_CPU_FAULT_LOW(m_paramValid));
+    this->tlmWrite_IMX_CPU_FAULT_HIGH(this->paramGet_IMX_CPU_FAULT_HIGH(m_paramValid));
+  }
+
+  bool ImxThermalManager::thresholdsAreOrdered(F32 faultLow, F32 warnLow, F32 idleLow,
+                                                F32 idleHigh, F32 warnHigh, F32 faultHigh) const {
+    return faultLow <= warnLow && warnLow <= idleLow && idleLow <= idleHigh &&
+           idleHigh <= warnHigh && warnHigh <= faultHigh;
+  }
+
+  void ImxThermalManager::validateThresholds() {
+    const F32 faultLow = paramGet_IMX_CPU_FAULT_LOW(m_paramValid);
+    const F32 warnLow = paramGet_IMX_CPU_WARN_LOW(m_paramValid);
+    const F32 idleLow = paramGet_IMX_CPU_IDLE_LOW(m_paramValid);
+    const F32 idleHigh = paramGet_IMX_CPU_IDLE_HIGH(m_paramValid);
+    const F32 warnHigh = paramGet_IMX_CPU_WARN_HIGH(m_paramValid);
+    const F32 faultHigh = paramGet_IMX_CPU_FAULT_HIGH(m_paramValid);
+
+    const bool ordered = this->thresholdsAreOrdered(faultLow, warnLow, idleLow, idleHigh, warnHigh, faultHigh);
+    if (!ordered && this->m_thresholdsValid) {
+      this->m_thresholdsValid = false;
+      this->log_WARNING_HI_THRESHOLDS_MISCONFIGURED(
+          Fw::String("IMX_CPU"), faultLow, warnLow, idleLow, idleHigh, warnHigh, faultHigh);
+    } else if (ordered) {
+      this->m_thresholdsValid = true;
+    }
+  }
 }

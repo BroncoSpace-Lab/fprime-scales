@@ -64,7 +64,9 @@ class FPManager final : public FPManagerComponentBase {
         SmId smId, scalesSvc_FPStateMachine::Signal signal) override;
 
     bool readingIsFault(const ThermalReading& reading) const;
+    bool readingIsWarn(const ThermalReading& reading) const;
     bool findJetsonFault(ThermalReading& faultReading) const;
+    bool findJetsonWarn(ThermalReading& warnReading) const;
     FwOpcodeType extractOpcode(Fw::ComBuffer& data) const;
     void invalidateJetsonReadings();
     void rememberFault(const char* source, const ThermalReading& reading);
@@ -73,6 +75,8 @@ class FPManager final : public FPManagerComponentBase {
     void triggerPlatformPoweroff();
     void reportReadingFault();
     void writeStateTelemetry();
+    void updateWarnTracking(const char* source, bool currentlyWarn,
+                             bool& warnActiveFlag, const ThermalReading& reading);
 
     FPManagerState m_mode;
     ThermalReading m_imxReading;
@@ -90,6 +94,9 @@ class FPManager final : public FPManagerComponentBase {
     bool m_platformPoweroffTriggered;
     FPManagerState m_lastPublishedState;
     bool m_jetsonFaultSignalPending;
+    bool m_imxWarnActive;
+    bool m_peripheralWarnActive;
+    bool m_jetsonWarnActive;
 };
 
 }  // namespace scalesSvc
