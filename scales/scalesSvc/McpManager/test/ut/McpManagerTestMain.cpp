@@ -11,6 +11,11 @@ TEST(Nominal, mcpTest) {
   tester.mcpTest();
 }
 
+TEST(Nominal, thresholdsMisconfiguredEmitsOnceOnTransition) {
+  scalesSvc::McpManagerTester tester;
+  tester.thresholdsMisconfiguredEmitsOnceOnTransition();
+}
+
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

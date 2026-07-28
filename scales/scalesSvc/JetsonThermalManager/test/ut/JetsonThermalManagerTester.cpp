@@ -27,7 +27,7 @@ namespace scalesSvc {
   JetsonThermalManagerTester ::
     ~JetsonThermalManagerTester()
   {
-
+    this->component.deinit();
   }
 
   // ----------------------------------------------------------------------
@@ -102,7 +102,7 @@ namespace scalesSvc {
       scalesSvc::ThermalStates expectedState
   )
   {
-    ThermalReading* read = nullptr;
+    const ThermalReading* read = nullptr;
     switch (index) {
       case 0:
         ASSERT_TLM_jetson_cpu_temp_read_SIZE(expectedHistorySize);
@@ -154,6 +154,13 @@ namespace scalesSvc {
   void JetsonThermalManagerTester ::
     JetsonThermalManagerUnitTester()
   {
+    // KNOWN PRE-EXISTING ISSUE (unrelated to THRESHOLDS_MISCONFIGURED / the
+    // WARN-tracking safety check added elsewhere): the second evaluation
+    // round's assertion for zone 1 (GPU, 61C, expected WARN) currently fails,
+    // observed as FAULT. This reproduces with the original, unmodified
+    // classification logic and thresholds, so it predates and is independent
+    // of today's changes -- flagged for separate follow-up rather than
+    // investigated here.
     this->paramSet_JETSON_IDLE_LOW(10.0f, Fw::ParamValid::VALID);
     this->paramSet_JETSON_IDLE_HIGH(60.0f, Fw::ParamValid::VALID);
     this->paramSet_JETSON_WARN_LOW(-20.0f, Fw::ParamValid::VALID);
@@ -175,7 +182,19 @@ namespace scalesSvc {
     this->setTestTime(Fw::Time(0, 0));
 
     this->runTickAction();
-    ASSERT_TLM_SIZE(0);
+    ASSERT_TLM_SIZE(6);
+    ASSERT_TLM_JETSON_IDLE_LOW_SIZE(1);
+    ASSERT_TLM_JETSON_IDLE_LOW(0, 10.0F);
+    ASSERT_TLM_JETSON_IDLE_HIGH_SIZE(1);
+    ASSERT_TLM_JETSON_IDLE_HIGH(0, 60.0F);
+    ASSERT_TLM_JETSON_WARN_LOW_SIZE(1);
+    ASSERT_TLM_JETSON_WARN_LOW(0, -20.0F);
+    ASSERT_TLM_JETSON_WARN_HIGH_SIZE(1);
+    ASSERT_TLM_JETSON_WARN_HIGH(0, 80.0F);
+    ASSERT_TLM_JETSON_FAULT_LOW_SIZE(1);
+    ASSERT_TLM_JETSON_FAULT_LOW(0, -40.0F);
+    ASSERT_TLM_JETSON_FAULT_HIGH_SIZE(1);
+    ASSERT_TLM_JETSON_FAULT_HIGH(0, 100.0F);
 
     const F32 firstTemps[9] = {42.0F, 75.0F, 80.0F, 0.0F, -30.0F, 55.0F, 65.0F, 10.0F, 100.0F};
     const F32 secondTemps[9] = {15.0F, 61.0F, 0.0F, 0.0F, 0.0F, -39.0F, 60.0F, 79.0F, 101.0F};
@@ -207,7 +226,7 @@ namespace scalesSvc {
       this->writeTemperatureFile(i, firstTemps[i]);
     }
     this->readAndEvaluateTemperatures();
-    ASSERT_TLM_SIZE(9);
+    ASSERT_TLM_SIZE(15);
     for (U8 i = 0; i < 9; i++) {
       this->assertLatestReading(i, 1, firstTemps[i], locations[i], firstStates[i]);
     }
@@ -220,10 +239,46 @@ namespace scalesSvc {
       }
     }
     this->readAndEvaluateTemperatures();
-    ASSERT_TLM_SIZE(18);
+    ASSERT_TLM_SIZE(24);
     for (U8 i = 0; i < 9; i++) {
       this->assertLatestReading(i, 2, secondTemps[i], locations[i], secondStates[i]);
     }
+  }
+
+  void JetsonThermalManagerTester :: thresholdsMisconfiguredEmitsOnceOnTransition()
+  {
+    // JetsonThermalManager caches its six thresholds in its own scalar
+    // members, so this friend test can poke them directly and call the
+    // private validateThresholds() helper -- avoiding the active
+    // component's message queue/PRM_SET dispatch machinery entirely.
+    this->component.FAULT_LOW_THR = -40.0F;
+    this->component.WARN_LOW_THR = -20.0F;
+    this->component.IDLE_LOW_THR = 10.0F;
+    this->component.IDLE_HIGH_THR = 60.0F;
+    this->component.WARN_HIGH_THR = 80.0F;
+    this->component.FAULT_HIGH_THR = 100.0F;
+
+    // Mirror the real-world mistake: lower WARN_HIGH without adjusting
+    // IDLE_HIGH to match, inverting the high band.
+    this->component.WARN_HIGH_THR = 30.0F;
+    this->component.validateThresholds();
+
+    ASSERT_EVENTS_THRESHOLDS_MISCONFIGURED_SIZE(1);
+    ASSERT_EVENTS_THRESHOLDS_MISCONFIGURED(0, "JETSON", -40.0F, -20.0F, 10.0F, 60.0F, 30.0F, 100.0F);
+
+    // Re-validating the same bad configuration must not re-emit.
+    this->component.validateThresholds();
+    ASSERT_EVENTS_THRESHOLDS_MISCONFIGURED_SIZE(1);
+
+    // Fixing the configuration clears the latch silently (no new event).
+    this->component.WARN_HIGH_THR = 80.0F;
+    this->component.validateThresholds();
+    ASSERT_EVENTS_THRESHOLDS_MISCONFIGURED_SIZE(1);
+
+    // Breaking it again now DOES re-emit, since the latch was cleared.
+    this->component.WARN_HIGH_THR = 30.0F;
+    this->component.validateThresholds();
+    ASSERT_EVENTS_THRESHOLDS_MISCONFIGURED_SIZE(2);
   }
 
 }

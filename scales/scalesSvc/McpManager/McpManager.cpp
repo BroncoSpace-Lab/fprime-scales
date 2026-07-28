@@ -32,7 +32,8 @@ namespace scalesSvc {
     McpManagerComponentBase(compName), 
     m_successfulRead(true), // Initialize successful read flag to true as default
     m_successfulReads{true, true, true}, // Initialize successful reads array to true for all sensors
-    m_justBooted(true)
+    m_justBooted(true),
+    m_thresholdsValid{true, true, true}
   {
     deviceAddrs[OBC] = IMX_TEMP_ADDR;
     deviceAddrs[PERIF] = PERIPHERAL_TEMP_ADDR;
@@ -85,6 +86,11 @@ namespace scalesSvc {
       this->WARN_HIGH_THR[JETSON] = this->paramGet_MCP_JETSON_WARN_HIGH(m_paramIsValid);
       this->FAULT_LOW_THR[JETSON] = this->paramGet_MCP_JETSON_FAULT_LOW(m_paramIsValid);
       this->FAULT_HIGH_THR[JETSON] = this->paramGet_MCP_JETSON_FAULT_HIGH(m_paramIsValid);
+
+      this->writeParameterTelemetry();
+      this->validateThresholds("IMX", OBC);
+      this->validateThresholds("PERIPHERAL", PERIF);
+      this->validateThresholds("JETSON", JETSON);
     } else {
         // Read temp data from sensors and log to telemetry
         for (int i = 0; i < NUM_SENSORS; i++){
@@ -163,66 +169,116 @@ namespace scalesSvc {
   void McpManager :: parameterUpdated(FwPrmIdType id){
     // Update threshold values based on parameter updates
     printf("Parameter with ID 0x%X has been updated. Updating threshold values...\n", id);
+
+    const char* touchedSource = nullptr;
+    FwIndexType touchedSensor = 0;
+
     switch(id){
       case PARAMID_MCP_IMX_IDLE_LOW:
         this->IDLE_LOW_THR[OBC] = this->paramGet_MCP_IMX_IDLE_LOW(m_paramIsValid);
+        touchedSource = "IMX"; touchedSensor = OBC;
         break;
       case PARAMID_MCP_IMX_IDLE_HIGH:
         this->IDLE_HIGH_THR[OBC] = this->paramGet_MCP_IMX_IDLE_HIGH(m_paramIsValid);
+        touchedSource = "IMX"; touchedSensor = OBC;
         break;
       case PARAMID_MCP_IMX_WARN_LOW:
         this->WARN_LOW_THR[OBC] = this->paramGet_MCP_IMX_WARN_LOW(m_paramIsValid);
+        touchedSource = "IMX"; touchedSensor = OBC;
         break;
       case PARAMID_MCP_IMX_WARN_HIGH:
         this->WARN_HIGH_THR[OBC] = this->paramGet_MCP_IMX_WARN_HIGH(m_paramIsValid);
+        touchedSource = "IMX"; touchedSensor = OBC;
         break;
       case PARAMID_MCP_IMX_FAULT_LOW:
         this->FAULT_LOW_THR[OBC] = this->paramGet_MCP_IMX_FAULT_LOW(m_paramIsValid);
+        touchedSource = "IMX"; touchedSensor = OBC;
         break;
       case PARAMID_MCP_IMX_FAULT_HIGH:
         this->FAULT_HIGH_THR[OBC] = this->paramGet_MCP_IMX_FAULT_HIGH(m_paramIsValid);
+        touchedSource = "IMX"; touchedSensor = OBC;
         break;
       case PARAMID_MCP_PERIPHERAL_IDLE_LOW:
         this->IDLE_LOW_THR[PERIF] = this->paramGet_MCP_PERIPHERAL_IDLE_LOW(m_paramIsValid);
+        touchedSource = "PERIPHERAL"; touchedSensor = PERIF;
         break;
       case PARAMID_MCP_PERIPHERAL_IDLE_HIGH:
         this->IDLE_HIGH_THR[PERIF] = this->paramGet_MCP_PERIPHERAL_IDLE_HIGH(m_paramIsValid);
+        touchedSource = "PERIPHERAL"; touchedSensor = PERIF;
         break;
       case PARAMID_MCP_PERIPHERAL_WARN_LOW:
         this->WARN_LOW_THR[PERIF] = this->paramGet_MCP_PERIPHERAL_WARN_LOW(m_paramIsValid);
+        touchedSource = "PERIPHERAL"; touchedSensor = PERIF;
         break;
       case PARAMID_MCP_PERIPHERAL_WARN_HIGH:
         this->WARN_HIGH_THR[PERIF] = this->paramGet_MCP_PERIPHERAL_WARN_HIGH(m_paramIsValid);
+        touchedSource = "PERIPHERAL"; touchedSensor = PERIF;
         break;
       case PARAMID_MCP_PERIPHERAL_FAULT_LOW:
         this->FAULT_LOW_THR[PERIF] = this->paramGet_MCP_PERIPHERAL_FAULT_LOW(m_paramIsValid);
+        touchedSource = "PERIPHERAL"; touchedSensor = PERIF;
         break;
       case PARAMID_MCP_PERIPHERAL_FAULT_HIGH:
         this->FAULT_HIGH_THR[PERIF] = this->paramGet_MCP_PERIPHERAL_FAULT_HIGH(m_paramIsValid);
+        touchedSource = "PERIPHERAL"; touchedSensor = PERIF;
         break;
       case PARAMID_MCP_JETSON_IDLE_LOW:
         this->IDLE_LOW_THR[JETSON] = this->paramGet_MCP_JETSON_IDLE_LOW(m_paramIsValid);
+        touchedSource = "JETSON"; touchedSensor = JETSON;
         break;
       case PARAMID_MCP_JETSON_IDLE_HIGH:
         this->IDLE_HIGH_THR[JETSON] = this->paramGet_MCP_JETSON_IDLE_HIGH(m_paramIsValid);
+        touchedSource = "JETSON"; touchedSensor = JETSON;
         break;
       case PARAMID_MCP_JETSON_WARN_LOW:
         this->WARN_LOW_THR[JETSON] = this->paramGet_MCP_JETSON_WARN_LOW(m_paramIsValid);
+        touchedSource = "JETSON"; touchedSensor = JETSON;
         break;
       case PARAMID_MCP_JETSON_WARN_HIGH:
         this->WARN_HIGH_THR[JETSON] = this->paramGet_MCP_JETSON_WARN_HIGH(m_paramIsValid);
+        touchedSource = "JETSON"; touchedSensor = JETSON;
         break;
       case PARAMID_MCP_JETSON_FAULT_LOW:
         this->FAULT_LOW_THR[JETSON] = this->paramGet_MCP_JETSON_FAULT_LOW(m_paramIsValid);
+        touchedSource = "JETSON"; touchedSensor = JETSON;
         break;
       case PARAMID_MCP_JETSON_FAULT_HIGH:
         this->FAULT_HIGH_THR[JETSON] = this->paramGet_MCP_JETSON_FAULT_HIGH(m_paramIsValid);
+        touchedSource = "JETSON"; touchedSensor = JETSON;
         break;
       default:
         // Handle unexpected parameter ID
         printf("Warning: Received update for unrecognized parameter ID 0x%X. No threshold values were updated.\n", id);
         break;
     }
+
+    if (touchedSource != nullptr) {
+      this->writeParameterTelemetry();
+      this->validateThresholds(touchedSource, touchedSensor);
+    }
+  }
+
+  void McpManager :: writeParameterTelemetry() {
+    this->tlmWrite_MCP_IMX_IDLE_LOW(this->paramGet_MCP_IMX_IDLE_LOW(m_paramIsValid));
+    this->tlmWrite_MCP_IMX_IDLE_HIGH(this->paramGet_MCP_IMX_IDLE_HIGH(m_paramIsValid));
+    this->tlmWrite_MCP_IMX_WARN_LOW(this->paramGet_MCP_IMX_WARN_LOW(m_paramIsValid));
+    this->tlmWrite_MCP_IMX_WARN_HIGH(this->paramGet_MCP_IMX_WARN_HIGH(m_paramIsValid));
+    this->tlmWrite_MCP_IMX_FAULT_LOW(this->paramGet_MCP_IMX_FAULT_LOW(m_paramIsValid));
+    this->tlmWrite_MCP_IMX_FAULT_HIGH(this->paramGet_MCP_IMX_FAULT_HIGH(m_paramIsValid));
+
+    this->tlmWrite_MCP_PERIPHERAL_IDLE_LOW(this->paramGet_MCP_PERIPHERAL_IDLE_LOW(m_paramIsValid));
+    this->tlmWrite_MCP_PERIPHERAL_IDLE_HIGH(this->paramGet_MCP_PERIPHERAL_IDLE_HIGH(m_paramIsValid));
+    this->tlmWrite_MCP_PERIPHERAL_WARN_LOW(this->paramGet_MCP_PERIPHERAL_WARN_LOW(m_paramIsValid));
+    this->tlmWrite_MCP_PERIPHERAL_WARN_HIGH(this->paramGet_MCP_PERIPHERAL_WARN_HIGH(m_paramIsValid));
+    this->tlmWrite_MCP_PERIPHERAL_FAULT_LOW(this->paramGet_MCP_PERIPHERAL_FAULT_LOW(m_paramIsValid));
+    this->tlmWrite_MCP_PERIPHERAL_FAULT_HIGH(this->paramGet_MCP_PERIPHERAL_FAULT_HIGH(m_paramIsValid));
+
+    this->tlmWrite_MCP_JETSON_IDLE_LOW(this->paramGet_MCP_JETSON_IDLE_LOW(m_paramIsValid));
+    this->tlmWrite_MCP_JETSON_IDLE_HIGH(this->paramGet_MCP_JETSON_IDLE_HIGH(m_paramIsValid));
+    this->tlmWrite_MCP_JETSON_WARN_LOW(this->paramGet_MCP_JETSON_WARN_LOW(m_paramIsValid));
+    this->tlmWrite_MCP_JETSON_WARN_HIGH(this->paramGet_MCP_JETSON_WARN_HIGH(m_paramIsValid));
+    this->tlmWrite_MCP_JETSON_FAULT_LOW(this->paramGet_MCP_JETSON_FAULT_LOW(m_paramIsValid));
+    this->tlmWrite_MCP_JETSON_FAULT_HIGH(this->paramGet_MCP_JETSON_FAULT_HIGH(m_paramIsValid));
   }
 
   // ----------------------------------------------------------------------
@@ -270,6 +326,29 @@ namespace scalesSvc {
     } else {
       // Treat gaps caused by invalid or overlapping parameters as unsafe.
       return scalesSvc::ThermalStates::FAULT;
+    }
+  }
+
+  bool McpManager :: thresholdsAreOrdered(F32 faultLow, F32 warnLow, F32 idleLow,
+                                          F32 idleHigh, F32 warnHigh, F32 faultHigh) const {
+    return faultLow <= warnLow && warnLow <= idleLow && idleLow <= idleHigh &&
+           idleHigh <= warnHigh && warnHigh <= faultHigh;
+  }
+
+  void McpManager :: validateThresholds(const char* source, FwIndexType sensorIndex) {
+    const bool ordered = this->thresholdsAreOrdered(
+        this->FAULT_LOW_THR[sensorIndex], this->WARN_LOW_THR[sensorIndex],
+        this->IDLE_LOW_THR[sensorIndex], this->IDLE_HIGH_THR[sensorIndex],
+        this->WARN_HIGH_THR[sensorIndex], this->FAULT_HIGH_THR[sensorIndex]);
+
+    if (!ordered && this->m_thresholdsValid[sensorIndex]) {
+      this->m_thresholdsValid[sensorIndex] = false;
+      this->log_WARNING_HI_THRESHOLDS_MISCONFIGURED(
+          Fw::String(source), this->FAULT_LOW_THR[sensorIndex], this->WARN_LOW_THR[sensorIndex],
+          this->IDLE_LOW_THR[sensorIndex], this->IDLE_HIGH_THR[sensorIndex],
+          this->WARN_HIGH_THR[sensorIndex], this->FAULT_HIGH_THR[sensorIndex]);
+    } else if (ordered) {
+      this->m_thresholdsValid[sensorIndex] = true;
     }
   }
 

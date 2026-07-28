@@ -90,6 +90,21 @@ TEST(FPManager, ForwardsSequencerRemoteJetsonCommandWhenJetsonOn) {
   tester.forwardsSequencerRemoteJetsonCommandWhenJetsonOn();
 }
 
+TEST(FPManager, ImxWarnStateEntersAndExitsWithoutShutdown) {
+  scalesSvc::FPManagerTester tester;
+  tester.imxWarnStateEntersAndExitsWithoutShutdown();
+}
+
+TEST(FPManager, PeripheralWarnStateEntersAndExitsWithoutShutdown) {
+  scalesSvc::FPManagerTester tester;
+  tester.peripheralWarnStateEntersAndExitsWithoutShutdown();
+}
+
+TEST(FPManager, JetsonWarnStateAggregatesAcrossSensors) {
+  scalesSvc::FPManagerTester tester;
+  tester.jetsonWarnStateAggregatesAcrossSensors();
+}
+
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

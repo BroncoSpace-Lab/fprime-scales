@@ -234,6 +234,23 @@ module scalesSvc {
             id 0x01 \
             format "Failed to read temperature from one or more sensors"
 
+        @ A sensor's IDLE/WARN/FAULT thresholds are not in a sane ascending
+        @ order (FAULT_LOW <= WARN_LOW <= IDLE_LOW <= IDLE_HIGH <= WARN_HIGH
+        @ <= FAULT_HIGH). Readings for this sensor may be misclassified (e.g.
+        @ reported as FAULT when WARN or IDLE was intended) until corrected.
+        event THRESHOLDS_MISCONFIGURED(
+            source: string size 32
+            faultLow: F32
+            warnLow: F32
+            idleLow: F32
+            idleHigh: F32
+            warnHigh: F32
+            faultHigh: F32
+        ) \
+            severity warning high \
+            id 0x02 \
+            format "{} temperature thresholds are not in ascending order: FAULT_LOW={} WARN_LOW={} IDLE_LOW={} IDLE_HIGH={} WARN_HIGH={} FAULT_HIGH={}"
+
 
         ###############################################################################
         # Standard AC Ports: Required for Channels, Events, Commands, and Parameters  #

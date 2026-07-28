@@ -15,6 +15,7 @@ namespace scalesSvc {
   class JetsonThermalManager :
     public JetsonThermalManagerComponentBase
   {
+    friend class JetsonThermalManagerTester;
 
     public:
 
@@ -90,7 +91,19 @@ namespace scalesSvc {
       bool readTemp(U8 index, F32& temp); // Helper function to read temp from a given device address
 
       scalesSvc::ThermalStates determineTempState(F32 tempCelsius); //!< Function to determine the temperature state (IDLE, WARNING, FAULT) based on the temperature in Celsius
-    
+
+      //! Returns true if the six thresholds are in a sane ascending order:
+      //! FAULT_LOW <= WARN_LOW <= IDLE_LOW <= IDLE_HIGH <= WARN_HIGH <= FAULT_HIGH
+      bool thresholdsAreOrdered(F32 faultLow, F32 warnLow, F32 idleLow,
+                                 F32 idleHigh, F32 warnHigh, F32 faultHigh) const;
+
+      //! Checks the current cached thresholds and emits
+      //! THRESHOLDS_MISCONFIGURED on the transition into a bad ordering.
+      void validateThresholds();
+
+      //! Publishes the current parameter values for GDS readback.
+      void writeParameterTelemetry();
+
     private:
 
       // Private instance variables/specific members
@@ -108,6 +121,11 @@ namespace scalesSvc {
       F32 WARN_HIGH_THR;
       F32 FAULT_LOW_THR;
       F32 FAULT_HIGH_THR;
+
+      //! Tracks whether the thresholds were last found to be in a sane
+      //! ascending order, so THRESHOLDS_MISCONFIGURED is only emitted on the
+      //! transition into a bad configuration, not on every check.
+      bool m_thresholdsValid = true;
   };
 
 }

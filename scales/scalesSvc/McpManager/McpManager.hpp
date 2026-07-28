@@ -17,6 +17,7 @@ namespace scalesSvc {
   class McpManager :
     public McpManagerComponentBase
   {
+    friend class McpManagerTester;
 
     public:
 
@@ -74,6 +75,11 @@ namespace scalesSvc {
       F32 FAULT_LOW_THR[NUM_SENSORS];
       F32 FAULT_HIGH_THR[NUM_SENSORS];
 
+      /* Tracks whether each sensor's thresholds were last found to be in a
+         sane ascending order, so THRESHOLDS_MISCONFIGURED is only emitted on
+         the transition into a bad configuration, not on every check. */
+      bool m_thresholdsValid[NUM_SENSORS];
+
     private:
 
       // ----------------------------------------------------------------------
@@ -116,6 +122,18 @@ namespace scalesSvc {
       bool readTemp(U8 deviceAddr, std::string& location, F32& temperature); //!< Function to read temperature from a given I2C device address
 
       scalesSvc::ThermalStates determineTempState(F32 tempCelsius, U8 sensorIndex); //!< Function to determine the temperature state (IDLE, WARNING, FAULT) based on the temperature in Celsius, using the given sensor's own thresholds
+
+      //! Returns true if the six thresholds are in a sane ascending order:
+      //! FAULT_LOW <= WARN_LOW <= IDLE_LOW <= IDLE_HIGH <= WARN_HIGH <= FAULT_HIGH
+      bool thresholdsAreOrdered(F32 faultLow, F32 warnLow, F32 idleLow,
+                                 F32 idleHigh, F32 warnHigh, F32 faultHigh) const;
+
+      //! Checks the given sensor's current thresholds and emits
+      //! THRESHOLDS_MISCONFIGURED on the transition into a bad ordering.
+      void validateThresholds(const char* source, FwIndexType sensorIndex);
+
+      //! Publishes the current parameter values for GDS readback.
+      void writeParameterTelemetry();
 
 
   };

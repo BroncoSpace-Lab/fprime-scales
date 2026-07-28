@@ -36,7 +36,10 @@ FPManager::FPManager(const char* const compName)
       m_shutdownOutputsAsserted(false),
       m_platformPoweroffTriggered(false),
       m_lastPublishedState(FPManagerState::INIT),
-      m_jetsonFaultSignalPending(false) {}
+      m_jetsonFaultSignalPending(false),
+      m_imxWarnActive(false),
+      m_peripheralWarnActive(false),
+      m_jetsonWarnActive(false) {}
 
 FPManager::~FPManager() {}
 
@@ -69,12 +72,14 @@ void FPManager::imxThermalReadingIn_handler(FwIndexType portNum,
                                              const ThermalReading& reading) {
     this->m_imxReading = reading;
     this->m_imxReadingValid = reading.get_tempState() != ThermalStates::NOT_USED;
+    this->updateWarnTracking("IMX", this->readingIsWarn(reading), this->m_imxWarnActive, reading);
 }
 
 void FPManager::peripheralThermalReadingIn_handler(FwIndexType portNum,
                                                    const ThermalReading& reading) {
     this->m_peripheralReading = reading;
     this->m_peripheralReadingValid = reading.get_tempState() != ThermalStates::NOT_USED;
+    this->updateWarnTracking("PERIPHERAL", this->readingIsWarn(reading), this->m_peripheralWarnActive, reading);
 }
 
 void FPManager::mcpThermalReadingIn_handler(FwIndexType portNum,
@@ -106,6 +111,12 @@ void FPManager::jetsonThermalReadingIn_handler(FwIndexType portNum,
         }
     }
     this->tlmWrite_JETSON_VALID_READING_COUNT(validCount);
+
+    ThermalReading jetsonWarnReading;
+    const bool jetsonCurrentlyWarn = this->findJetsonWarn(jetsonWarnReading);
+    this->updateWarnTracking("JETSON", jetsonCurrentlyWarn, this->m_jetsonWarnActive,
+                              jetsonCurrentlyWarn ? jetsonWarnReading : reading);
+
     if (this->m_mode == FPManagerState::HPC &&
         !this->m_jetsonFaultSignalPending &&
         this->readingIsFault(reading)) {
@@ -356,6 +367,35 @@ bool FPManager::findJetsonFault(ThermalReading& faultReading) const {
         }
     }
     return false;
+}
+
+bool FPManager::readingIsWarn(const ThermalReading& reading) const {
+    return reading.get_tempState() == ThermalStates::WARN;
+}
+
+bool FPManager::findJetsonWarn(ThermalReading& warnReading) const {
+    for (FwIndexType i = 0; i < JETSON_SENSOR_COUNT; i++) {
+        if (this->m_jetsonReadingValid[i] && this->readingIsWarn(this->m_jetsonReadings[i])) {
+            warnReading = this->m_jetsonReadings[i];
+            return true;
+        }
+    }
+    return false;
+}
+
+void FPManager::updateWarnTracking(const char* source, bool currentlyWarn,
+                                   bool& warnActiveFlag, const ThermalReading& reading) {
+    if (currentlyWarn && !warnActiveFlag) {
+        warnActiveFlag = true;
+        this->log_WARNING_LO_WARN_STATE_ENTERED(
+            Fw::String(source), reading.get_sensorId(), reading.get_temperature(),
+            reading.get_location(), reading.get_timestamp());
+    } else if (!currentlyWarn && warnActiveFlag) {
+        warnActiveFlag = false;
+        this->log_ACTIVITY_HI_WARN_STATE_EXITED(
+            Fw::String(source), reading.get_sensorId(), reading.get_temperature(),
+            reading.get_location(), reading.get_timestamp());
+    }
 }
 
 FwOpcodeType FPManager::extractOpcode(Fw::ComBuffer& data) const {

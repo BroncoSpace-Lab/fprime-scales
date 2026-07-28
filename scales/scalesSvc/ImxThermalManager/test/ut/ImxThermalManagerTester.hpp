@@ -54,6 +54,11 @@ namespace scalesSvc {
       //! To do
       void ImxThermalManagerTesting();
 
+      //! THRESHOLDS_MISCONFIGURED fires once on the transition into a bad
+      //! ordering, stays silent while it remains bad, and can re-fire after
+      //! being fixed and broken again.
+      void thresholdsMisconfiguredEmitsOnceOnTransition();
+
     private:
 
       // ----------------------------------------------------------------------

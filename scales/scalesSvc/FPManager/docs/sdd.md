@@ -37,6 +37,27 @@ Jetson readings and writes `JETSON_VALID_READING_COUNT=0`. This prevents a
 pre-shutdown Jetson `FAULT` reading from being reused when the operator later
 re-enters HPC Mode; a new Jetson fault requires a new reading after power-on.
 
+FPManager also tracks `ThermalStates.WARN` for each fault domain purely for
+operator awareness -- unlike `FAULT`, entering or exiting `WARN` triggers no
+protective action at all. i.MX and peripheral each have their own one-shot
+latch (`m_imxWarnActive`, `m_peripheralWarnActive`); Jetson uses a single
+aggregate latch (`m_jetsonWarnActive`) across all nine sensors, mirroring how
+Jetson `FAULT` is already aggregated, since the sensors share the same die.
+The check runs directly inside each reading handler
+(`imxThermalReadingIn_handler`, `peripheralThermalReadingIn_handler`,
+`jetsonThermalReadingIn_handler`) as soon as a new reading arrives -- it does
+not wait for the next health-check tick the way `FAULT` handling for i.MX and
+peripheral does. `WARN_STATE_ENTERED` is emitted on the transition into
+`WARN` from any other state; `WARN_STATE_EXITED` is emitted on the transition
+out of `WARN`, whether that's recovery to `IDLE`, escalation to `FAULT`, or
+the reading becoming unavailable (`NOT_USED`). Repeated `WARN` readings do
+not re-emit `WARN_STATE_ENTERED`, and the Jetson aggregate only exits `WARN`
+once every cached Jetson reading has left `WARN`. This is a read-only
+observability layer: it never sets `FP_STATE`, never asserts a protection
+output, and is completely independent of the `FPStateMachine` and the
+SAFE/HPC/FAULT/EMERGENCY mode -- it keeps tracking regardless of what mode
+FPManager itself is in.
+
 The Jetson is not permitted to be powered on by command in Safe Mode. A Jetson
 power-on request is accepted only in HPC Mode. `DISABLE_HPC_MODE` returns the
 system to Safe Mode, requests Jetson OFF, and republishes `FP_STATE=SAFE`.
@@ -569,6 +590,19 @@ sequenceDiagram
 - [x] Add a regression test confirming a second FATAL announcement re-fires
   the announcement/forwarding events but does not re-assert the
   already-latched Jetson/peripheral protected outputs.
+- [x] Route the `CmdSequencer`-originated remote Jetson command path
+  (`imx_seqCmdSplitter`) through the same Jetson-power-state gate as the
+  GDS-direct path (`imx_cmdSplitter`), by arrayizing
+  `remoteJetsonCmdIn`/`remoteJetsonCmdOut`/`remoteJetsonCmdResponseIn`/
+  `remoteJetsonCmdResponseOut` to `[2]` and threading `portNum` through one
+  shared handler implementation. Fixes a crash where a sequence targeting a
+  powered-off Jetson reached `Svc::ComStub`'s never-connected assert instead
+  of being rejected gracefully.
+- [x] Add `WARN_STATE_ENTERED`/`WARN_STATE_EXITED` events, tracked
+  per-reading-handler (not tick-driven) for i.MX and peripheral individually
+  and aggregated across all nine Jetson sensors, as a read-only observability
+  layer alongside existing telemetry -- no protective action is taken for
+  `WARN`, only `FAULT` still triggers shutdown.
 
 ## Component Relationships
 
@@ -623,6 +657,8 @@ authoritative port wiring is in `ImxDeployment/Top/topology.fpp`.
 | Remote Jetson command rejected | Warning emitted when a remote Jetson command is blocked because the Jetson is not powered on. |
 | Platform poweroff syscall failed | Warning emitted when the direct `reboot(RB_POWER_OFF)` syscall fails, with the `errno`. Compiled out under `BUILD_UT`. |
 | Platform poweroff fallback failed | Warning emitted when the `systemd-run ... poweroff -f` fallback exits non-zero or could not be spawned, with the exit code. Compiled out under `BUILD_UT`. |
+| WARN state entered | Low-severity warning emitted when i.MX, peripheral, or the aggregate Jetson die transitions into `ThermalStates.WARN`. Purely informational; no protective action is taken. |
+| WARN state exited | Activity event emitted when i.MX, peripheral, or the aggregate Jetson die transitions out of `ThermalStates.WARN` (to `IDLE`, `FAULT`, or unavailable). |
 
 ## Telemetry
 | Name | Description |
@@ -651,6 +687,9 @@ authoritative port wiring is in `ImxDeployment/Top/topology.fpp`.
 | `forwardsRemoteJetsonCommandWhenJetsonOn` | Sends a remote Jetson command on port index 0 (GDS-direct) while FPManager's Jetson power state is `ON`. | Hub command output and remote response relayed unchanged | FP-013 |
 | `rejectsSequencerRemoteJetsonCommandWhenJetsonOff` | Sends a remote Jetson command on port index 1 (`imx_seqCmdSplitter`/`CmdSequencer`-originated) while FPManager's Jetson power state is `OFF`. | No hub command output, local `BUSY` response, rejection event | FP-013, FP-015 |
 | `forwardsSequencerRemoteJetsonCommandWhenJetsonOn` | Sends a remote Jetson command on port index 1 while FPManager's Jetson power state is `ON`. | Hub command output and remote response relayed unchanged | FP-013, FP-015 |
+| `imxWarnStateEntersAndExitsWithoutShutdown` | Sends an i.MX `WARN` reading, a repeated `WARN` reading, then an `IDLE` reading. | `WARN_STATE_ENTERED` once (not re-fired on the repeat), then `WARN_STATE_EXITED` once; no `FAULT_DETECTED`/`EMERGENCY_SHUTDOWN`/protected-output/fatal calls at any point | FP-016 |
+| `peripheralWarnStateEntersAndExitsWithoutShutdown` | Sends a peripheral `WARN` reading, then an `IDLE` reading. | `WARN_STATE_ENTERED` then `WARN_STATE_EXITED`; no `FAULT_DETECTED` or peripheral power-off | FP-016 |
+| `jetsonWarnStateAggregatesAcrossSensors` | Sends `WARN` readings for two different Jetson sensors (staggered), then clears them one at a time. | One `WARN_STATE_ENTERED` when the first sensor enters `WARN` (none for the second, already-`WARN` aggregate); no `WARN_STATE_EXITED` until the last `WARN` sensor clears | FP-016 |
 
 `triggerPlatformPoweroff()`'s actual `reboot(RB_POWER_OFF)` syscall and
 `systemd-run`/`poweroff -f` fallback are compiled out under `BUILD_UT`
@@ -679,6 +718,7 @@ The FPManager UT target is built with `fprime-util generate imx8x --ut --disable
 | FP-012 | FPManager shall emit a state transition event whenever the published `FP_STATE` changes, and shall not emit transition events for repeated writes of the same state. | `emitsStateTransitionEventsOnlyOnChange` |
 | FP-014 | The protected Jetson/peripheral shutdown outputs shall be asserted at most once per process lifetime, regardless of how many times or through which path (`fatalIn`, i.MX thermal FAULT) Emergency Shutdown is re-entered. | `emergencyShutdownProtectedOutputsAreLatchedAcrossRepeatedFatals` |
 | FP-015 | The Jetson-power-state gate on remote Jetson commands (FP-013) shall apply identically regardless of which remote command source (GDS-direct via `imx_cmdSplitter`, or `CmdSequencer`-originated via `imx_seqCmdSplitter`) the command arrived through. | `rejectsSequencerRemoteJetsonCommandWhenJetsonOff`, `forwardsSequencerRemoteJetsonCommandWhenJetsonOn` |
+| FP-016 | FPManager shall emit `WARN_STATE_ENTERED`/`WARN_STATE_EXITED` for i.MX, peripheral, and the aggregate Jetson die whenever the corresponding domain transitions into or out of `ThermalStates.WARN`, without asserting any protection output, changing `FP_STATE`, or otherwise taking protective action. | `imxWarnStateEntersAndExitsWithoutShutdown`, `peripheralWarnStateEntersAndExitsWithoutShutdown`, `jetsonWarnStateAggregatesAcrossSensors` |
 
 ## Change Log
 | Date | Description |
@@ -704,3 +744,4 @@ The FPManager UT target is built with `fprime-util generate imx8x --ut --disable
 | 2026-07-27 | Diagnosed and fixed the i.MX not actually powering off on Emergency Shutdown: `ImxDeployment` runs as a systemd service with `Restart=on-failure`, and every attempt to run `poweroff -f` from a forked child of that service (or to ask systemd via `systemctl/poweroff --no-block`) lost the race against systemd's `KillMode=control-group` reaping the service's cgroup once `FatalHandler` aborted the process. Replaced this with a direct `reboot(RB_POWER_OFF)` syscall (confirmed correct on hardware: `RB_POWER_OFF`, not `RB_AUTOBOOT`) with a `systemd-run`-detached `poweroff -f` fallback, and added `PLATFORM_POWEROFF_SYSCALL_FAILED`/`PLATFORM_POWEROFF_FALLBACK_FAILED` diagnostic events. |
 | 2026-07-27 | Decoupled `triggerPlatformPoweroff()` from the state machine's `$fatal` dispatch: it is now called directly and unconditionally from both `fatalIn_handler` and `triggerImxEmergencyShutdown`, guarded by a one-shot `m_platformPoweroffTriggered` flag, so the poweroff attempt cannot be skipped by the state machine, the Jetson/peripheral output calls, or anything else on either path. Confirmed on hardware via fault injection (`MCP_IMX_FAULT_HIGH_PRM_SET` / `IMX_CPU_FAULT_HIGH_PRM_SET`) that the i.MX now powers off instead of the flight software merely restarting. Added `emergencyShutdownProtectedOutputsAreLatchedAcrossRepeatedFatals` to cover the resulting cross-path latching behavior (FP-014). |
 | 2026-07-27 | Fixed a crash: running the `run-ml.bin` sequence while the Jetson was powered off triggered `FW_ASSERT` in `Svc::ComStub::dataIn_handler` (`lib/fprime/Svc/ComStub/ComStub.cpp:28`) and killed the flight software, because `imx_seqCmdSplitter.RemoteCmd[0]` (the `CmdSequencer`-originated remote path) was wired straight to `imx_hub.cmdDispIn[1]` with no Jetson-power-state gate at all -- only the GDS-direct path through `imx_cmdSplitter` was gated. `remoteJetsonCmdIn`/`remoteJetsonCmdOut`/`remoteJetsonCmdResponseIn`/`remoteJetsonCmdResponseOut` are now `[2]`-sized arrays (index 0 = GDS-direct, index 1 = sequencer), with `portNum` threaded straight through so the same gate rejects both sources identically with `BUSY` instead of crashing. Added `rejectsSequencerRemoteJetsonCommandWhenJetsonOff`/`forwardsSequencerRemoteJetsonCommandWhenJetsonOn` (FP-015). |
+| 2026-07-27 | Added `WARN_STATE_ENTERED`/`WARN_STATE_EXITED` as a read-only observability layer alongside the existing `FAULT`-triggered protection actions: i.MX and peripheral each get a one-shot latch, Jetson uses a single aggregate latch across all nine sensors (mirroring how Jetson `FAULT` is already aggregated), checked directly inside each reading handler as soon as a new reading arrives rather than waiting for the next health-check tick. No `FP_STATE` change, no protection output, and no interaction with the `FPStateMachine` (FP-016). |
