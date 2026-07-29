@@ -137,7 +137,20 @@ namespace scalesSvc {
         // acknowledgment/JETSON_SHUTDOWN_STARTED above already told the i.MX
         // the shutdown is underway.
         if (status == -1 || !WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-          Fw::String reason("shutdown command failed");
+          // Include the actual exit status in the event so a GDS/telemetry
+          // session can tell "no NOPASSWD sudoers rule" (sudo exits nonzero,
+          // typically 1) apart from "wrong path for shutdown on this image"
+          // or a shell that failed to spawn at all, without needing to SSH
+          // into the Jetson to re-run the command by hand.
+          char reasonBuf[64];
+          if (status == -1) {
+            snprintf(reasonBuf, sizeof(reasonBuf), "shutdown: system() failed to spawn a shell");
+          } else if (!WIFEXITED(status)) {
+            snprintf(reasonBuf, sizeof(reasonBuf), "shutdown: process did not exit normally (raw status %d)", status);
+          } else {
+            snprintf(reasonBuf, sizeof(reasonBuf), "shutdown exited with status %d", WEXITSTATUS(status));
+          }
+          Fw::String reason(reasonBuf);
           this->log_WARNING_HI_JETSON_POWER_STATE_CHANGE_FAILED(stateReq, reason);
 
           // Report ON because shutdown failed and the Jetson is still alive.

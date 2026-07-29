@@ -65,10 +65,13 @@ namespace scalesSvc {
     m_powerTimeoutTicks = 0;
     m_waitingToCutJetsonPower = false;
     m_powerOffDelayTicks = 0;
-    if (m_currentJetsonPowerState.e == JetsonPowerStateID::ON &&
+    if (m_jetsonPowerStateKnown && m_currentJetsonPowerState.e == JetsonPowerStateID::ON &&
         this->isConnected_reqJetsonPwrState_OutputPort(0)) {
-      // FP recovery OFF is graceful when the Jetson is alive: request Jetson-side
-      // shutdown, then reuse the existing ack/timeout path to cut GPIO power.
+      // FP recovery OFF is graceful only when the Jetson is CONFIRMED alive
+      // (see the matching gate/comment in REQUEST_JETSON_POWER_STATE_cmdHandler
+      // for why an unconfirmed state must not attempt the hub-routed
+      // reqJetsonPwrState_out call): request Jetson-side shutdown, then reuse
+      // the existing ack/timeout path to cut GPIO power.
       m_hasPendingPowerCmd = true;
       this->reqJetsonPwrState_out(0, stateReq);
       return;
@@ -288,27 +291,35 @@ namespace scalesSvc {
 
       } else if (jetsonState.e == JetsonPowerStateID::OFF) {
         printf("Requesting Jetson power state change to OFF\n");
-        // Prefer the graceful path unless we are CONFIRMED off -- an
-        // unconfirmed state must not be treated as "already off". At i.MX
-        // boot m_currentJetsonPowerState defaults to OFF before any real
-        // report has arrived; if the Jetson is actually alive at that point
-        // (e.g. the i.MX rebooted independently while the Jetson stayed up),
-        // treating the default as truth would skip reqJetsonPwrState_out()
-        // and cut GPIO power to a live Linux system without asking it to
-        // shut down first. If the Jetson turns out to already be off, this
-        // request simply times out (see schedIn_handler) and falls back to
-        // the same direct GPIO cut a few ticks later -- functionally
-        // harmless since the GPIO is already low.
-        const bool confirmedOff =
-            m_jetsonPowerStateKnown && m_currentJetsonPowerState.e == JetsonPowerStateID::OFF;
-        if (!confirmedOff && this->isConnected_reqJetsonPwrState_OutputPort(0)) {
-          // The commanded OFF path is graceful when the Jetson may be ON:
-          // ask the Jetson-side manager to shut down, wait for its OFF report,
-          // then cut physical power after JETSON_POWER_OFF_DELAY_TICKS.
+        // Only take the graceful Jetson-side shutdown path when the Jetson
+        // is CONFIRMED on -- reqJetsonPwrState_out() is wired straight
+        // through GenericHub into imx_hubComStub.dataIn with no queue/gate
+        // in between (see reqJetsonPwrState -> imx_hub.serialIn[1] in
+        // ImxDeployment/Top/topology.fpp); if the underlying TCP link isn't
+        // actually connected, ComStub's "never send while reinitializing"
+        // FW_ASSERT trips immediately and takes down the whole i.MX flight
+        // software -- the same class of bug already fixed for
+        // remoteJetsonCmdIn (see the topology comment there). A real report
+        // received over that link is the ONLY evidence JetsonManager ever
+        // has that it's alive, so an unconfirmed state (the boot-time
+        // default, or a state that was never explicitly confirmed) must be
+        // treated the same as confirmed-off here: a direct, idempotent GPIO
+        // cut, never a hub call. This trades away an instant graceful
+        // shutdown in the narrow case where the i.MX rebooted independently
+        // while the Jetson stayed alive and hasn't re-reported yet -- that
+        // window closes as soon as the Jetson's next boot-time report
+        // arrives, and a Jetson that's actually off is unaffected either way.
+        const bool confirmedOn =
+            m_jetsonPowerStateKnown && m_currentJetsonPowerState.e == JetsonPowerStateID::ON;
+        if (confirmedOn && this->isConnected_reqJetsonPwrState_OutputPort(0)) {
+          // The commanded OFF path is graceful when the Jetson is confirmed
+          // ON: ask the Jetson-side manager to shut down, wait for its OFF
+          // report, then cut physical power after JETSON_POWER_OFF_DELAY_TICKS.
           this->reqJetsonPwrState_out(0, jetsonState);
         } else {
-          // The Jetson is confirmed already off, or the Jetson-side shutdown
-          // port is unavailable, so OFF remains idempotent and hardware-safe.
+          // Jetson state unknown or confirmed off, or the Jetson-side
+          // shutdown port is unavailable: OFF is idempotent and
+          // hardware-safe, and never touches the hub transport.
           this->gpioSet_out(0, JETSON_POWER_GPIO_OFF);
           m_currentJetsonPowerState = JetsonPowerStateID::OFF;
           m_jetsonPowerStateKnown = true;

@@ -88,22 +88,28 @@ void JetsonManagerTester ::requestJetsonPowerStateOnDrivesGpioImmediately() {
     ASSERT_EQ(this->cmdResponseHistory->at(0).response, Fw::CmdResponse::OK);
 }
 
-void JetsonManagerTester ::requestJetsonPowerStateOffUnconfirmedPrefersGraceful() {
+void JetsonManagerTester ::requestJetsonPowerStateOffUnconfirmedFallsBackToDirectCut() {
     // Fresh component: m_jetsonPowerStateKnown is false and
-    // m_currentJetsonPowerState defaults to OFF. Before the fix for this
-    // exact bug, that unconfirmed default was trusted as fact and OFF was
-    // treated as an idempotent no-op GPIO cut -- skipping the graceful
-    // Jetson-side shutdown request even if the Jetson was actually alive.
-    // It must now prefer the graceful path whenever the state isn't
-    // confirmed off.
+    // m_currentJetsonPowerState defaults to OFF. reqJetsonPwrState_out() is
+    // wired straight through GenericHub into imx_hubComStub.dataIn with no
+    // queue/gate in between -- calling it while the Jetson (and therefore the
+    // hub TCP link) has never been confirmed alive trips ComStub's
+    // never-connected FW_ASSERT and kills the whole i.MX flight software.
+    // An earlier version of this gate preferred the graceful path whenever
+    // the state merely wasn't confirmed OFF, which reintroduced exactly that
+    // crash on a fresh/rebooted i.MX with the Jetson actually off. The gate
+    // must now require confirmed ON before ever attempting the hub call --
+    // unconfirmed falls back to the same safe, idempotent direct GPIO cut as
+    // confirmed-off.
     m_authorizeResult = Fw::Success::SUCCESS;
     this->sendCmd_REQUEST_JETSON_POWER_STATE(0, 1, scalesSvc::JetsonPowerStateID::OFF);
     this->component.doDispatch();
 
-    ASSERT_from_reqJetsonPwrState_SIZE(1);
-    ASSERT_from_reqJetsonPwrState(0, scalesSvc::JetsonPowerStateID::OFF);
-    ASSERT_from_gpioSet_SIZE(0);
-    ASSERT_CMD_RESPONSE_SIZE(0);
+    ASSERT_from_reqJetsonPwrState_SIZE(0);
+    ASSERT_from_gpioSet_SIZE(1);
+    ASSERT_from_gpioSet(0, Fw::Logic::LOW);
+    ASSERT_CMD_RESPONSE_SIZE(1);
+    ASSERT_EQ(this->cmdResponseHistory->at(0).response, Fw::CmdResponse::OK);
 }
 
 void JetsonManagerTester ::requestJetsonPowerStateOffConfirmedOnUsesGracefulThenCutsPower() {
@@ -205,7 +211,12 @@ void JetsonManagerTester ::requestJetsonPowerStateRejectedByAuthorization() {
 void JetsonManagerTester ::requestJetsonPowerStateBusyWhilePending() {
     this->component.loadParameters();
 
-    // First OFF request while unconfirmed takes the graceful (pending) path.
+    // Confirm ON first so the first OFF request below takes the graceful
+    // (pending) path instead of completing synchronously via direct GPIO cut.
+    this->invoke_to_currentJetsonPwrState(0, scalesSvc::JetsonPowerStateID::ON);
+    this->component.doDispatch();
+    this->clearHistory();
+
     m_authorizeResult = Fw::Success::SUCCESS;
     this->sendCmd_REQUEST_JETSON_POWER_STATE(0, 10, scalesSvc::JetsonPowerStateID::OFF);
     this->component.doDispatch();

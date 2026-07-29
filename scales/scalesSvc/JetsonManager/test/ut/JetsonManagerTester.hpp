@@ -23,7 +23,7 @@ class JetsonManagerTester final : public JetsonManagerGTestBase {
     void requestPowerModeDeferredCompletion();
     void requestPowerModeTimeout();
     void requestJetsonPowerStateOnDrivesGpioImmediately();
-    void requestJetsonPowerStateOffUnconfirmedPrefersGraceful();
+    void requestJetsonPowerStateOffUnconfirmedFallsBackToDirectCut();
     void requestJetsonPowerStateOffConfirmedOnUsesGracefulThenCutsPower();
     void requestJetsonPowerStateOffConfirmedOffIsIdempotent();
     void requestJetsonPowerStateOffTimesOutAndFallsBackToDirectCut();

@@ -23,10 +23,10 @@ TEST(JetsonManager, RequestJetsonPowerStateOnDrivesGpioImmediately) {
     tester.requestJetsonPowerStateOnDrivesGpioImmediately();
 }
 
-TEST(JetsonManager, RequestJetsonPowerStateOffUnconfirmedPrefersGraceful) {
+TEST(JetsonManager, RequestJetsonPowerStateOffUnconfirmedFallsBackToDirectCut) {
     RecordProperty("requirement", "JM-006");
     scalesSvc::JetsonManagerTester tester;
-    tester.requestJetsonPowerStateOffUnconfirmedPrefersGraceful();
+    tester.requestJetsonPowerStateOffUnconfirmedFallsBackToDirectCut();
 }
 
 TEST(JetsonManager, RequestJetsonPowerStateOffConfirmedOnUsesGracefulThenCutsPower) {
