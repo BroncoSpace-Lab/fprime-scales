@@ -50,10 +50,6 @@ void DataProducer ::ENABLE_DATA_PRODUCTS_cmdHandler(FwOpcodeType opCode, U32 cmd
 void DataProducer ::DISABLE_DATA_PRODUCTS_cmdHandler(FwOpcodeType opCode, U32 cmdSeq) {
     
     this->m_dpCollectMode = false;
-    this->m_cpuTempContainerValid = false;
-    this->m_mcpTempContainerValid = false;
-    this->m_inaPowerContainerValid = false;
-    this->m_jetsonTempContainerValid = false;
     this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
 }
 
@@ -66,7 +62,7 @@ void DataProducer ::McpThermalReadingIn_handler(FwIndexType portNum,
                                                 const scalesSvc::ThermalReading& perifThermalReading,
                                                 const scalesSvc::ThermalReading& jetsonThermalReading) {
 
-    if(this->m_mcpTempContainerValid){
+    if(this->m_mcpTempContainerValid && this->m_dpCollectMode){
         if(!this->mcpSerialize_Send(obcThermalReading, perifThermalReading, jetsonThermalReading)){
             printf("[ERROR] Couldn't serialize and send mcp data products\n");
         }
@@ -74,7 +70,7 @@ void DataProducer ::McpThermalReadingIn_handler(FwIndexType portNum,
 }
 
 void DataProducer ::cpuThermalReadIn_handler(FwIndexType portNum, const scalesSvc::ThermalReading& cpuThermalReading) {
-    if(this->m_cpuTempContainerValid){
+    if(this->m_cpuTempContainerValid && this->m_dpCollectMode){
         if(!this->cpuSerialize_Send(cpuThermalReading)){
             printf("[ERROR] Couldn't serialize and send cpu data products\n");
         }
@@ -92,7 +88,7 @@ void DataProducer ::jetsonThermalReadIn_handler(FwIndexType portNum,
                                                 const scalesSvc::ThermalReading& jetson_soc2ThermalReading,
                                                 const scalesSvc::ThermalReading& jetson_tjThermalReading) {
                                                     
-    if(this->m_jetsonTempContainerValid){
+    if(this->m_jetsonTempContainerValid && this->m_dpCollectMode){
         if(!this->jetsonTempSerialize_Send( jetson_cpuThermalReading,
                                             jetson_gpuTheramlReading,
                                             jetson_cv0ThermalReading,
@@ -111,7 +107,7 @@ void DataProducer ::inaPowerReadIn_handler(FwIndexType portNum,
                                            const scalesSvc::PowerReading& obcPowerReading,
                                            const scalesSvc::PowerReading& perifPowerReading,
                                            const scalesSvc::PowerReading& jetsonPowerReading) {
-    if(this->m_inaPowerContainerValid){
+    if(this->m_inaPowerContainerValid && this->m_dpCollectMode){
         if(!this->inaSerialize_Send(obcPowerReading, perifPowerReading, jetsonPowerReading)){
             printf("[ERROR] Couldn't serialize and send ina data products\n");
         }
@@ -120,7 +116,7 @@ void DataProducer ::inaPowerReadIn_handler(FwIndexType portNum,
 
 void DataProducer ::run_handler(FwIndexType portNum, U32 context) {
 
-    if(!m_dpCollectMode) {return;}
+    if(!this->m_dpCollectMode) {return;}
 
     if(!this->m_mcpTempContainerValid){
         if(!this->initMcpContainer()){
