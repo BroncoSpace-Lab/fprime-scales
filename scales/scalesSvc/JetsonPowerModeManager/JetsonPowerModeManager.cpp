@@ -21,7 +21,9 @@ namespace scalesSvc {
     JetsonPowerModeManager(const char* const compName) :
       JetsonPowerModeManagerComponentBase(compName),
       m_modeReported(false),
-      m_powerStateReported(false)
+      m_powerStateReported(false),
+      m_powerModeReader(&get_nvp_mode),
+      m_shellRunner(&std::system)
   {
 
   }
@@ -30,6 +32,18 @@ namespace scalesSvc {
     ~JetsonPowerModeManager()
   {
 
+  }
+
+  void JetsonPowerModeManager ::
+    configurePowerModeReader(PowerModeReader reader)
+  {
+    this->m_powerModeReader = reader;
+  }
+
+  void JetsonPowerModeManager ::
+    configureShellRunner(ShellCommandRunner runner)
+  {
+    this->m_shellRunner = runner;
   }
 
   // ----------------------------------------------------------------------
@@ -53,13 +67,14 @@ namespace scalesSvc {
     // that both sides were rebuilt with the updated source files.
     this->log_ACTIVITY_HI_POWER_MODE_REQUEST_RECEIVED(modeReq);
 
-    U8 modeNow = get_nvp_mode();
+    U8 modeNow = static_cast<U8>(this->m_powerModeReader());
     if (modeReq.e != static_cast<PowerModeID::T>(modeNow)) {
       // Mode change needed: run nvpmodel. The Jetson will reboot automatically.
       // Mark m_modeReported false so when the system comes back up, the first
       // schedIn tick will report the new mode to the IMX for confirmation.
       m_modeReported = false;
-      int ret = std::system(("echo y | sudo -n /usr/sbin/nvpmodel -m " + std::to_string(static_cast<U8>(modeReq.e))).c_str());
+      int ret = this->m_shellRunner(
+          ("echo y | sudo -n /usr/sbin/nvpmodel -m " + std::to_string(static_cast<U8>(modeReq.e))).c_str());
       if (ret != 0) {
         // nvpmodel failed (non-zero exit) — report it so the IMX can see the error.
         // This also prevents the IMX from waiting forever for a confirmation.
@@ -109,8 +124,8 @@ namespace scalesSvc {
         this->jetsonPowerStateSend_out(0, JetsonPowerStateID::OFF);
         this->tlmWrite_CurrentJetsonPowerState(JetsonPowerStateID::OFF);
         this->log_ACTIVITY_HI_JETSON_SHUTDOWN_STARTED(stateReq);
-        
-        int ret = std::system("sudo -n /sbin/shutdown -h now");
+
+        int ret = this->m_shellRunner("sudo -n /sbin/shutdown -h now");
 
         if (ret == -1) {
           Fw::String reason("shutdown command returned non-zero exit code");
@@ -147,7 +162,7 @@ namespace scalesSvc {
     // finished rebooting and can confirm the REQUEST_POWER_MODE command.
     // We only fire once per boot to avoid spamming the hub every tick.
     if (!m_modeReported) {
-      U8 pwr_mode = get_nvp_mode();
+      U8 pwr_mode = static_cast<U8>(this->m_powerModeReader());
       if (pwr_mode != 4) {
         PowerModeID current(static_cast<PowerModeID::T>(pwr_mode));
         this->powerModeSend_out(0, current);
@@ -168,10 +183,10 @@ namespace scalesSvc {
         scalesSvc::PowerModeID mode
     )
   {
-    U8 modeNow = get_nvp_mode();
+    U8 modeNow = static_cast<U8>(this->m_powerModeReader());
     if(mode.e != static_cast<PowerModeID::T>(modeNow))
     { //if the jetson's mode does not match the requested mode
-      std::system(("echo y | sudo -n /usr/sbin/nvpmodel -m " + std::to_string(static_cast<U8>(mode.e))).c_str());
+      this->m_shellRunner(("echo y | sudo -n /usr/sbin/nvpmodel -m " + std::to_string(static_cast<U8>(mode.e))).c_str());
       this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
     }
     else{//if the jetson is already in the requested mode, do nothing
@@ -186,7 +201,7 @@ namespace scalesSvc {
         U32 cmdSeq
     )
   {
-    U8 pwr_mode = get_nvp_mode();
+    U8 pwr_mode = static_cast<U8>(this->m_powerModeReader());
     if (pwr_mode == 4)
     {//error getting power mode from jetson
       this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::VALIDATION_ERROR);
@@ -215,9 +230,8 @@ namespace scalesSvc {
     if (state.e == JetsonPowerStateID::OFF) {
       this->jetsonPowerStateSend_out(0, JetsonPowerStateID::OFF);
       this->tlmWrite_CurrentJetsonPowerState(JetsonPowerStateID::OFF);
-      this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
 
-      int ret = std::system("sudo -n /sbin/shutdown -h now");
+      int ret = this->m_shellRunner("sudo -n /sbin/shutdown -h now");
 
       if (ret ==0) {
         this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);

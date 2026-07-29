@@ -14,6 +14,8 @@ namespace scalesSvc {
     public InaManagerComponentBase
   {
 
+    friend class InaManagerTester;
+
     public:
 
       // ----------------------------------------------------------------------

@@ -129,14 +129,10 @@ sequenceDiagram
   `Svc.ComDataWithContext`.
 - [x] Wire both directions into the i.MX hub topology (`send_hub` and
   `recv_hub` connection blocks in `ImxDeployment/Top/topology.fpp`).
-- [ ] No unit tests exist for this component (`test/ut/` is absent; the
-  `CMakeLists.txt` has no `register_fprime_ut` block). Given each handler is
-  a one-line pass-through, the risk of a regression is low, but there is
-  currently no automated check that a buffer/context pair survives the
-  round trip unchanged, or that ownership (`*Return` ports) is always
-  returned to the correct originating side. Recommended follow-up: a small
-  `HubComAdapterTester` asserting each of the four handlers forwards its
-  argument(s) unchanged to the corresponding output port exactly once.
+- [x] Added `HubComAdapterTester` with one test per handler, asserting each
+  forwards its argument(s) unchanged to the corresponding output port
+  exactly once, and that the manufactured `FrameContext` on the two
+  send-side handlers is the struct's default value.
 
 ## Component Relationships
 
@@ -187,19 +183,33 @@ blocks; the instance itself (`imx_hubComAdapter`) is declared in
 | None | `HubComAdapter` has no telemetry (no `telemetry` port). |
 
 ## Unit Tests
-| Name | Description | Output | Coverage |
-|---|---|---|---|
-| None | No `test/ut/` directory or `register_fprime_ut` target exists for this component today. | -- | -- |
+
+Measured via `fprime-util check --coverage`: **100% line (16/16), 100%
+function (6/6), 50.0% branch (4/8)**. The uncovered branches are ASan/UBSan
+instrumentation edges around construction (the same non-actionable pattern
+documented throughout this audit), unsurprising for a component this small.
+Each test is tagged with `RecordProperty("requirement", "<REQ-ID>")`, so
+running the test binary with `--gtest_output=xml:<path>` produces a
+JUnit-style XML report whose `<testcase>` elements carry that mapping as a
+machine-checkable artifact.
+
+| Name | Description | Verifies |
+|---|---|---|
+| `BufferInForwardsToComOutWithDefaultContext` | Invokes `bufferIn` with a buffer and confirms `comOut` receives the same data pointer/size paired with a default-constructed `FrameContext`. | HCA-001 |
+| `ComReturnInForwardsToBufferInReturn` | Invokes `comReturnIn` and confirms `bufferInReturn` receives the same buffer. | HCA-002 |
+| `ComInForwardsToBufferOut` | Invokes `comIn` and confirms `bufferOut` receives the same buffer. | HCA-003 |
+| `BufferOutReturnForwardsToComInReturnWithDefaultContext` | Invokes `bufferOutReturn` and confirms `comInReturn` receives the same buffer paired with a default-constructed `FrameContext`. | HCA-004 |
 
 ## Requirements
-| Name | Description | Validation |
+| Name | Description | Verified By |
 |---|---|---|
-| HCA-001 | A buffer received on `bufferIn` shall be forwarded to `comOut` unchanged, paired with a default `FrameContext`. | Verified by code inspection (`HubComAdapter.cpp`); no automated test exists |
-| HCA-002 | A buffer received on `comReturnIn` shall be forwarded to `bufferInReturn` unchanged. | Verified by code inspection; no automated test exists |
-| HCA-003 | A buffer received on `comIn` shall be forwarded to `bufferOut` unchanged. | Verified by code inspection; no automated test exists |
-| HCA-004 | A buffer received on `bufferOutReturn` shall be forwarded to `comInReturn` unchanged, paired with a default `FrameContext`. | Verified by code inspection; no automated test exists |
+| HCA-001 | A buffer received on `bufferIn` shall be forwarded to `comOut` unchanged, paired with a default `FrameContext`. | `BufferInForwardsToComOutWithDefaultContext` |
+| HCA-002 | A buffer received on `comReturnIn` shall be forwarded to `bufferInReturn` unchanged. | `ComReturnInForwardsToBufferInReturn` |
+| HCA-003 | A buffer received on `comIn` shall be forwarded to `bufferOut` unchanged. | `ComInForwardsToBufferOut` |
+| HCA-004 | A buffer received on `bufferOutReturn` shall be forwarded to `comInReturn` unchanged, paired with a default `FrameContext`. | `BufferOutReturnForwardsToComInReturnWithDefaultContext` |
 
 ## Change Log
 | Date | Description |
 |---|---|
 | 2026-07-27 | Initial SDD documenting the implemented pass-through adapter, its topology wiring, and the current absence of unit test coverage. No functional changes; this is a documentation-only pass. |
+| 2026-07-28 | Added `HubComAdapterTester` (`test/ut/`) with one test per handler and wired `register_fprime_ut` into `CMakeLists.txt` -- this component had no test target at all before. Measured 100% line, 100% function, 50.0% branch coverage. Tagged every test with `RecordProperty("requirement", ...)` and added `Verified By`/`Verifies` traceability to the Requirements/Unit Tests tables. | Luca Lanzillotta |

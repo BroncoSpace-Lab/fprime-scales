@@ -79,6 +79,26 @@ module scalesSvc {
         async command DISABLE_HPC_MODE opcode 0x01
 
         ##############################################################################
+        #### Parameters ###############################################################
+        ##############################################################################
+
+        @ Number of consecutive ThermalStates.FAULT readings a single thermal
+        @ source must report before FPManager treats that source's fault as
+        @ actionable. Sources are counted independently: the i.MX CPU die, the
+        @ MCP i.MX/OBC sensor, the peripheral sensor, and each of the nine
+        @ Jetson zones each keep their own counter, and any non-FAULT or
+        @ unavailable reading resets that source's counter to zero. At the
+        @ 2-second rate-group period a value of N delays action by roughly
+        @ (N-1)*2 seconds of sustained fault. 0 and 1 are equivalent and mean
+        @ "act on the first FAULT reading", matching pre-debounce behavior.
+        @ WARN tracking is deliberately NOT debounced.
+        param FAULT_DEBOUNCE_COUNT: U32 \
+            default 3 \
+            id 0x00 \
+            set opcode 0x02 \
+            save opcode 0x03
+
+        ##############################################################################
         #### Events and telemetry ####################################################
         ##############################################################################
 
@@ -159,11 +179,43 @@ module scalesSvc {
         ) severity activity high id 0x08 \
             format "{} sensor {} exited WARN state at {} C location {} timestamp {}"
 
+        @ Another component logged a FATAL-severity event. FPManager latches
+        @ EMERGENCY_REBOOT and forwards to the real Svc.FatalHandler, which
+        @ aborts the process; systemd (Restart=on-failure) then respawns the
+        @ flight software. The i.MX platform is NOT powered off and the
+        @ Jetson/peripheral protection outputs are NOT asserted -- that is
+        @ reserved for the i.MX thermal FAULT path (see EMERGENCY_SHUTDOWN).
+        @ Svc.FatalEvent carries only the numeric event ID (component base id
+        @ + local event id); resolve it against the GDS event dictionary to
+        @ identify the failing component. Severity must stay warning, never
+        @ fatal -- a FATAL severity here would re-enter
+        @ EventManager.FatalAnnounce and recurse.
+        event COMPONENT_FAILURE_DETECTED(
+            eventId: FwEventIdType
+        ) severity warning high id 0x09 \
+            format "Component FATAL event id {} announced; restarting flight software (i.MX platform power NOT cut)"
+
+        @ A FAULT_DEBOUNCE_COUNT update exceeded the maximum supported value
+        @ and was rejected; the previously active value stays in effect. Fires
+        @ on every rejected attempt, not just the first, since a rejected
+        @ value never takes effect.
+        event FAULT_DEBOUNCE_COUNT_REJECTED(
+            requested: U32
+            maximum: U32
+            currentValue: U32
+        ) severity warning high id 0x0A \
+            format "FAULT_DEBOUNCE_COUNT {} rejected (max {}); keeping {}"
+
         @ Current FP state for downlink and diagnostics.
         telemetry FP_STATE: FPManagerState id 0x00
 
         @ Number of Jetson thermal readings currently held by FPManager.
         telemetry JETSON_VALID_READING_COUNT: U8 id 0x01
+
+        @ Currently active consecutive-FAULT debounce count (a rejected
+        @ update never reaches this channel -- see FAULT_DEBOUNCE_COUNT
+        @ parameter).
+        telemetry FAULT_DEBOUNCE_COUNT: U32 id 0x02
 
         ##############################################################################
         #### Uncomment the following examples to start customizing your component ####

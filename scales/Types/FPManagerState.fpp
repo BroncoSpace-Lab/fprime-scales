@@ -6,7 +6,8 @@ module scalesSvc {
     SAFE = 1 @< Safe Mode; Jetson power-on is gated
     HPC = 2 @< HPC Mode; Jetson power-on requests are permitted
     FAULT = 3 @< Fault Mode; a non-recoverable protection fault was detected
-    EMERGENCY = 4 @< Emergency Shutdown has latched
+    EMERGENCY = 4 @< Emergency Shutdown has latched; i.MX platform power is being cut
+    EMERGENCY_REBOOT = 5 @< A component FATAL latched an FSW-process restart; i.MX platform power is NOT cut
   }
 
 }

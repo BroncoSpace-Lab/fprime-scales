@@ -29,6 +29,7 @@ namespace scalesSvc {
       m_pendingPowerCmdSeq(0),
       m_requestedPowerState(scalesSvc::JetsonPowerStateID::OFF),
       m_currentJetsonPowerState(scalesSvc::JetsonPowerStateID::OFF),
+      m_jetsonPowerStateKnown(false),
       m_powerTimeoutTicks(0),
       m_waitingToCutJetsonPower(false),
       m_powerOffDelayTicks(0),
@@ -77,6 +78,7 @@ namespace scalesSvc {
     // physical power directly.
     this->gpioSet_out(0, JETSON_POWER_GPIO_OFF);
     m_currentJetsonPowerState = JetsonPowerStateID::OFF;
+    m_jetsonPowerStateKnown = true;
     this->tlmWrite_JetsonPowerState(JetsonPowerStateID::OFF);
     if (this->isConnected_fpJetsonPowerStateOut_OutputPort(0)) {
       this->fpJetsonPowerStateOut_out(0, JetsonPowerStateID::OFF);
@@ -91,6 +93,7 @@ namespace scalesSvc {
   {
     this->log_ACTIVITY_LO_JETSON_POWER_STATE_RECEIVED(stateNow);
     m_currentJetsonPowerState = stateNow;
+    m_jetsonPowerStateKnown = true;
     this->tlmWrite_JetsonPowerState(stateNow);
     if (this->isConnected_fpJetsonPowerStateOut_OutputPort(0)) {
       this->fpJetsonPowerStateOut_out(0, stateNow);
@@ -159,6 +162,7 @@ namespace scalesSvc {
         printf("JetsonManager: Cutting Jetson power after shutdown acknowledgment\n");
         this->gpioSet_out(0, JETSON_POWER_GPIO_OFF);
         m_currentJetsonPowerState = JetsonPowerStateID::OFF;
+        m_jetsonPowerStateKnown = true;
         this->tlmWrite_JetsonPowerState(JetsonPowerStateID::OFF);
         if (this->isConnected_fpJetsonPowerStateOut_OutputPort(0)) {
           this->fpJetsonPowerStateOut_out(0, JetsonPowerStateID::OFF);
@@ -188,6 +192,7 @@ namespace scalesSvc {
         if (m_requestedPowerState.e == JetsonPowerStateID::OFF) {
           this->gpioSet_out(0, JETSON_POWER_GPIO_OFF);
           m_currentJetsonPowerState = JetsonPowerStateID::OFF;
+          m_jetsonPowerStateKnown = true;
           this->tlmWrite_JetsonPowerState(JetsonPowerStateID::OFF);
           if (this->isConnected_fpJetsonPowerStateOut_OutputPort(0)) {
             this->fpJetsonPowerStateOut_out(0, JetsonPowerStateID::OFF);
@@ -271,6 +276,7 @@ namespace scalesSvc {
         printf("Requesting Jetson power state change to ON\n");
         this->gpioSet_out(0, JETSON_POWER_GPIO_ON);
         m_currentJetsonPowerState = jetsonState;
+        m_jetsonPowerStateKnown = true;
         this->tlmWrite_JetsonPowerState(jetsonState);
         if (this->isConnected_fpJetsonPowerStateOut_OutputPort(0)) {
           this->fpJetsonPowerStateOut_out(0, jetsonState);
@@ -282,17 +288,30 @@ namespace scalesSvc {
 
       } else if (jetsonState.e == JetsonPowerStateID::OFF) {
         printf("Requesting Jetson power state change to OFF\n");
-        if (m_currentJetsonPowerState.e == JetsonPowerStateID::ON &&
-            this->isConnected_reqJetsonPwrState_OutputPort(0)) {
-          // The commanded OFF path is graceful when the Jetson is known ON:
+        // Prefer the graceful path unless we are CONFIRMED off -- an
+        // unconfirmed state must not be treated as "already off". At i.MX
+        // boot m_currentJetsonPowerState defaults to OFF before any real
+        // report has arrived; if the Jetson is actually alive at that point
+        // (e.g. the i.MX rebooted independently while the Jetson stayed up),
+        // treating the default as truth would skip reqJetsonPwrState_out()
+        // and cut GPIO power to a live Linux system without asking it to
+        // shut down first. If the Jetson turns out to already be off, this
+        // request simply times out (see schedIn_handler) and falls back to
+        // the same direct GPIO cut a few ticks later -- functionally
+        // harmless since the GPIO is already low.
+        const bool confirmedOff =
+            m_jetsonPowerStateKnown && m_currentJetsonPowerState.e == JetsonPowerStateID::OFF;
+        if (!confirmedOff && this->isConnected_reqJetsonPwrState_OutputPort(0)) {
+          // The commanded OFF path is graceful when the Jetson may be ON:
           // ask the Jetson-side manager to shut down, wait for its OFF report,
           // then cut physical power after JETSON_POWER_OFF_DELAY_TICKS.
           this->reqJetsonPwrState_out(0, jetsonState);
         } else {
-          // If the Jetson is already known OFF, or the Jetson-side shutdown
-          // port is unavailable, OFF remains idempotent and hardware-safe.
+          // The Jetson is confirmed already off, or the Jetson-side shutdown
+          // port is unavailable, so OFF remains idempotent and hardware-safe.
           this->gpioSet_out(0, JETSON_POWER_GPIO_OFF);
           m_currentJetsonPowerState = JetsonPowerStateID::OFF;
+          m_jetsonPowerStateKnown = true;
           this->tlmWrite_JetsonPowerState(jetsonState);
           if (this->isConnected_fpJetsonPowerStateOut_OutputPort(0)) {
             this->fpJetsonPowerStateOut_out(0, jetsonState);

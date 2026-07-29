@@ -262,4 +262,20 @@ namespace scalesSvc {
     ASSERT_TLM_JETSON_BOUNDS(1, otherGoodBounds);
   }
 
+  void JetsonThermalManagerTester :: parameterUpdatedCoverage()
+  {
+    this->component.loadParameters();
+    this->clearHistory();
+
+    // PARAMID_JETSON_BOUNDS = 0x0 (JetsonThermalManagerComponentAc.hpp).
+    // boundsUpdateGating() calls applyBounds() directly, bypassing this
+    // switch entirely, so it's otherwise never exercised.
+    this->component.parameterUpdated(0x0);
+    ASSERT_EVENTS_THRESHOLDS_MISCONFIGURED_SIZE(0);
+
+    // Unrecognized parameter ID: default case, no-op.
+    this->component.parameterUpdated(0xDEAD);
+    ASSERT_EVENTS_THRESHOLDS_MISCONFIGURED_SIZE(0);
+  }
+
 }

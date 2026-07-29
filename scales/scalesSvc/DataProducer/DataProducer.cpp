@@ -184,7 +184,7 @@ bool DataProducer ::initJetsonTempContainer(){
                                                        JETSON_TEMP_ZONE_RECORDS *
                                                        (scalesSvc::ThermalReading::SERIALIZED_SIZE + sizeof(FwDpIdType)); 
     
-    if(this-dpGet_JetsonTemperatureZoneContainer(JETSON_TEMP_ZONE_CONTAINER_SIZE, this->m_jetsonTempContainer)){
+    if(this->dpGet_JetsonTemperatureZoneContainer(JETSON_TEMP_ZONE_CONTAINER_SIZE, this->m_jetsonTempContainer) == Fw::Success::SUCCESS){
         this->m_jetsonTempContainerValid = true;
         this->m_jetsonTempContainer.setTimeTag(this->getTime());
         printf("Initialized Jetson Temp Zone container successfully\n");

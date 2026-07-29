@@ -15,6 +15,8 @@ namespace scalesSvc {
     public JetsonManagerComponentBase
   {
 
+    friend class JetsonManagerTester;
+
     public:
 
       // ----------------------------------------------------------------------
@@ -119,7 +121,16 @@ namespace scalesSvc {
       FwOpcodeType m_pendingPowerOpCode; //!< Opcode of the in-flight REQUEST_JETSON_POWER_STATE
       U32 m_pendingPowerCmdSeq; //!< Sequence number of the in-flight REQUEST_JETSON_POWER_STATE command
       scalesSvc::JetsonPowerStateID m_requestedPowerState; //!< Power state we asked the Jetson to switch to
-      scalesSvc::JetsonPowerStateID m_currentJetsonPowerState; //!< Last known Jetson power state
+      scalesSvc::JetsonPowerStateID m_currentJetsonPowerState; //!< Last known (or assumed) Jetson power state
+      //! True once m_currentJetsonPowerState reflects an actual confirmed
+      //! report from the Jetson or a GPIO action JetsonManager itself took --
+      //! i.e. not just the boot-time default. Until this is true, OFF
+      //! requests must not treat the Jetson as "already off": at i.MX boot
+      //! the Jetson may in fact be alive and running (e.g. i.MX rebooted
+      //! while the Jetson stayed up), and treating an unconfirmed state as
+      //! OFF would skip the graceful reqJetsonPwrState_out() shutdown request
+      //! and cut GPIO power to a live Linux system directly.
+      bool m_jetsonPowerStateKnown;
       U32 m_powerTimeoutTicks;  //!< Ticks elapsed since the power state change request was sent
       bool m_waitingToCutJetsonPower; //!< True if we've sent a shutdown command and are waiting to cut power after a delay
       U32 m_powerOffDelayTicks; //!< Ticks elapsed since sending the shutdown command, used to delay cutting power to allow for graceful shutdown

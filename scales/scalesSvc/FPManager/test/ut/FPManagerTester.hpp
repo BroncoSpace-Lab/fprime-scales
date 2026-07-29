@@ -27,8 +27,23 @@ class FPManagerTester final : public FPManagerGTestBase {
     void jetsonFaultReadingTriggersRecoveryInHpc();
     void jetsonFaultRecoveryClearsCachedReadingsBeforeHpcReentry();
     void attributesJetsonFaultAndReturnsSafe();
-    void fatalShutdownForwardsAndLatches();
+    void componentFatalRestartsFswWithoutPlatformShutdown();
     void emergencyShutdownProtectedOutputsAreLatchedAcrossRepeatedFatals();
+    void repeatedComponentFatalsDoNotReassertOrRestate();
+    void componentFatalDoesNotDowngradeLatchedEmergencyState();
+    void imxFaultRequiresConsecutiveReadingsBeforeShutdown();
+    void imxFaultStreakResetsOnNonFaultReading();
+    void imxFaultStreakResetsOnUnavailableReading();
+    void imxStreaksAreTrackedPerSource();
+    void peripheralFaultRequiresConsecutiveReadings();
+    void peripheralStreaksAreTrackedPerSource();
+    void faultDebounceParameterUpdatedDispatchesCorrectly();
+    void jetsonZoneStreaksAreIndependent();
+    void jetsonImmediateFastPathHonorsDebounce();
+    void jetsonPowerOffClearsFaultStreaks();
+    void warnTrackingIsNotDebounced();
+    void peripheralRecoveryIsNotDebounced();
+    void faultDebounceCountParameterGatesAndPublishes();
     void rejectsRemoteJetsonCommandWhenJetsonOff();
     void forwardsRemoteJetsonCommandWhenJetsonOn();
     void rejectsSequencerRemoteJetsonCommandWhenJetsonOff();
@@ -47,6 +62,7 @@ class FPManagerTester final : public FPManagerGTestBase {
     Fw::ComBuffer commandBuffer(FwOpcodeType opcode);
     void initializeSafeMode();
     void enterHpcMode();
+    void setFaultDebounce(U32 n);
 
     FPManager component;
 };
