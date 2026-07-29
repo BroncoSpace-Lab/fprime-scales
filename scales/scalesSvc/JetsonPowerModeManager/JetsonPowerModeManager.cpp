@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <cstdio>
 #include <string>
+#include <sys/wait.h>
 
 int get_nvp_mode();
 
@@ -125,10 +126,18 @@ namespace scalesSvc {
         this->tlmWrite_CurrentJetsonPowerState(JetsonPowerStateID::OFF);
         this->log_ACTIVITY_HI_JETSON_SHUTDOWN_STARTED(stateReq);
 
-        int ret = this->m_shellRunner("sudo -n /sbin/shutdown -h now");
+        const int status = this->m_shellRunner("sudo -n /sbin/shutdown -h now");
 
-        if (ret == -1) {
-          Fw::String reason("shutdown command returned non-zero exit code");
+        // std::system()'s return is a raw wait-status, not a plain exit code --
+        // checking only "== -1" catches nothing but the shell failing to even
+        // spawn. A real failure (e.g. no NOPASSWD sudoers rule for this exact
+        // command, so `sudo -n` refuses instead of prompting; or the wrong
+        // path for shutdown on this image) produces a normal nonzero exit that
+        // "== -1" silently treats as success, even though the OFF
+        // acknowledgment/JETSON_SHUTDOWN_STARTED above already told the i.MX
+        // the shutdown is underway.
+        if (status == -1 || !WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+          Fw::String reason("shutdown command failed");
           this->log_WARNING_HI_JETSON_POWER_STATE_CHANGE_FAILED(stateReq, reason);
 
           // Report ON because shutdown failed and the Jetson is still alive.

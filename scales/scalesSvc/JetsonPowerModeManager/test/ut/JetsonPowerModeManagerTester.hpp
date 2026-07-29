@@ -26,6 +26,7 @@ class JetsonPowerModeManagerTester final : public JetsonPowerModeManagerGTestBas
     void jetsonPowerStateReceiveOnReportsOn();
     void jetsonPowerStateReceiveOffShutsDownGracefully();
     void jetsonPowerStateReceiveOffReportsFailureWhenShutdownFails();
+    void jetsonPowerStateReceiveOffReportsFailureOnNonzeroExitNotNegativeOne();
     void schedInReportsOnceAfterBoot();
     void schedInSkipsModeReportOnReaderError();
     void setPowerModeCmdChangesMode();

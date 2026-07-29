@@ -41,6 +41,12 @@ TEST(Nominal, JetsonPowerStateReceiveOffReportsFailureWhenShutdownFails) {
     tester.jetsonPowerStateReceiveOffReportsFailureWhenShutdownFails();
 }
 
+TEST(Nominal, JetsonPowerStateReceiveOffReportsFailureOnNonzeroExitNotNegativeOne) {
+    RecordProperty("requirement", "JPSM-004");
+    scalesSvc::JetsonPowerModeManagerTester tester;
+    tester.jetsonPowerStateReceiveOffReportsFailureOnNonzeroExitNotNegativeOne();
+}
+
 TEST(Nominal, SchedInReportsOnceAfterBoot) {
     RecordProperty("requirement", "JPSM-001,JPSM-003");
     scalesSvc::JetsonPowerModeManagerTester tester;

@@ -145,6 +145,27 @@ void JetsonPowerModeManagerTester ::jetsonPowerStateReceiveOffReportsFailureWhen
     ASSERT_TLM_CurrentJetsonPowerState(1, scalesSvc::JetsonPowerStateID::ON);
 }
 
+void JetsonPowerModeManagerTester ::jetsonPowerStateReceiveOffReportsFailureOnNonzeroExitNotNegativeOne() {
+    // A real std::system() failure (e.g. "sudo -n" refusing because no
+    // NOPASSWD sudoers rule exists for this exact command, instead of
+    // prompting) returns a packed wait-status, not a bare -1. Exit code 1
+    // packs to 1 << 8 = 256 on Linux. The old "ret == -1" check missed this
+    // entirely and treated it as success even though shutdown never ran.
+    g_mockShellExitCode = 1 << 8;
+
+    this->invoke_to_jetsonPowerStateReceive(0, scalesSvc::JetsonPowerStateID::OFF);
+    this->component.doDispatch();
+
+    ASSERT_EVENTS_JETSON_POWER_STATE_CHANGE_FAILED_SIZE(1);
+    // Shutdown failed -- the Jetson is still alive, so ON is reported again
+    // after the initial OFF acknowledgment.
+    ASSERT_from_jetsonPowerStateSend_SIZE(2);
+    ASSERT_from_jetsonPowerStateSend(0, scalesSvc::JetsonPowerStateID::OFF);
+    ASSERT_from_jetsonPowerStateSend(1, scalesSvc::JetsonPowerStateID::ON);
+    ASSERT_TLM_CurrentJetsonPowerState_SIZE(2);
+    ASSERT_TLM_CurrentJetsonPowerState(1, scalesSvc::JetsonPowerStateID::ON);
+}
+
 void JetsonPowerModeManagerTester ::schedInReportsOnceAfterBoot() {
     g_mockPowerMode = static_cast<int>(scalesSvc::PowerModeID::EXTRA);
 
