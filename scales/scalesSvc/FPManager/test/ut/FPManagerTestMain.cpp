@@ -24,6 +24,18 @@ TEST(FPManager, DisablesHpcModeAndGatesJetsonOn) {
   tester.disablesHpcModeAndGatesJetsonOn();
 }
 
+TEST(FPManager, DisableHpcModeWaitsForJetsonOffConfirmation) {
+  RecordProperty("requirement", "FP-009");
+  scalesSvc::FPManagerTester tester;
+  tester.disableHpcModeWaitsForJetsonOffConfirmation();
+}
+
+TEST(FPManager, ImxFaultDuringDisableHpcWaitStillTriggersEmergencyShutdown) {
+  RecordProperty("requirement", "FP-009,FP-007");
+  scalesSvc::FPManagerTester tester;
+  tester.imxFaultDuringDisableHpcWaitStillTriggersEmergencyShutdown();
+}
+
 TEST(FPManager, ImxFaultTriggersEmergencyShutdown) {
   RecordProperty("requirement", "FP-006,FP-007,FP-008");
   scalesSvc::FPManagerTester tester;

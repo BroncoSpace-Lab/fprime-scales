@@ -59,10 +59,24 @@ SAFE/HPC/FAULT/EMERGENCY mode -- it keeps tracking regardless of what mode
 FPManager itself is in.
 
 The Jetson is not permitted to be powered on by command in Safe Mode. A Jetson
-power-on request is accepted only in HPC Mode. `DISABLE_HPC_MODE` returns the
-system to Safe Mode, requests Jetson OFF, and republishes `FP_STATE=SAFE`.
-Startup Safe Mode does not issue a one-shot Jetson OFF request; active Jetson
-OFF requests remain available for operator disable, protection, and recovery
+power-on request is accepted only in HPC Mode. `DISABLE_HPC_MODE` requests
+Jetson OFF unconditionally and immediately republishes `FP_STATE=SAFE`, which
+re-gates new HPC entry and new Jetson ON authorization right away -- but
+FPManager does not consider Safe Mode *health-confirmed* (`ENABLE_HPC_MODE`
+stays `VALIDATION_ERROR`) until JetsonManager reports a real, confirmed
+Jetson OFF back through `jetsonPowerStateIn`. The intermediate `disablingHpc`
+state exists to wait for that confirmation: it never optimistically declares
+the Jetson off or invalidates its cached thermal readings the instant OFF is
+requested, since the Jetson is not actually confirmed off until JetsonManager
+either receives its own graceful shutdown acknowledgment or falls back to
+cutting GPIO power after its own bounded timeout (`JetsonManager`'s
+`CMD_TIMEOUT_TICKS`/`JETSON_POWER_OFF_DELAY_TICKS`). Declaring the Jetson off
+before that confirmation previously raced the still-alive Jetson (mid-reboot,
+still sending hub traffic) against the newly-invalidated reading cache and a
+premature Safe Mode transition, which could overflow the hub's `Svc::ComQueue`
+and trip a FATAL `FW_ASSERT` -- see the Change Log entry for the fix. Startup
+Safe Mode does not issue a one-shot Jetson OFF request; active Jetson OFF
+requests remain available for operator disable, protection, and recovery
 actions.
 
 Remote Jetson deployment commands are also gated on the i.MX before they reach
@@ -279,6 +293,7 @@ flowchart LR
     init((init))
     safe((safeMode))
     hpc((hpcMode))
+    disabling((disablingHpc))
     jetson((jetsonFaultRecovery))
     fault((faultMode))
     emergency((emergencyShutdown))
@@ -288,7 +303,8 @@ flowchart LR
     safeCheck[safeModeHealthCheck]
     hpcCheck[hpcModeHealthCheck]
     enable[enableHpcMode]
-    disable[disableHpcMode]
+    beginDisable[beginDisableHpcMode]
+    disableCheck[disableHpcModeHealthCheck]
     confirm[confirmJetsonFaultAndPowerOff]
     report[reportFault]
     faultCheck[faultModeHealthCheck]
@@ -307,11 +323,17 @@ flowchart LR
     safe -->|component_fatal| rebootAction
 
     hpc -->|tick| hpcCheck --> hpc
-    hpc -->|hpcMode_dis| disable --> safe
+    hpc -->|hpcMode_dis| beginDisable --> disabling
     hpc -->|jetson_fault| jetson
     hpc -->|failure| report
     hpc -->|"$fatal"| shutdown
     hpc -->|component_fatal| rebootAction
+
+    disabling -->|tick| disableCheck --> disabling
+    disabling -->|success| safe
+    disabling -->|failure| report
+    disabling -->|"$fatal"| shutdown
+    disabling -->|component_fatal| rebootAction
 
     jetson -->|tick| confirm -->|success| safe
     jetson -->|failure| report
@@ -525,14 +547,20 @@ sequenceDiagram
     Operator->>FPM: DISABLE_HPC_MODE
     alt FP_STATE=HPC
         FPM->>SM: hpcMode_dis
-        SM->>FPM: disableHpcMode
-        opt Jetson is known ON
-            FPM->>JM: jetsonPowerRequestOut(OFF)
-            JM->>JM: direct FP protection OFF
-            JM->>FPM: fpJetsonPowerStateOut(OFF)
-        end
+        SM->>FPM: beginDisableHpcMode
+        FPM->>JM: jetsonPowerRequestOut(OFF) (unconditional)
         FPM-->>Operator: OK
         FPM-->>Operator: FP_STATE=SAFE
+        Note over FPM,JM: Safe Mode is not yet health-confirmed --<br>ENABLE_HPC_MODE stays VALIDATION_ERROR.
+        loop until Jetson OFF confirmed (SM stays in disablingHpc)
+            SM->>FPM: disableHpcModeHealthCheck (on tick)
+        end
+        JM->>JM: graceful shutdown request, then GPIO-cut fallback<br>if unconfirmed (bounded by JetsonManager's own timeout)
+        JM->>FPM: fpJetsonPowerStateOut(OFF)
+        FPM->>FPM: jetsonPowerStateIn_handler: invalidate cached<br>Jetson readings, mark Jetson OFF
+        FPM->>SM: success (next disableHpcModeHealthCheck tick)
+        SM->>FPM: enter safeMode (bare transition)
+        Note over FPM,SM: One more tick runs safeModeHealthCheck,<br>which sets Safe Mode health-confirmed.
     else FP_STATE=SAFE
         FPM-->>Operator: OK
         FPM-->>Operator: FP_STATE=SAFE
@@ -647,9 +675,14 @@ sequenceDiagram
 4. While still in HPC Mode, operators may command `REQUEST_JETSON_POWER_STATE`
    to `OFF` to use the graceful-ish Jetson shutdown path.
 5. `DISABLE_HPC_MODE` may transition from HPC Mode back to Safe Mode. The
-   transition requests direct Jetson OFF if Jetson is still known ON and updates
+   transition requests Jetson OFF unconditionally and immediately updates
    `FP_STATE` to `SAFE`, causing subsequent Jetson ON requests to be rejected
-   again.
+   again right away -- but FPManager does not consider Safe Mode
+   health-confirmed (`ENABLE_HPC_MODE` stays rejected) until JetsonManager
+   reports a real confirmed Jetson OFF back through `jetsonPowerStateIn`
+   (`disablingHpc` state). This avoids declaring the Jetson off, and
+   invalidating its cached thermal readings, before it has actually finished
+   shutting down.
 6. If the i.MX is confirmed faulty (see rule 10), record and report the full
    reading, write `FP_STATE=EMERGENCY`, emit `EMERGENCY_SHUTDOWN`, and trigger
    the platform poweroff directly and unconditionally before doing anything
@@ -764,6 +797,14 @@ sequenceDiagram
   from one producer masking a sustained fault from another producer writing
   the same cached reading; added `FAULT_DEBOUNCE_COUNT_REJECTED` for
   out-of-bounds updates.
+- [x] Fixed a race between `DISABLE_HPC_MODE` and the real Jetson shutdown:
+  split `disableHpcMode` into `beginDisableHpcMode` (requests Jetson OFF
+  unconditionally, immediately re-gates via `FP_STATE=SAFE`) and a new
+  `disablingHpc` FSM state/`disableHpcModeHealthCheck` tick action that waits
+  for JetsonManager's real confirmed Jetson OFF (graceful ack or its own
+  bounded GPIO-cut fallback) -- while still checking i.MX/peripheral health
+  every tick -- before entering `safeMode` for real. Closes a race that
+  previously overflowed `Svc::ComQueue` and forced an `EMERGENCY_REBOOT`.
 
 ## Component Relationships
 
@@ -771,8 +812,9 @@ The deployment topology connects thermal managers to FPManager, JetsonManager
 to the synchronous power authorization gate, and FPManager protection outputs
 to JetsonManager and PerifBoardManager. JetsonManager also reports its last
 Jetson power state to `jetsonPowerStateIn`, allowing FPManager to request
-Jetson OFF during `DISABLE_HPC_MODE` only when the Jetson is known ON. The
-remote Jetson command path is similarly routed through FPManager so remote
+Jetson OFF unconditionally during `DISABLE_HPC_MODE` and to defer the Safe
+Mode health-confirmed transition (`disablingHpc` -> `safeMode`) until that OFF
+is actually reported back. The remote Jetson command path is similarly routed through FPManager so remote
 commands are rejected locally while the Jetson is known OFF instead of being
 sent into a disconnected hub transport. The
 authoritative port wiring is in `ImxDeployment/Top/topology.fpp`.
@@ -793,6 +835,7 @@ authoritative port wiring is in `ImxDeployment/Top/topology.fpp`.
 | `init` | Startup state. The first tick initializes Safe Mode. |
 | `safeMode` | Jetson power-on is gated; i.MX and peripheral health are checked. |
 | `hpcMode` | HPC enabled; i.MX, peripheral, and aggregate Jetson thermal health are checked. Jetson ON commands are authorized only here. |
+| `disablingHpc` | Entered from `hpcMode` on `DISABLE_HPC_MODE`. `FP_STATE` already reads `SAFE` (new HPC entry/Jetson ON are re-gated immediately), but Safe Mode is not yet health-confirmed: i.MX/peripheral health is still checked every tick, and the state waits for JetsonManager to report a real confirmed Jetson OFF (graceful ack or its own bounded GPIO-cut fallback) before entering `safeMode` for real. |
 | `jetsonFaultRecovery` | Confirms and reports a Jetson fault, powers off Jetson, then returns to Safe Mode. |
 | `faultMode` | Reports and latches non-system-fatal protection faults, currently including peripheral thermal FAULT; rechecks i.MX, Jetson, and peripheral health on each tick and recovers only after a valid non-FAULT peripheral reading and no cached Jetson FAULT. |
 | `emergencyShutdown` | Terminal state for a confirmed i.MX thermal `$fatal`; performs the one-shot platform/Jetson/peripheral shutdown before fatal handling is forwarded. Never downgraded by a later `component_fatal`. |
@@ -807,7 +850,7 @@ authoritative port wiring is in `ImxDeployment/Top/topology.fpp`.
 | Name | Description |
 |---|---|
 | HPC mode enable | Requests transition from Safe Mode to HPC Mode. The request is accepted only after Safe Mode health checks pass. |
-| HPC mode disable | Requests transition from HPC Mode back to Safe Mode. If Jetson is known ON, the request powers it off through the FPManager protection path and republishes `FP_STATE=SAFE`. |
+| HPC mode disable | Requests transition from HPC Mode back to Safe Mode. Unconditionally requests Jetson OFF through the FPManager protection path and republishes `FP_STATE=SAFE` immediately, but Safe Mode is not health-confirmed (`ENABLE_HPC_MODE` stays rejected) until JetsonManager reports the Jetson actually off. |
 | Jetson power request | Requests Jetson power changes through JetsonManager. ON is gated to HPC Mode; OFF is accepted unless Emergency Shutdown is latched. |
 
 ## Events
@@ -837,8 +880,8 @@ Measured via `fprime-util check --coverage` on the native build (the ARM64
 `imx8x --ut` target described below is only required to exercise the real
 `triggerPlatformPoweroff()` syscalls, which are compiled out under
 `BUILD_UT` and produce identical behavior either way for everything these
-tests check): **91.0% line (344/378), 100% function (46/46), 56.1% branch
-(234/417)**. The remaining gaps are almost entirely ASan/UBSan
+tests check): **91.4% line (351/384), 100% function (47/47), 57.2% branch
+(241/421)**. The remaining gaps are almost entirely ASan/UBSan
 instrumentation edges around construction (the same non-actionable pattern
 documented in WatchdogManager/McpManager/ImxThermalManager/
 JetsonThermalManager), the compiled-out `#ifndef BUILD_UT` body of
@@ -858,7 +901,9 @@ machine-checkable artifact.
 | `initializesSafeModeAndGatesJetsonOn` | First tick initializes Safe Mode and rejects a Jetson ON authorization request. | `FAILURE`, no startup Jetson OFF request, rejection event | FP-001, FP-002, FP-003 |
 | `emitsStateTransitionEventsOnlyOnChange` | Verifies `FP_STATE_CHANGED` on INIT->SAFE, SAFE->HPC, and HPC->SAFE, and no extra event on a repeated Safe health tick. | Three state transition events, no same-state spam | FP-012 |
 | `entersHpcModeAndAcceptsJetsonOn` | Enables HPC Mode and permits a Jetson ON authorization request. | `SUCCESS` and no rejection event | FP-003 |
-| `disablesHpcModeAndGatesJetsonOn` | Tracks Jetson ON, disables HPC Mode, requests Jetson OFF, republishes `SAFE`, and rejects a later Jetson ON authorization request. | Jetson OFF, `FP_STATE=SAFE`, authorization failure | FP-002, FP-003, FP-009 |
+| `disablesHpcModeAndGatesJetsonOn` | Tracks Jetson ON, disables HPC Mode, requests Jetson OFF, immediately republishes `SAFE`, and rejects a later Jetson ON authorization request. | Jetson OFF request, `FP_STATE=SAFE`, authorization failure | FP-002, FP-003, FP-009 |
+| `disableHpcModeWaitsForJetsonOffConfirmation` | Disables HPC Mode with the Jetson ON and a cached Jetson reading; verifies the reading is *not* invalidated and `ENABLE_HPC_MODE` stays rejected while still waiting, then simulates JetsonManager's real OFF confirmation and verifies the reading is invalidated and `ENABLE_HPC_MODE` succeeds only after the second post-confirmation tick (`safeModeHealthCheck` running for real). | Deferred invalidation, deferred health-confirmed transition, correct two-tick timing | FP-009 |
+| `imxFaultDuringDisableHpcWaitStillTriggersEmergencyShutdown` | Sends a confirmed i.MX FAULT while still waiting in `disablingHpc` (before any Jetson OFF confirmation); verifies Emergency Shutdown still fires immediately rather than being delayed until Safe Mode is reached. | `EMERGENCY_SHUTDOWN`, Jetson OFF requested twice (once from `beginDisableHpcMode`, once from `SHUTDOWN`), peripheral OFF, fatal forwarding, `FP_STATE=EMERGENCY` | FP-009, FP-007 |
 | `imxFaultTriggersEmergencyShutdown` | Sends an i.MX `ThermalStates.FAULT` reading and verifies the system emergency path. | Fault event, emergency shutdown event, Jetson OFF, peripheral OFF, fatal forwarding, `FP_STATE=EMERGENCY` | FP-006, FP-007, FP-008 |
 | `peripheralFaultPowersOffPeripheralOnly` | Sends a peripheral `ThermalStates.FAULT` reading and verifies only the peripheral protection path runs. | Fault event, peripheral OFF, no emergency shutdown, no Jetson OFF, `FP_STATE=FAULT` | FP-006 |
 | `peripheralFaultRecoversToSafeMode` | Sends a peripheral `FAULT`, then a valid non-FAULT reading, and verifies tick-driven recovery. | `FP_STATE=FAULT`, then `FP_STATE=SAFE`, no fatal forwarding | FP-006, FP-010 |
@@ -916,7 +961,7 @@ outside what any unit test (native or cross-compiled) can safely exercise.
 | FP-006 | Peripheral thermal FAULT shall latch the peripheral board off and enter Fault Mode without system Emergency Shutdown; recovery requires a valid non-FAULT peripheral reading and no cached Jetson FAULT. | `peripheralFaultPowersOffPeripheralOnly`, `peripheralFaultRecoversToSafeMode` |
 | FP-007 | A confirmed i.MX thermal FAULT shall immediately enter terminal Emergency Shutdown (`FP_STATE=EMERGENCY`) and shall not enter Fault Mode. A generic component FATAL (`$fatal`/`component_fatal`) shall not enter Emergency Shutdown -- see FP-017. | `imxFaultTriggersEmergencyShutdown`, `faultModeImxFaultOverridesJetsonAndPeripheral` |
 | FP-008 | Emergency Shutdown (confirmed i.MX thermal FAULT only) shall power off the protected Jetson and peripheral outputs and trigger a real platform poweroff of the i.MX itself; full system recovery requires an operator to physically power the board back on. | `imxFaultTriggersEmergencyShutdown`, `emergencyShutdownProtectedOutputsAreLatchedAcrossRepeatedFatals` for the protected outputs; the platform poweroff call itself is compiled out under `BUILD_UT` and is confirmed on hardware only (fault-injection test, see Change Log) |
-| FP-009 | Disabling HPC Mode shall request Jetson OFF when Jetson is known ON, return FPManager to Safe Mode, and re-gate Jetson ON requests. | `disablesHpcModeAndGatesJetsonOn` |
+| FP-009 | Disabling HPC Mode shall request Jetson OFF unconditionally and immediately re-gate Jetson ON requests and new HPC entry by publishing `FP_STATE=SAFE`, but shall not consider Safe Mode health-confirmed (`ENABLE_HPC_MODE` accepted) until JetsonManager reports a real confirmed Jetson OFF; i.MX/peripheral faults arriving during that wait shall still escalate immediately. | `disablesHpcModeAndGatesJetsonOn`, `disableHpcModeWaitsForJetsonOffConfirmation`, `imxFaultDuringDisableHpcWaitStillTriggersEmergencyShutdown` |
 | FP-010 | Fault Mode shall recheck i.MX, Jetson, and peripheral health on each tick; i.MX FAULT shall escalate to Emergency Shutdown, Jetson FAULT shall request Jetson OFF and remain in Fault Mode, and recovery shall require a valid non-FAULT peripheral reading with no cached Jetson FAULT. | `peripheralFaultRecoversToSafeMode`, `faultModeJetsonFaultRequestsOffAndStaysFault`, `faultModeImxFaultOverridesJetsonAndPeripheral` |
 | FP-011 | Jetson faults observed while already in Fault Mode shall preserve fault attribution and request Jetson OFF without global Emergency Shutdown. | `faultModeJetsonFaultRequestsOffAndStaysFault` |
 | FP-013 | Remote Jetson deployment commands shall not be forwarded to GenericHub while the Jetson is known OFF; they shall receive a local command response instead. | `rejectsRemoteJetsonCommandWhenJetsonOff`, `forwardsRemoteJetsonCommandWhenJetsonOn` |
@@ -956,3 +1001,4 @@ outside what any unit test (native or cross-compiled) can safely exercise.
 | 2026-07-27 | Added `WARN_STATE_ENTERED`/`WARN_STATE_EXITED` as a read-only observability layer alongside the existing `FAULT`-triggered protection actions: i.MX and peripheral each get a one-shot latch, Jetson uses a single aggregate latch across all nine sensors (mirroring how Jetson `FAULT` is already aggregated), checked directly inside each reading handler as soon as a new reading arrives rather than waiting for the next health-check tick. No `FP_STATE` change, no protection output, and no interaction with the `FPStateMachine` (FP-016). |
 | 2026-07-28 | SDD accuracy audit: corrected the claim that the UT target requires an ARM64 target or AArch64 emulator to run -- it builds and runs natively (`fprime-util build --ut`, ASan/UBSan included) because `triggerPlatformPoweroff()`'s real syscalls are already compiled out under `BUILD_UT`; the `imx8x --ut` cross-build is only needed to validate the real hardware poweroff path. Renamed the Requirements table's `Validation` column to `Verified By` and the Unit Tests table's `Coverage` column to `Verifies` for consistency with the rest of the scalesSvc audit (both already held test-name/requirement-ID mappings, not coverage percentages). Added measured coverage numbers (85.9% line, 97.2% function, 52.2% branch) and tagged all 21 tests with `RecordProperty("requirement", ...)` for machine-checkable traceability. No functional or behavioral changes -- the implementation and all 21 pre-existing tests were already accurate and passing. | Luca Lanzillotta |
 | 2026-07-29 | Split generic component FATAL handling from the i.MX thermal shutdown path it used to share, and added a GDS-configurable fault-detection debounce. Added `FPManagerState.EMERGENCY_REBOOT`, `FPStateMachine` signal `component_fatal`/action `REBOOT`/terminal state `emergencyReboot`, and events `COMPONENT_FAILURE_DETECTED`/`FAULT_DEBOUNCE_COUNT_REJECTED`. `fatalIn_handler` (any component FATAL, carrying only a raw numeric event ID) now only logs, latches `EMERGENCY_REBOOT`, and forwards to the fatal handler -- relying on the existing systemd `Restart=on-failure` to respawn the flight-software process -- instead of also cutting i.MX/Jetson/peripheral power; full platform shutdown is now exclusively triggered by a confirmed i.MX thermal FAULT. `component_fatal` never downgrades an already-latched `EMERGENCY` (FP-020). Added the `FAULT_DEBOUNCE_COUNT` parameter/telemetry (default 3, max 1000): every FAULT check that can trigger a protective action now requires that many consecutive FAULT readings from the same underlying source before acting, including the immediate Jetson fast path. Streaks are tracked per input source rather than per fault domain -- `ImxThermalManager` and `McpManager` sensor 1 both write the same cached i.MX reading, and `PerifBoardManager`/`McpManager` sensor 2 do the same for peripheral, so a shared per-domain counter would let a healthy reading from one producer mask a sustained fault from the other. The peripheral recovery gate and WARN tracking are deliberately left undebounced (FP-016, FP-018). Removed the now-dead undebounced `findJetsonFault()` helper (fully superseded by `findConfirmedJetsonFault()`). Renamed/retargeted `fatalShutdownForwardsAndLatches` to `componentFatalRestartsFswWithoutPlatformShutdown` and `emergencyShutdownProtectedOutputsAreLatchedAcrossRepeatedFatals` to the i.MX thermal path; added 14 new tests (FP-017 through FP-020) bringing coverage to 91.0% line / 100% function / 56.1% branch. | Luca Lanzillotta |
+| 2026-07-29 | Fixed a race between `DISABLE_HPC_MODE` and the real Jetson shutdown: the old `disableHpcMode` action requested Jetson OFF but *immediately and unconditionally* declared the Jetson off, invalidated its cached thermal readings, and entered Safe Mode in the same synchronous action, before the Jetson had actually finished shutting down. On hardware this raced the still-alive Jetson (mid-reboot, still sending hub traffic from a stale power-mode change) against the newly-invalidated FPManager state, overflowed the hub's autocoded `Svc::ComQueue` message queue, and tripped a FATAL `FW_ASSERT` (`Os::Queue::Status::FULL`), forcing an `EMERGENCY_REBOOT` restart of the flight software. Split the action into `beginDisableHpcMode` (requests Jetson OFF unconditionally -- matching every other call site in this file -- and immediately publishes `FP_STATE=SAFE` to re-gate HPC entry/Jetson ON, but does *not* touch `m_jetsonPowerState` or invalidate Jetson readings) and a new intermediate FSM state `disablingHpc` with tick action `disableHpcModeHealthCheck` (mirrors `safeModeHealthCheck`'s i.MX/peripheral fault handling, plus checks for a real confirmed Jetson OFF via the existing `jetsonPowerStateIn_handler` before signaling `success` into `safeMode`). This reuses JetsonManager's existing graceful-shutdown-then-bounded-GPIO-cut-fallback path (`fpJetsonPowerRequestIn_handler`) unchanged -- the fix is entirely in FPManager no longer declaring that request "done" before JetsonManager actually confirms it. Safe Mode is not health-confirmed (`ENABLE_HPC_MODE` stays rejected) until that confirmation arrives, closing the race. Added `disableHpcModeWaitsForJetsonOffConfirmation` and `imxFaultDuringDisableHpcWaitStillTriggersEmergencyShutdown` (FP-009); all 36 pre-existing tests, including `disablesHpcModeAndGatesJetsonOn` and `emitsStateTransitionEventsOnlyOnChange`, pass unmodified since the immediate `FP_STATE=SAFE`/gating timing they check is unchanged -- only the previously-premature Jetson-off declaration was deferred. Coverage: 91.4% line / 100% function / 57.2% branch. | Luca Lanzillotta |

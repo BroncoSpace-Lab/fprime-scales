@@ -75,7 +75,9 @@ class FPManager final : public FPManagerComponentBase {
         SmId smId, scalesSvc_FPStateMachine::Signal signal) override;
     void scalesSvc_FPStateMachine_action_enableHpcMode(
         SmId smId, scalesSvc_FPStateMachine::Signal signal) override;
-    void scalesSvc_FPStateMachine_action_disableHpcMode(
+    void scalesSvc_FPStateMachine_action_beginDisableHpcMode(
+        SmId smId, scalesSvc_FPStateMachine::Signal signal) override;
+    void scalesSvc_FPStateMachine_action_disableHpcModeHealthCheck(
         SmId smId, scalesSvc_FPStateMachine::Signal signal) override;
     void scalesSvc_FPStateMachine_action_confirmJetsonFaultAndPowerOff(
         SmId smId, scalesSvc_FPStateMachine::Signal signal) override;

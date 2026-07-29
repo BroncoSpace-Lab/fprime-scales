@@ -295,16 +295,31 @@ void FPManager::scalesSvc_FPStateMachine_action_enableHpcMode(
     this->writeStateTelemetry();
 }
 
-void FPManager::scalesSvc_FPStateMachine_action_disableHpcMode(
+void FPManager::scalesSvc_FPStateMachine_action_beginDisableHpcMode(
     SmId smId, scalesSvc_FPStateMachine::Signal signal) {
-    if (this->m_jetsonPowerState == JetsonPowerStateID::ON) {
-        this->jetsonPowerRequestOut_out(0, JetsonPowerStateID::OFF);
-    }
-    this->m_jetsonPowerState = JetsonPowerStateID::OFF;
-    this->invalidateJetsonReadings();
+    this->jetsonPowerRequestOut_out(0, JetsonPowerStateID::OFF);
     this->m_mode = FPManagerState::SAFE;
     this->m_safeModeHealthy = false;
     this->writeStateTelemetry();
+    // m_jetsonPowerState/invalidateJetsonReadings() are deliberately left to
+    // jetsonPowerStateIn_handler, driven by JetsonManager's real confirmation
+    // (graceful ack or its own bounded GPIO-cut fallback), not declared here
+    // -- see disableHpcModeHealthCheck.
+}
+
+void FPManager::scalesSvc_FPStateMachine_action_disableHpcModeHealthCheck(
+    SmId smId, scalesSvc_FPStateMachine::Signal signal) {
+    if (this->imxFaultConfirmed()) {
+        this->triggerImxEmergencyShutdown(this->m_imxReading);
+        return;
+    }
+    if (this->peripheralFaultConfirmed()) {
+        this->triggerPeripheralEmergencyShutdown(this->m_peripheralReading);
+        return;
+    }
+    if (this->m_jetsonPowerState == JetsonPowerStateID::OFF) {
+        this->fpStateMachine_sendSignal_success();
+    }
 }
 
 void FPManager::scalesSvc_FPStateMachine_action_confirmJetsonFaultAndPowerOff(

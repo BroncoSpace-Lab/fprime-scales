@@ -133,6 +133,88 @@ void FPManagerTester::disablesHpcModeAndGatesJetsonOn() {
   ASSERT_EVENTS_JETSON_POWER_REQUEST_REJECTED_SIZE(1);
 }
 
+void FPManagerTester::disableHpcModeWaitsForJetsonOffConfirmation() {
+  this->initializeSafeMode();
+  this->enterHpcMode();
+  this->invoke_to_jetsonPowerStateIn(0, JetsonPowerStateID::ON);
+  this->invoke_to_jetsonThermalReadingIn(
+      0, this->reading(0, ThermalStates::IDLE, 40.0F, "CPU", 1));
+  this->drainStateMachine();
+
+  this->sendCmd_DISABLE_HPC_MODE(0, 1);
+  this->drainStateMachine();
+
+  ASSERT_from_jetsonPowerRequestOut_SIZE(1);
+  ASSERT_from_jetsonPowerRequestOut(0, JetsonPowerStateID::OFF);
+  // The cached Jetson reading is NOT yet invalidated -- FPManager has not
+  // received a real OFF confirmation from JetsonManager yet.
+  ASSERT_GT(this->tlmHistory_JETSON_VALID_READING_COUNT->size(), 0U);
+  ASSERT_EQ(this->tlmHistory_JETSON_VALID_READING_COUNT
+                ->at(this->tlmHistory_JETSON_VALID_READING_COUNT->size() - 1)
+                .arg,
+            1U);
+
+  // Still waiting: a tick with no confirmation changes nothing, and
+  // ENABLE_HPC_MODE stays rejected because Safe Mode isn't health-confirmed.
+  this->invoke_to_run(0, 0);
+  this->drainStateMachine();
+  this->sendCmd_ENABLE_HPC_MODE(0, 2);
+  this->drainStateMachine();
+  ASSERT_EQ(this->cmdResponseHistory->at(this->cmdResponseHistory->size() - 1).response,
+            Fw::CmdResponse::VALIDATION_ERROR);
+
+  // The real confirmation arrives from JetsonManager (graceful ack or its
+  // own bounded GPIO-cut fallback -- either way reported the same way here).
+  this->invoke_to_jetsonPowerStateIn(0, JetsonPowerStateID::OFF);
+  this->drainStateMachine();
+  this->invoke_to_run(0, 0);  // tick #1: bare disablingHpc -> safeMode edge
+  this->drainStateMachine();
+  this->invoke_to_run(0, 0);  // tick #2: safeModeHealthCheck actually runs
+  this->drainStateMachine();
+
+  ASSERT_EQ(this->tlmHistory_JETSON_VALID_READING_COUNT
+                ->at(this->tlmHistory_JETSON_VALID_READING_COUNT->size() - 1)
+                .arg,
+            0U);
+
+  this->sendCmd_ENABLE_HPC_MODE(0, 3);
+  this->drainStateMachine();
+  ASSERT_EQ(this->cmdResponseHistory->at(this->cmdResponseHistory->size() - 1).response,
+            Fw::CmdResponse::OK);
+}
+
+void FPManagerTester::imxFaultDuringDisableHpcWaitStillTriggersEmergencyShutdown() {
+  this->initializeSafeMode();
+  this->setFaultDebounce(1);
+  this->enterHpcMode();
+  this->invoke_to_jetsonPowerStateIn(0, JetsonPowerStateID::ON);
+  this->drainStateMachine();
+
+  this->sendCmd_DISABLE_HPC_MODE(0, 1);
+  this->drainStateMachine();
+
+  ASSERT_from_jetsonPowerRequestOut_SIZE(1);
+  ASSERT_EQ(this->tlmHistory_FP_STATE->at(this->tlmHistory_FP_STATE->size() - 1).arg,
+            FPManagerState::SAFE);
+
+  // A real i.MX fault arrives while still waiting in disablingHpc -- it must
+  // escalate immediately, not be delayed until Safe Mode is fully reached.
+  this->invoke_to_imxThermalReadingIn(
+      0, this->reading(1, ThermalStates::FAULT, 101.0F, "imx-cpu", 99));
+  this->invoke_to_run(0, 0);
+  this->drainStateMachine();
+
+  ASSERT_EVENTS_EMERGENCY_SHUTDOWN_SIZE(1);
+  // Fires twice total: once (unconditionally) from beginDisableHpcMode, and
+  // once again from SHUTDOWN's own unconditional jetsonPowerRequestOut_out call.
+  ASSERT_from_jetsonPowerRequestOut_SIZE(2);
+  ASSERT_from_jetsonPowerRequestOut(1, JetsonPowerStateID::OFF);
+  ASSERT_from_peripheralPowerOff_SIZE(1);
+  ASSERT_from_fatalOut_SIZE(1);
+  ASSERT_EQ(this->tlmHistory_FP_STATE->at(this->tlmHistory_FP_STATE->size() - 1).arg,
+            FPManagerState::EMERGENCY);
+}
+
 void FPManagerTester::imxFaultTriggersEmergencyShutdown() {
   this->initializeSafeMode();
   this->setFaultDebounce(1);
