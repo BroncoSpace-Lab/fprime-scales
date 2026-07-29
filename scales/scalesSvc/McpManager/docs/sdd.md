@@ -8,10 +8,12 @@ The McpManager will perform i2c read write operations to the three onboard MCP98
 
 ## Requirements
 
-| **Name** | **Description** | **Validation** |
-| --- | --- | --- |
-| MCPM-001 | Collect thermal readings as a ThermalReading defined type periodically and output it as telemetry | Unit Test/Inspection |
-| MCPM-002 | Output STATES dependent on configurable thermal parameter zones to the Spacecraft State Manager | Unit Test/Inspection |
+| **Name** | **Description** | **Validation** | **Verified By** |
+| --- | --- | --- | --- |
+| MCPM-001 | Collect thermal readings as a ThermalReading defined type periodically and output it as telemetry | Unit Test/Inspection | `Nominal.mcpTest`, `Nominal.readFailureHandling` |
+| MCPM-002 | Classify each sensor's reading into IDLE/WARN/FAULT against its configured thermal bounds and output the state to FPManager and DataProducer | Unit Test/Inspection | `Nominal.mcpTest`, `Nominal.thermalStateEvaluation` |
+| MCPM-003 | Gate `TempBounds` parameter updates so a misconfigured (non-ascending) update never takes effect, logging `THRESHOLDS_MISCONFIGURED` on every rejected attempt, independently for all three sensors | Unit Test/Inspection | `Nominal.boundsUpdateGating`, `Nominal.parameterUpdatedSwitchCoverage` |
+| MCPM-004 | Detect an individual sensor I2C read failure (`FAIL_TO_READ_TEMP_AT`), mark that sensor FAULT, and recover automatically on the next cycle after logging `FAIL_TO_READ_TEMP` | Unit Test/Inspection | `Nominal.readFailureHandling` |
 
 ## Design
 
@@ -21,14 +23,16 @@ The McpManager will perform i2c read write operations to the three onboard MCP98
 
 ### Typical Usage
 
-End user will check temperature parameters in real time. If thermal zones increase or decrease, states will be outputted to notify SpaceCraftStateManager of system health.
+End user will check temperature parameters in real time. If thermal zones increase or decrease, states will be outputted to notify FPManager of system health.
 
 ## Port Descriptions
 
 | **Kind** | **Name** | **Type** | **Description** |
 | --- | --- | --- | --- |
 | output port | mcpWriteRead | Drv.I2cWriteRead | Create output port to use the Drv.I2cWriteRead type to bring in i2cwriteread functionality to talk to sensors |
-| async input port | pollTempData | Svc.Sched | Port to be invoked by scheduler, causes component to print collected data |
+| async input port | run | Svc.Sched | Port to be invoked by scheduler, drives the internal thermal state machine (read -> evaluate) each cycle |
+| output port | mcpThermalReadOut | McpThermalReadings | Sends all three sensors' readings to DataProducer |
+| output port | thermalReadingOut | ThermalReadingPort | Sends each sensor's complete reading to FPManager |
 
 ## Component States
 
@@ -36,7 +40,8 @@ End user will check temperature parameters in real time. If thermal zones increa
 | --- | --- |
 | IDLE | Idle state for idle temperature ranges |
 | WARN | Warn state for warn temperature ranges |
-| FATAL | Fatal state for fatal temperature ranges |
+| FAULT | Fault state for out-of-bounds temperature ranges (also used for a failed sensor read) |
+| NOT_USED | Sensor is unavailable or should not be considered (not currently set by McpManager; part of the shared `ThermalStates` enum) |
 
 ## Parameters
 
@@ -86,11 +91,28 @@ next tick rather than waiting for the next `PRM_SET`.
 
 ## Unit Tests
 
-| **Name** | **Description** | **Output** | **Coverage** |
-| --- | --- | --- | --- |
-| MCPMUT-001 | Verify that I2cWriteRead cycle is complete, then prints data over 2 cycles | Correct | 100% |
-| MCPMUT-002 | Verify that Temperature parameters output expected STATES for each sensor  | Works in GDS and a cycle in unit tests | 70% |
-| MCPMUT-003 | `boundsUpdateGating`: applies a valid `TempBounds` update to sensor 0 (IMX) and confirms it is adopted and telemetered, applies an inverted WARN_HIGH/IDLE_HIGH configuration and confirms it is rejected (bounds unchanged, event fires), confirms repeating the same bad attempt fires again, then confirms a second valid update is adopted normally. | Active bounds, telemetry, and `THRESHOLDS_MISCONFIGURED` event count match expectations at each step | 100% |
+Measured via `fprime-util check --coverage`: **96.8% line (150/155), 100%
+function (13/13), 60.0% branch (114/190)**. The remaining uncovered lines are
+the `default:` case of `doEvaluate()`'s per-sensor switch (unreachable --
+the driving loop only ever produces indices 0-2) and the final `else` in
+`determineTempState()` (unreachable given well-ordered bounds -- every
+`TempBounds` update is gated through `thresholdsAreOrdered()`, so the
+FAULT/WARN/IDLE ranges are always contiguous and exhaustive; this branch only
+exists as a defensive catch-all for an invariant the gating already
+guarantees).
+
+| **Name** | **Description** | **Verifies** |
+| --- | --- | --- |
+| `Nominal.mcpTest` | Boots the component, drives one full read+evaluate cycle with all three sensors in IDLE range, confirms telemetry is emitted with the correct state. | MCPM-001 |
+| `Nominal.boundsUpdateGating` | Applies a valid `TempBounds` update to sensor 0 (IMX) and confirms it is adopted and telemetered, applies an inverted WARN_HIGH/IDLE_HIGH configuration and confirms it is rejected (bounds unchanged, event fires), confirms repeating the same bad attempt fires again, then confirms a second valid update is adopted normally. | MCPM-002, MCPM-003 |
+| `Nominal.thermalStateEvaluation` | Drives all three sensors through WARN, the FAULT low-side gap, and the FAULT high-side gap (a distinct disjunct in `determineTempState()`, between `WARN_HIGH` and `FAULT_HIGH`) across separate read+evaluate cycles, confirming each is classified correctly. | MCPM-002 |
+| `Nominal.readFailureHandling` | Forces every `mcpWriteRead` call to fail for one read cycle: confirms each sensor gets `FAIL_TO_READ_TEMP_AT` and is marked FAULT, confirms the overall failure path (`doReadFail`) emits `FAIL_TO_READ_TEMP` and resets the per-sensor retry flags, then confirms the next cycle succeeds normally. | MCPM-001, MCPM-004 |
+| `Nominal.parameterUpdatedSwitchCoverage` | Calls `parameterUpdated()` for all three sensors' parameter IDs (`boundsUpdateGating` only reaches IMX, via direct `applyBounds()` access) plus an unrecognized ID, and `writeBoundsTelemetry()` with an out-of-range sensor index. | MCPM-003 |
+
+Each test is tagged with `RecordProperty("requirement", "<REQ-IDs>")`; running
+the test binary with `--gtest_output=xml:<path>` produces a JUnit-style XML
+report whose `<testcase>` elements carry that mapping as a machine-checkable
+artifact.
 
 ## Change Log
 
@@ -103,3 +125,4 @@ next tick rather than waiting for the next `PRM_SET`.
 | 1.4.0 | Added telemetry readback for all 18 current per-sensor MCP threshold parameters, published at initialization and after parameter updates. | Luca Lanzillotta |
 | 1.5.0 | Replaced the 18 individual scalar threshold parameters and their 18 scalar readback channels with one `TempBounds` struct parameter and one `TempBounds` struct telemetry channel per sensor (IMX/PERIPHERAL/JETSON), so GDS shows one bounds row per sensor instead of six. Bounds updates are now gated: a `PRM_SET` is only adopted if it passes `thresholdsAreOrdered()`, otherwise the sensor keeps its last-known-good bounds and `THRESHOLDS_MISCONFIGURED` fires (now on every rejected attempt, not just the first, since misconfiguration never takes effect). Also fixed a boundary-inclusivity bug in `determineTempState()`: a reading exactly at `WARN_HIGH` was claimed by FAULT (inclusive) before WARN (exclusive) could claim it; WARN now claims its own upper boundary, symmetric with its already-inclusive lower boundary. | Luca Lanzillotta |
 | 1.5.1 | Each sensor's `TempBounds` telemetry now republishes unconditionally every evaluate cycle instead of only on boot/change, so a GDS session that connects after boot still sees the current bounds on the next tick rather than missing the one-time boot publish. | Luca Lanzillotta |
+| 1.6.0 | SDD accuracy audit: fixed the Requirements table's MCPM-002 description (claimed output went to a "Spacecraft State Manager," which is not wired into either deployment -- the real destination is FPManager), added MCPM-003/MCPM-004 requirements to cover bounds gating and read-failure handling (previously undocumented), corrected Port Descriptions (`pollTempData` doesn't exist -- the real port is `run`; added the undocumented `mcpThermalReadOut`/`thermalReadingOut` output ports), fixed Component States (`FATAL` -> `FAULT`, added `NOT_USED`), and replaced unverified coverage claims with measured `fprime-util check --coverage` numbers. Added `thermalStateEvaluation` (WARN and both FAULT-gap branches), `readFailureHandling` (I2C failure injection via an overridable test port handler), and `parameterUpdatedSwitchCoverage` (PERIPHERAL/JETSON/unrecognized parameter IDs, out-of-range sensor index) to close coverage gaps from 72.9%/84.6%/45.3% (line/function/branch) to 96.8%/100%/60.0%. Tagged every test with `RecordProperty("requirement", ...)` and added a `Verified By`/`Verifies` mapping between the Requirements and Unit Tests tables. | Luca Lanzillotta |

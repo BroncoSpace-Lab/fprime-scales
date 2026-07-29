@@ -140,6 +140,7 @@ void ImxThermalManager::scalesSvc_ThermalStateMachine_action_doEvaluate( SmId sm
       else{
         this->m_cpu_thermal_read.set_location(Fw::String("FAILED_READ"));
         this->tlmWrite_imx_cpu_temp_read(this->m_cpu_thermal_read);
+        this->log_WARNING_HI_FAIL_TO_READ_TEMP();
         this->thermalStateMachine_sendSignal_fail();
       }
 

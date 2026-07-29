@@ -58,6 +58,23 @@ namespace scalesSvc {
       //! fires -- every time a bad update is attempted, not just the first.
       void boundsUpdateGating();
 
+      //! Drives each sensor's temperature into its WARN and FAULT bands (in
+      //! addition to mcpTest()'s IDLE coverage) and confirms determineTempState()
+      //! classifies each band correctly.
+      void thermalStateEvaluation();
+
+      //! Forces mcpWriteRead to fail for one run cycle: confirms the failing
+      //! sensor is set to FAULT with FAIL_TO_READ_TEMP_AT, confirms the overall
+      //! read-failure path (doReadFail) emits FAIL_TO_READ_TEMP and resets the
+      //! per-sensor flags so the next cycle retries normally.
+      void readFailureHandling();
+
+      //! Exercises parameterUpdated() for the PERIPHERAL and JETSON bounds
+      //! (boundsUpdateGating() only covers IMX) plus the default case for an
+      //! unrecognized parameter ID, and writeBoundsTelemetry()'s default case
+      //! for an out-of-range sensor index.
+      void parameterUpdatedSwitchCoverage();
+
     private:
 
       // ----------------------------------------------------------------------
@@ -70,6 +87,22 @@ namespace scalesSvc {
       //! Initialize components
       void initComponents();
 
+      //! Dispatch messages until the queue is empty. The state machine chains
+      //! several internally-generated signals per external tick (run_handler
+      //! -> tick -> action -> success/fail signal), so a fixed dispatch count
+      //! is fragile; this drains whatever chain a single invoke_to_run start.
+      void drainQueue();
+
+      //! Override: when m_forceI2cFailure is true, reports I2C_READ_ERR
+      //! instead of I2C_OK, so readTemp()'s failure path can be exercised
+      //! deterministically.
+      Drv::I2cStatus from_mcpWriteRead_handler(
+          FwIndexType portNum,
+          U32 addr,
+          Fw::Buffer& writeBuffer,
+          Fw::Buffer& readBuffer
+      ) override;
+
     private:
 
       // ----------------------------------------------------------------------
@@ -78,6 +111,9 @@ namespace scalesSvc {
 
       //! The component under test
       McpManager component;
+
+      //! When true, from_mcpWriteRead_handler reports I2C_READ_ERR
+      bool m_forceI2cFailure = false;
 
   };
 

@@ -7,6 +7,7 @@
 #include "ImxThermalManagerTester.hpp"
 #include <Os/File.hpp>
 #include <cstdio>
+#include <cstring>
 #include <unistd.h>
 
 
@@ -51,6 +52,20 @@ namespace scalesSvc {
     tempFile.close();
     ASSERT_EQ(Os::File::Status::OP_OK, status);
     ASSERT_EQ(static_cast<FwSizeType>(textSize), writeSize);
+  }
+
+  void ImxThermalManagerTester :: writeRawTempFile(const char* path, const char* content)
+  {
+    Os::File tempFile;
+    Os::File::Status status = tempFile.open(path, Os::File::Mode::OPEN_CREATE, Os::File::OverwriteType::OVERWRITE);
+    ASSERT_EQ(Os::File::Status::OP_OK, status);
+
+    FwSizeType writeSize = static_cast<FwSizeType>(std::strlen(content));
+    if (writeSize > 0) {
+      status = tempFile.write(reinterpret_cast<const U8*>(content), writeSize, Os::File::WaitType::WAIT);
+      ASSERT_EQ(Os::File::Status::OP_OK, status);
+    }
+    tempFile.close();
   }
 
   void ImxThermalManagerTester :: runTickAction()
@@ -100,6 +115,7 @@ namespace scalesSvc {
     ASSERT_TLM_imx_cpu_temp_read_SIZE(1);
     const ThermalReading& failedRead = this->tlmHistory_imx_cpu_temp_read->at(0).arg;
     ASSERT_STREQ(failedRead.get_location().toChar(), "FAILED_READ");
+    ASSERT_EVENTS_FAIL_TO_READ_TEMP_SIZE(1);
 
     this->writeTemperatureFile(fakeTempPath, 42.0F);
     this->runTickAction();
@@ -161,5 +177,63 @@ namespace scalesSvc {
     ASSERT_EVENTS_THRESHOLDS_MISCONFIGURED_SIZE(2);
     ASSERT_TLM_IMX_CPU_BOUNDS_SIZE(2);
     ASSERT_TLM_IMX_CPU_BOUNDS(1, otherGoodBounds);
+  }
+
+  void ImxThermalManagerTester :: highSideFaultGap()
+  {
+    this->component.loadParameters();
+    CHAR fakeTempPath[128];
+    std::snprintf(fakeTempPath, sizeof(fakeTempPath), "/tmp/imx_cpu_temp_test_hsf_%ld", static_cast<long>(::getpid()));
+    this->component.setTempPath(fakeTempPath);
+
+    // Between WARN_HIGH (80) and FAULT_HIGH (100) -- a distinct disjunct in
+    // doEvaluate()'s FAULT condition from the low-side case
+    // ImxThermalManagerTesting() already covers (-30, below FAULT_LOW).
+    this->writeTemperatureFile(fakeTempPath, 90.0F);
+    this->readAndEvaluateTemperature();
+    this->assertLatestReading(1, 90.0F, scalesSvc::ThermalStates::FAULT);
+
+    static_cast<void>(std::remove(fakeTempPath));
+  }
+
+  void ImxThermalManagerTester :: malformedTempFile()
+  {
+    CHAR path[128];
+    std::snprintf(path, sizeof(path), "/tmp/imx_cpu_temp_test_malformed_%ld", static_cast<long>(::getpid()));
+    this->component.setTempPath(path);
+
+    // Empty file.
+    this->writeRawTempFile(path, "");
+    ASSERT_EQ(this->component.readTemperatureFile(), false);
+
+    // Non-numeric content.
+    this->writeRawTempFile(path, "not_a_number\n");
+    ASSERT_EQ(this->component.readTemperatureFile(), false);
+
+    // Trailing garbage after an otherwise-valid number.
+    this->writeRawTempFile(path, "42000garbage");
+    ASSERT_EQ(this->component.readTemperatureFile(), false);
+
+    // Sanity check: a well-formed file still succeeds.
+    this->writeRawTempFile(path, "42000\n");
+    ASSERT_EQ(this->component.readTemperatureFile(), true);
+
+    static_cast<void>(std::remove(path));
+  }
+
+  void ImxThermalManagerTester :: parameterUpdatedCoverage()
+  {
+    this->component.loadParameters();
+    this->clearHistory();
+
+    // PARAMID_IMX_CPU_BOUNDS = 0x0 (ImxThermalManagerComponentAc.hpp).
+    // boundsUpdateGating() calls applyBounds() directly, bypassing this
+    // switch entirely, so it's otherwise never exercised.
+    this->component.parameterUpdated(0x0);
+    ASSERT_EVENTS_THRESHOLDS_MISCONFIGURED_SIZE(0);
+
+    // Unrecognized parameter ID: default case, no-op.
+    this->component.parameterUpdated(0xDEAD);
+    ASSERT_EVENTS_THRESHOLDS_MISCONFIGURED_SIZE(0);
   }
 }
