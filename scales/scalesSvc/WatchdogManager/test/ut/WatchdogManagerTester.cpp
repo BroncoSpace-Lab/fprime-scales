@@ -24,7 +24,7 @@ namespace scalesSvc {
   WatchdogManagerTester ::
     ~WatchdogManagerTester()
   {
-
+    this->component.deinit();
   }
 
   // ----------------------------------------------------------------------

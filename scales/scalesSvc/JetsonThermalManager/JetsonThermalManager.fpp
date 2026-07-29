@@ -25,13 +25,13 @@ module scalesSvc {
         @ telemetry channel for Jetson CV0 temp data
         telemetry jetson_cv0_temp_read: ThermalReading \
             id 0x02
-        
+
         @ telemetry channel for Jetson CV1 temp data
-        telemetry jetson_cv1_temp_read: ThermalReading \   
+        telemetry jetson_cv1_temp_read: ThermalReading \
             id 0x03
 
         @ telemetry channel for Jetson CV2 temp data
-        telemetry jetson_cv2_temp_read: ThermalReading \   
+        telemetry jetson_cv2_temp_read: ThermalReading \
             id 0x04
 
         @ telemetry channel for Jetson SOC0 temp data
@@ -41,7 +41,7 @@ module scalesSvc {
         @ telemetry channel for Jetson SOC1 temp data
         telemetry jetson_soc1_temp_read: ThermalReading \
             id 0x06
-        
+
         # telemetry channel for Jetson SOC2 temp data
         telemetry jetson_soc2_temp_read: ThermalReading \
             id 0x07
@@ -51,78 +51,32 @@ module scalesSvc {
             id 0x08
 
         ###############################################################################
-        # Telemetry to show the parameters of the Jetson's thermal zones  #
+        # Bounds shared by all nine Jetson zones (they're all on one die)             #
         ###############################################################################
 
-        @ IDLE Low temperature threshold
-        param JETSON_IDLE_LOW: F32 \
-            default 10 \
-            id 0x00 \ 
+        @ Currently active Jetson IDLE/WARN/FAULT bounds, shared across all
+        @ nine zones (a rejected update never reaches this channel -- see
+        @ JETSON_BOUNDS parameter).
+        telemetry JETSON_BOUNDS: TempBounds id 0x16
+
+        @ Jetson IDLE/WARN/FAULT temperature bounds, shared across all nine
+        @ on-die thermal zones
+        param JETSON_BOUNDS: TempBounds \
+            default { faultLow = -40.0, warnLow = -20.0, idleLow = 10.0, idleHigh = 60.0, warnHigh = 80.0, faultHigh = 100.0 } \
+            id 0x00 \
             set opcode 0x01 \
             save opcode 0x02
-
-        @ IDLE High temperature threshold
-        param JETSON_IDLE_HIGH: F32 \
-            default 60 \
-            id 0x01 \ 
-            set opcode 0x03 \
-            save opcode 0x04
-        
-        @ WARNING Low temperature threshold
-        param JETSON_WARN_LOW: F32 \
-            default -20 \
-            id 0x02 \ 
-            set opcode 0x05 \
-            save opcode 0x06
-
-        @ WARNING High temperature threshold
-        param JETSON_WARN_HIGH: F32 \
-            default 80 \   
-            id 0x03 \ 
-            set opcode 0x07 \
-            save opcode 0x08
-        
-        @ FAULT Low temperature threshold
-        param JETSON_FAULT_LOW: F32 \
-            default -40 \
-            id 0x04 \ 
-            set opcode 0x09 \
-            save opcode 0x10
-        
-        @ FAULT High temperature threshold
-        param JETSON_FAULT_HIGH: F32 \
-            default 100 \
-            id 0x05 \ 
-            set opcode 0x11 \
-            save opcode 0x12
-        
-        @ Telmetry for IDLE state low threshold
-        telemetry JETSON_IDLE_LOW: F32 id 0x16
-
-        @ Telmetry for IDLE state high threshold
-        telemetry JETSON_IDLE_HIGH: F32 id 0x17
-
-        @ Telmetry for WARNING state low threshold
-        telemetry JETSON_WARN_LOW: F32 id 0x18  
-
-        @ Telmetry for WARNING state high threshold
-        telemetry JETSON_WARN_HIGH: F32 id 0x19
-
-        @ Telmetry for FAULT state low threshold
-        telemetry JETSON_FAULT_LOW: F32 id 0x1a
-
-        @ Telmetry for FAULT state high threshold
-        telemetry JETSON_FAULT_HIGH: F32 id 0x1b
 
         ###############################################################################
         #                                 Events                                      #
         ###############################################################################
 
-        @ The Jetson IDLE/WARN/FAULT thresholds are not in a sane ascending
-        @ order (FAULT_LOW <= WARN_LOW <= IDLE_LOW <= IDLE_HIGH <= WARN_HIGH
-        @ <= FAULT_HIGH). Readings for all nine Jetson zones may be
-        @ misclassified (e.g. reported as FAULT when WARN or IDLE was
-        @ intended) until corrected.
+        @ The Jetson's newly-set IDLE/WARN/FAULT bounds are not in a sane
+        @ ascending order (FAULT_LOW <= WARN_LOW <= IDLE_LOW <= IDLE_HIGH <=
+        @ WARN_HIGH <= FAULT_HIGH). The update is rejected and the last-known-
+        @ good bounds stay in effect for all nine zones -- fires on every
+        @ rejected attempt, not just the first, since misconfiguration never
+        @ actually takes effect.
         event THRESHOLDS_MISCONFIGURED(
             source: string size 32
             faultLow: F32
@@ -134,7 +88,7 @@ module scalesSvc {
         ) \
             severity warning high \
             id 0x00 \
-            format "{} temperature thresholds are not in ascending order: FAULT_LOW={} WARN_LOW={} IDLE_LOW={} IDLE_HIGH={} WARN_HIGH={} FAULT_HIGH={}"
+            format "{} temperature bounds rejected, not in ascending order: FAULT_LOW={} WARN_LOW={} IDLE_LOW={} IDLE_HIGH={} WARN_HIGH={} FAULT_HIGH={}"
 
         ###############################################################################
         # Standard AC Ports: Required for Channels, Events, Commands, and Parameters  #

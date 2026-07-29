@@ -45,7 +45,7 @@ namespace scalesSvc {
   // Component construction and destruction
   // ----------------------------------------------------------------------
 
-  JetsonThermalManager :: JetsonThermalManager(const char* const compName) : 
+  JetsonThermalManager :: JetsonThermalManager(const char* const compName) :
     JetsonThermalManagerComponentBase(compName),
     m_justBooted(true),
     m_successfulRead(true)
@@ -79,15 +79,9 @@ namespace scalesSvc {
       printf("Device just booted. Setting up parameters...\n");
       m_justBooted = false;
       m_startTime = this->getTime().getSeconds();
-      // Default threshold values, can be updated by sending commands
-      this->IDLE_LOW_THR = this->paramGet_JETSON_IDLE_LOW(m_paramIsValid); 
-      this->IDLE_HIGH_THR = this->paramGet_JETSON_IDLE_HIGH(m_paramIsValid);
-      this->WARN_LOW_THR = this->paramGet_JETSON_WARN_LOW(m_paramIsValid);
-      this->WARN_HIGH_THR = this->paramGet_JETSON_WARN_HIGH(m_paramIsValid);
-      this->FAULT_LOW_THR = this->paramGet_JETSON_FAULT_LOW(m_paramIsValid);
-      this->FAULT_HIGH_THR = this->paramGet_JETSON_FAULT_HIGH(m_paramIsValid);
-      this->writeParameterTelemetry();
-      this->validateThresholds();
+      // Gate the saved/default bounds through the same validity check as a
+      // live PRM_SET, and publish the resulting active bounds.
+      this->applyBounds(this->paramGet_JETSON_BOUNDS(m_paramIsValid));
     } else {
         for (int i = 0; i < 9; i++){
           F32 temp;
@@ -100,7 +94,7 @@ namespace scalesSvc {
             this->m_jetsonThermalReadings[i].set_tempState(scalesSvc::ThermalStates::NOT_USED);
             // this->m_successfulRead = false;
           }
-          this->m_jetsonThermalReadings[i].set_sensorId(i); 
+          this->m_jetsonThermalReadings[i].set_sensorId(i);
           this->m_jetsonThermalReadings[i].set_timestamp(this->getTime().getSeconds()-m_startTime);
           this->m_jetsonThermalReadings[i].set_location(Fw::String(indexToZone[i].c_str()));
 
@@ -123,7 +117,7 @@ namespace scalesSvc {
           scalesSvc::ThermalStates tempState = this->determineTempState(this->m_jetsonThermalReadings[i].get_temperature());
           this->m_jetsonThermalReadings[i].set_tempState(tempState); // Set the temp state
         }
-        
+
         switch(i){
           case CPU:
             this->tlmWrite_jetson_cpu_temp_read(this->m_jetsonThermalReadings[CPU]);
@@ -156,6 +150,12 @@ namespace scalesSvc {
         this->jetsonThermalReadingOut_out(0, this->m_jetsonThermalReadings[i]);
     }
 
+    // Republish the active bounds every cycle (not just on boot/change) so a
+    // GDS session that connects late still sees them on the next tick
+    // instead of waiting for another PRM_SET. One write per cycle, since the
+    // bounds are shared across all nine zones.
+    this->tlmWrite_JETSON_BOUNDS(this->m_activeBounds);
+
     // Send readings to DataProducer
     this->jetsonThermalReadOut_out(0,
                                    m_jetsonThermalReadings[CPU],
@@ -181,45 +181,13 @@ namespace scalesSvc {
   }
 
   void JetsonThermalManager :: parameterUpdated(FwPrmIdType id) {
-    // Update threshold values based on parameter updates
-    printf("Parameter with ID 0x%X has been updated. Updating threshold values...\n", id);
-
     switch (id) {
-      case PARAMID_JETSON_IDLE_LOW:
-        this->IDLE_LOW_THR = this->paramGet_JETSON_IDLE_LOW(m_paramIsValid);
-        break;
-      case PARAMID_JETSON_IDLE_HIGH:
-        this->IDLE_HIGH_THR = this->paramGet_JETSON_IDLE_HIGH(m_paramIsValid);
-        break;
-      case PARAMID_JETSON_WARN_LOW:
-        this->WARN_LOW_THR = this->paramGet_JETSON_WARN_LOW(m_paramIsValid);
-        break;
-      case PARAMID_JETSON_WARN_HIGH:
-        this->WARN_HIGH_THR = this->paramGet_JETSON_WARN_HIGH(m_paramIsValid);
-        break;
-      case PARAMID_JETSON_FAULT_LOW:
-        this->FAULT_LOW_THR = this->paramGet_JETSON_FAULT_LOW(m_paramIsValid);
-        break;
-      case PARAMID_JETSON_FAULT_HIGH:
-        this->FAULT_HIGH_THR = this->paramGet_JETSON_FAULT_HIGH(m_paramIsValid);
+      case PARAMID_JETSON_BOUNDS:
+        this->applyBounds(this->paramGet_JETSON_BOUNDS(m_paramIsValid));
         break;
       default:
-        // Handle unexpected parameter ID
-        printf("Warning: Received update for unrecognized parameter ID 0x%X. No threshold values were updated.\n", id);
-        return;
+        break;
     }
-
-    this->writeParameterTelemetry();
-    this->validateThresholds();
-  }
-
-  void JetsonThermalManager :: writeParameterTelemetry() {
-    this->tlmWrite_JETSON_IDLE_LOW(this->paramGet_JETSON_IDLE_LOW(m_paramIsValid));
-    this->tlmWrite_JETSON_IDLE_HIGH(this->paramGet_JETSON_IDLE_HIGH(m_paramIsValid));
-    this->tlmWrite_JETSON_WARN_LOW(this->paramGet_JETSON_WARN_LOW(m_paramIsValid));
-    this->tlmWrite_JETSON_WARN_HIGH(this->paramGet_JETSON_WARN_HIGH(m_paramIsValid));
-    this->tlmWrite_JETSON_FAULT_LOW(this->paramGet_JETSON_FAULT_LOW(m_paramIsValid));
-    this->tlmWrite_JETSON_FAULT_HIGH(this->paramGet_JETSON_FAULT_HIGH(m_paramIsValid));
   }
 
   bool JetsonThermalManager :: readTemp(U8 index, F32& temp) {
@@ -268,14 +236,21 @@ namespace scalesSvc {
   }
 
   scalesSvc::ThermalStates JetsonThermalManager :: determineTempState(F32 tempCelsius) {
-    if (tempCelsius < this->FAULT_LOW_THR || this->FAULT_HIGH_THR <= tempCelsius ||
-        (this->FAULT_LOW_THR <= tempCelsius && tempCelsius < this->WARN_LOW_THR) ||
-        (this->WARN_HIGH_THR <= tempCelsius && tempCelsius < this->FAULT_HIGH_THR)) {
+    const F32 faultLow = this->m_activeBounds.get_faultLow();
+    const F32 warnLow = this->m_activeBounds.get_warnLow();
+    const F32 idleLow = this->m_activeBounds.get_idleLow();
+    const F32 idleHigh = this->m_activeBounds.get_idleHigh();
+    const F32 warnHigh = this->m_activeBounds.get_warnHigh();
+    const F32 faultHigh = this->m_activeBounds.get_faultHigh();
+
+    if (tempCelsius < faultLow || faultHigh <= tempCelsius ||
+        (faultLow <= tempCelsius && tempCelsius < warnLow) ||
+        (warnHigh < tempCelsius && tempCelsius < faultHigh)) {
       return scalesSvc::ThermalStates::FAULT;
-    } else if ((this->WARN_LOW_THR <= tempCelsius && tempCelsius < this->IDLE_LOW_THR) ||
-               (this->IDLE_HIGH_THR < tempCelsius && tempCelsius < this->WARN_HIGH_THR)) {
+    } else if ((warnLow <= tempCelsius && tempCelsius < idleLow) ||
+               (idleHigh < tempCelsius && tempCelsius <= warnHigh)) {
       return scalesSvc::ThermalStates::WARN;
-    } else if (this->IDLE_LOW_THR <= tempCelsius && tempCelsius <= this->IDLE_HIGH_THR){
+    } else if (idleLow <= tempCelsius && tempCelsius <= idleHigh){
       return scalesSvc::ThermalStates::IDLE;
     } else {
       // Treat gaps caused by invalid or overlapping parameters as unsafe.
@@ -283,24 +258,23 @@ namespace scalesSvc {
     }
   }
 
-  bool JetsonThermalManager :: thresholdsAreOrdered(F32 faultLow, F32 warnLow, F32 idleLow,
-                                                     F32 idleHigh, F32 warnHigh, F32 faultHigh) const {
-    return faultLow <= warnLow && warnLow <= idleLow && idleLow <= idleHigh &&
-           idleHigh <= warnHigh && warnHigh <= faultHigh;
+  bool JetsonThermalManager :: thresholdsAreOrdered(const scalesSvc::TempBounds& bounds) const {
+    return bounds.get_faultLow() <= bounds.get_warnLow() &&
+           bounds.get_warnLow() <= bounds.get_idleLow() &&
+           bounds.get_idleLow() <= bounds.get_idleHigh() &&
+           bounds.get_idleHigh() <= bounds.get_warnHigh() &&
+           bounds.get_warnHigh() <= bounds.get_faultHigh();
   }
 
-  void JetsonThermalManager :: validateThresholds() {
-    const bool ordered = this->thresholdsAreOrdered(
-        this->FAULT_LOW_THR, this->WARN_LOW_THR, this->IDLE_LOW_THR,
-        this->IDLE_HIGH_THR, this->WARN_HIGH_THR, this->FAULT_HIGH_THR);
-
-    if (!ordered && this->m_thresholdsValid) {
-      this->m_thresholdsValid = false;
+  void JetsonThermalManager :: applyBounds(const scalesSvc::TempBounds& candidate) {
+    if (this->thresholdsAreOrdered(candidate)) {
+      this->m_activeBounds = candidate;
+      this->tlmWrite_JETSON_BOUNDS(this->m_activeBounds);
+    } else {
       this->log_WARNING_HI_THRESHOLDS_MISCONFIGURED(
-          Fw::String("JETSON"), this->FAULT_LOW_THR, this->WARN_LOW_THR, this->IDLE_LOW_THR,
-          this->IDLE_HIGH_THR, this->WARN_HIGH_THR, this->FAULT_HIGH_THR);
-    } else if (ordered) {
-      this->m_thresholdsValid = true;
+          Fw::String("JETSON"), candidate.get_faultLow(), candidate.get_warnLow(),
+          candidate.get_idleLow(), candidate.get_idleHigh(),
+          candidate.get_warnHigh(), candidate.get_faultHigh());
     }
   }
 }

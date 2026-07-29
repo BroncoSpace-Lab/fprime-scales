@@ -11,9 +11,9 @@ TEST(Nominal, JetsonThermalManagerUnitTester) {
   tester.JetsonThermalManagerUnitTester();
 }
 
-TEST(Nominal, thresholdsMisconfiguredEmitsOnceOnTransition) {
+TEST(Nominal, boundsUpdateGating) {
   scalesSvc::JetsonThermalManagerTester tester;
-  tester.thresholdsMisconfiguredEmitsOnceOnTransition();
+  tester.boundsUpdateGating();
 }
 
 int main(int argc, char** argv) {

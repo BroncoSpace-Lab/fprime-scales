@@ -52,10 +52,11 @@ namespace scalesSvc {
       //! To do
       void mcpTest();
 
-      //! THRESHOLDS_MISCONFIGURED fires once on the transition into a bad
-      //! ordering, stays silent while it remains bad, and can re-fire after
-      //! being fixed and broken again.
-      void thresholdsMisconfiguredEmitsOnceOnTransition();
+      //! A sensor's bounds update is only adopted (and its telemetry
+      //! republished) if it passes thresholdsAreOrdered(); otherwise the
+      //! sensor keeps its last-known-good bounds and THRESHOLDS_MISCONFIGURED
+      //! fires -- every time a bad update is attempted, not just the first.
+      void boundsUpdateGating();
 
     private:
 

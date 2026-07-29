@@ -40,22 +40,41 @@ End user will check temperature parameters in real time. If thermal zones increa
 
 ## Parameters
 
-Thresholds are per-sensor (one set of six each for IMX, PERIPHERAL, and
-JETSON) rather than shared, so each sensor's IDLE/WARN/FAULT bounds can be
-tuned independently. Set/save opcodes follow `id*2 + 1` / `id*2 + 2`.
+Each sensor's six IDLE/WARN/FAULT thresholds are bundled into one
+`TempBounds` struct parameter (`faultLow, warnLow, idleLow, idleHigh,
+warnHigh, faultHigh`, ascending left to right) instead of six separate
+scalars, so GDS shows one row per sensor instead of six and a PRM_SET always
+supplies a complete, self-consistent set of bounds.
+
+A `TempBounds` update is **gated**: it is only adopted as the sensor's active
+bounds if `thresholdsAreOrdered()` holds (`faultLow <= warnLow <= idleLow <=
+idleHigh <= warnHigh <= faultHigh`). A rejected update never takes effect --
+the sensor keeps using its last-known-good bounds -- because a misconfigured
+critical boundary can otherwise cause FPManager to misclassify a reading and
+assert an emergency shutdown. See `THRESHOLDS_MISCONFIGURED` below.
 
 | **Name** | **Description** |
 | --- | --- |
-| MCP_IMX_IDLE_LOW / IDLE_HIGH / WARN_LOW / WARN_HIGH / FAULT_LOW / FAULT_HIGH | F32 (ids 0x00-0x05) IMX sensor thresholds. |
-| MCP_PERIPHERAL_IDLE_LOW / IDLE_HIGH / WARN_LOW / WARN_HIGH / FAULT_LOW / FAULT_HIGH | F32 (ids 0x06-0x0B) Peripheral sensor thresholds. |
-| MCP_JETSON_IDLE_LOW / IDLE_HIGH / WARN_LOW / WARN_HIGH / FAULT_LOW / FAULT_HIGH | F32 (ids 0x0C-0x11) Jetson-board sensor thresholds. |
+| MCP_IMX_BOUNDS | `TempBounds` (id 0x00), IMX sensor bounds. |
+| MCP_PERIPHERAL_BOUNDS | `TempBounds` (id 0x01), Peripheral sensor bounds. |
+| MCP_JETSON_BOUNDS | `TempBounds` (id 0x02), Jetson-board sensor bounds. |
 
 ## Telemetry
 
+Telemetry is grouped by subsystem: each sensor's raw `ThermalReading` is
+immediately followed by its currently active `TempBounds`. Both are
+republished unconditionally every evaluate cycle (not just on boot/change),
+so a GDS session that connects mid-run still sees current bounds on the
+next tick rather than waiting for the next `PRM_SET`.
+
 | **Name** | **Description** |
 | --- | --- |
-| IMX_TEMP / PERIPHERAL_TEMP / JETSON_TEMP | `ThermalReading` for each of the three MCP9808 sensors (ids 0x00-0x02). |
-| MCP_IMX_* / MCP_PERIPHERAL_* / MCP_JETSON_* (18 channels, ids 0x10-0x21) | Threshold readback channels, published during initialization and whenever a parameter is updated. |
+| IMX_TEMP | `ThermalReading` for the IMX MCP9808 sensor (id 0x00). |
+| MCP_IMX_BOUNDS | `TempBounds` (id 0x10) currently active for the IMX sensor. Only updated when a PRM_SET passes the ordering gate -- a rejected update leaves this (and the sensor's classification) unchanged. |
+| PERIPHERAL_TEMP | `ThermalReading` for the peripheral MCP9808 sensor (id 0x01). |
+| MCP_PERIPHERAL_BOUNDS | `TempBounds` (id 0x11) currently active for the peripheral sensor. |
+| JETSON_TEMP | `ThermalReading` for the Jetson-board MCP9808 sensor (id 0x02). |
+| MCP_JETSON_BOUNDS | `TempBounds` (id 0x12) currently active for the Jetson-board sensor. |
 
 ## Events
 
@@ -63,7 +82,7 @@ tuned independently. Set/save opcodes follow `id*2 + 1` / `id*2 + 2`.
 | --- | --- |
 | FAIL_TO_READ_TEMP_AT | Warning emitted when a specific sensor's I2C read fails. |
 | FAIL_TO_READ_TEMP | Warning emitted when one or more sensors failed to read this cycle. |
-| THRESHOLDS_MISCONFIGURED | Warning emitted once when a sensor's six thresholds stop being in ascending order (`FAULT_LOW <= WARN_LOW <= IDLE_LOW <= IDLE_HIGH <= WARN_HIGH <= FAULT_HIGH`); does not re-fire until the ordering is fixed and broken again. Purely informational -- no protective action is taken. |
+| THRESHOLDS_MISCONFIGURED | Warning emitted every time a sensor's newly-set bounds are rejected for not being in ascending order (`FAULT_LOW <= WARN_LOW <= IDLE_LOW <= IDLE_HIGH <= WARN_HIGH <= FAULT_HIGH`). Fires on every rejected attempt, not just the first, since a rejected update never takes effect -- the sensor keeps its previous bounds. |
 
 ## Unit Tests
 
@@ -71,7 +90,7 @@ tuned independently. Set/save opcodes follow `id*2 + 1` / `id*2 + 2`.
 | --- | --- | --- | --- |
 | MCPMUT-001 | Verify that I2cWriteRead cycle is complete, then prints data over 2 cycles | Correct | 100% |
 | MCPMUT-002 | Verify that Temperature parameters output expected STATES for each sensor  | Works in GDS and a cycle in unit tests | 70% |
-| MCPMUT-003 | `thresholdsMisconfiguredEmitsOnceOnTransition`: directly configures sensor 0 (IMX) with an inverted WARN_HIGH/IDLE_HIGH ordering and verifies the event fires once, stays silent on repeat, and re-fires after being fixed and broken again. | `THRESHOLDS_MISCONFIGURED` event count matches expectations at each step | 100% |
+| MCPMUT-003 | `boundsUpdateGating`: applies a valid `TempBounds` update to sensor 0 (IMX) and confirms it is adopted and telemetered, applies an inverted WARN_HIGH/IDLE_HIGH configuration and confirms it is rejected (bounds unchanged, event fires), confirms repeating the same bad attempt fires again, then confirms a second valid update is adopted normally. | Active bounds, telemetry, and `THRESHOLDS_MISCONFIGURED` event count match expectations at each step | 100% |
 
 ## Change Log
 
@@ -82,3 +101,5 @@ tuned independently. Set/save opcodes follow `id*2 + 1` / `id*2 + 2`.
 | 1.2.0 | Split the six shared thresholds into per-sensor sets (18 params total: IMX/PERIPHERAL/JETSON) so each sensor can be tuned independently instead of affecting all three. | Luca Lanzillotta |
 | 1.3.0 | Added `THRESHOLDS_MISCONFIGURED`, emitted once when a sensor's thresholds are found out of ascending order (e.g. lowering WARN_HIGH below IDLE_HIGH), to catch misconfiguration that previously silently misclassified readings as FAULT. Fixed the pre-existing broken unit test (stale accessor names, private-member access, missing `deinit()`) and added coverage for the new check. | Luca Lanzillotta |
 | 1.4.0 | Added telemetry readback for all 18 current per-sensor MCP threshold parameters, published at initialization and after parameter updates. | Luca Lanzillotta |
+| 1.5.0 | Replaced the 18 individual scalar threshold parameters and their 18 scalar readback channels with one `TempBounds` struct parameter and one `TempBounds` struct telemetry channel per sensor (IMX/PERIPHERAL/JETSON), so GDS shows one bounds row per sensor instead of six. Bounds updates are now gated: a `PRM_SET` is only adopted if it passes `thresholdsAreOrdered()`, otherwise the sensor keeps its last-known-good bounds and `THRESHOLDS_MISCONFIGURED` fires (now on every rejected attempt, not just the first, since misconfiguration never takes effect). Also fixed a boundary-inclusivity bug in `determineTempState()`: a reading exactly at `WARN_HIGH` was claimed by FAULT (inclusive) before WARN (exclusive) could claim it; WARN now claims its own upper boundary, symmetric with its already-inclusive lower boundary. | Luca Lanzillotta |
+| 1.5.1 | Each sensor's `TempBounds` telemetry now republishes unconditionally every evaluate cycle instead of only on boot/change, so a GDS session that connects after boot still sees the current bounds on the next tick rather than missing the one-time boot publish. | Luca Lanzillotta |
