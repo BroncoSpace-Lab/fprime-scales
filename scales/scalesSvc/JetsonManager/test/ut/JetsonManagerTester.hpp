@@ -26,6 +26,7 @@ class JetsonManagerTester final : public JetsonManagerGTestBase {
     void requestJetsonPowerStateOffUnconfirmedFallsBackToDirectCut();
     void requestJetsonPowerStateOffRejectedWhileBooting();
     void requestJetsonPowerStateOffNoLongerRejectedAfterBootConfirmationTimeout();
+    void requestJetsonPowerStateOffAcceptedAfterRedundantOnCommand();
     void requestJetsonPowerStateOffConfirmedOnUsesGracefulThenCutsPower();
     void requestJetsonPowerStateOffConfirmedOffIsIdempotent();
     void requestJetsonPowerStateOffTimesOutAndFallsBackToDirectCut();

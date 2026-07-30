@@ -27,6 +27,7 @@ class JetsonPowerModeManagerTester final : public JetsonPowerModeManagerGTestBas
     void jetsonPowerStateReceiveOffShutsDownGracefully();
     void jetsonPowerStateReceiveOffReportsFailureWhenShutdownFails();
     void jetsonPowerStateReceiveOffReportsFailureOnNonzeroExitNotNegativeOne();
+    void jetsonPowerStateReceiveOffTreatsSigtermAsSuccess();
     void schedInReportsOnceAfterBoot();
     void schedInSkipsModeReportOnReaderError();
     void setPowerModeCmdChangesMode();
@@ -36,6 +37,7 @@ class JetsonPowerModeManagerTester final : public JetsonPowerModeManagerGTestBas
     void setJetsonPowerStateCmdOnReportsOn();
     void setJetsonPowerStateCmdOffShutsDownGracefully();
     void setJetsonPowerStateCmdOffReportsExecutionErrorOnFailure();
+    void setJetsonPowerStateCmdOffTreatsSigtermAsSuccess();
 
   private:
     void connectPorts();

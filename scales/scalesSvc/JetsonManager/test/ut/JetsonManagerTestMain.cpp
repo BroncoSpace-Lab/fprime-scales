@@ -41,6 +41,12 @@ TEST(JetsonManager, RequestJetsonPowerStateOffNoLongerRejectedAfterBootConfirmat
     tester.requestJetsonPowerStateOffNoLongerRejectedAfterBootConfirmationTimeout();
 }
 
+TEST(JetsonManager, RequestJetsonPowerStateOffAcceptedAfterRedundantOnCommand) {
+    RecordProperty("requirement", "JM-009");
+    scalesSvc::JetsonManagerTester tester;
+    tester.requestJetsonPowerStateOffAcceptedAfterRedundantOnCommand();
+}
+
 TEST(JetsonManager, RequestJetsonPowerStateOffConfirmedOnUsesGracefulThenCutsPower) {
     RecordProperty("requirement", "JM-005,JM-006");
     scalesSvc::JetsonManagerTester tester;

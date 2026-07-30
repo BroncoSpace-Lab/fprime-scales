@@ -4,6 +4,7 @@
 // ======================================================================
 
 #include "JetsonPowerModeManagerTester.hpp"
+#include <csignal>
 #include <string>
 
 namespace {
@@ -166,6 +167,25 @@ void JetsonPowerModeManagerTester ::jetsonPowerStateReceiveOffReportsFailureOnNo
     ASSERT_TLM_CurrentJetsonPowerState(1, scalesSvc::JetsonPowerStateID::ON);
 }
 
+void JetsonPowerModeManagerTester ::jetsonPowerStateReceiveOffTreatsSigtermAsSuccess() {
+    // A raw wait-status of just the signal number (no WIFEXITED bit, no core
+    // dump bit) means "killed by that signal" -- here, killed by SIGTERM
+    // immediately after issuing `sudo -n /sbin/shutdown -h now`. This is the
+    // expected signature of the real shutdown succeeding and tearing down
+    // this process's own service cgroup as collateral, not a real failure,
+    // and must NOT be reported as one (a false failure here would send a
+    // wrong "still ON" correction to the i.MX side).
+    g_mockShellExitCode = SIGTERM;
+
+    this->invoke_to_jetsonPowerStateReceive(0, scalesSvc::JetsonPowerStateID::OFF);
+    this->component.doDispatch();
+
+    ASSERT_EVENTS_JETSON_POWER_STATE_CHANGE_FAILED_SIZE(0);
+    // Only the original OFF acknowledgment -- no ON correction follows.
+    ASSERT_from_jetsonPowerStateSend_SIZE(1);
+    ASSERT_from_jetsonPowerStateSend(0, scalesSvc::JetsonPowerStateID::OFF);
+}
+
 void JetsonPowerModeManagerTester ::schedInReportsOnceAfterBoot() {
     g_mockPowerMode = static_cast<int>(scalesSvc::PowerModeID::EXTRA);
 
@@ -279,6 +299,20 @@ void JetsonPowerModeManagerTester ::setJetsonPowerStateCmdOffReportsExecutionErr
 
     ASSERT_CMD_RESPONSE_SIZE(1);
     ASSERT_EQ(this->cmdResponseHistory->at(0).response, Fw::CmdResponse::EXECUTION_ERROR);
+}
+
+void JetsonPowerModeManagerTester ::setJetsonPowerStateCmdOffTreatsSigtermAsSuccess() {
+    // Same SIGTERM-as-success reasoning as jetsonPowerStateReceiveOffTreatsSigtermAsSuccess,
+    // for the local SET_JETSON_POWER_STATE command path. A plain "ret == 0"
+    // check would wrongly report EXECUTION_ERROR for a shutdown that
+    // actually worked.
+    g_mockShellExitCode = SIGTERM;
+
+    this->sendCmd_SET_JETSON_POWER_STATE(0, 8, scalesSvc::JetsonPowerStateID::OFF);
+    this->component.doDispatch();
+
+    ASSERT_CMD_RESPONSE_SIZE(1);
+    ASSERT_EQ(this->cmdResponseHistory->at(0).response, Fw::CmdResponse::OK);
 }
 
 // connectPorts()/initComponents() are auto-generated into

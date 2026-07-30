@@ -181,6 +181,38 @@ void JetsonManagerTester ::requestJetsonPowerStateOffNoLongerRejectedAfterBootCo
     ASSERT_EQ(this->cmdResponseHistory->at(0).response, Fw::CmdResponse::OK);
 }
 
+void JetsonManagerTester ::requestJetsonPowerStateOffAcceptedAfterRedundantOnCommand() {
+    // Regression test: a redundant ON command sent to an already-confirmed,
+    // already-running Jetson must not re-arm the boot-confirmation guard --
+    // otherwise nothing is left to clear it (the Jetson won't send another
+    // unsolicited report just because it was told to turn on again), and
+    // OFF stays rejected BUSY until the full CMD_TIMEOUT_TICKS window.
+    m_authorizeResult = Fw::Success::SUCCESS;
+
+    this->sendCmd_REQUEST_JETSON_POWER_STATE(0, 1, scalesSvc::JetsonPowerStateID::ON);
+    this->component.doDispatch();
+
+    this->invoke_to_currentJetsonPwrState(0, scalesSvc::JetsonPowerStateID::ON);
+    this->component.doDispatch();
+    this->clearHistory();
+
+    // Redundant ON: Jetson is already confirmed on.
+    this->sendCmd_REQUEST_JETSON_POWER_STATE(0, 2, scalesSvc::JetsonPowerStateID::ON);
+    this->component.doDispatch();
+    ASSERT_from_gpioSet_SIZE(1);
+    ASSERT_from_gpioSet(0, Fw::Logic::HIGH);
+    ASSERT_CMD_RESPONSE_SIZE(1);
+    ASSERT_EQ(this->cmdResponseHistory->at(0).response, Fw::CmdResponse::OK);
+
+    // OFF must be accepted -- not rejected as "still booting" -- and takes
+    // the graceful path since the Jetson is confirmed on.
+    this->sendCmd_REQUEST_JETSON_POWER_STATE(0, 3, scalesSvc::JetsonPowerStateID::OFF);
+    this->component.doDispatch();
+    ASSERT_EVENTS_JETSON_OFF_REJECTED_BOOTING_SIZE(0);
+    ASSERT_from_reqJetsonPwrState_SIZE(1);
+    ASSERT_from_reqJetsonPwrState(0, scalesSvc::JetsonPowerStateID::OFF);
+}
+
 void JetsonManagerTester ::requestJetsonPowerStateOffConfirmedOnUsesGracefulThenCutsPower() {
     this->component.loadParameters();
 

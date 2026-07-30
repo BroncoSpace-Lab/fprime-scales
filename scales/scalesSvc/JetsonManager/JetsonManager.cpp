@@ -320,10 +320,20 @@ namespace scalesSvc {
         // Driving GPIO high is not confirmation the Jetson is actually up --
         // m_jetsonPowerStateKnown/m_currentJetsonPowerState are left alone
         // here and only updated by a real report in
-        // currentJetsonPwrState_handler. Track "commanded ON, still booting"
-        // separately so a commanded OFF can be rejected instead of racing it.
-        m_awaitingBootConfirmation = true;
-        m_bootConfirmationTimeoutTicks = 0;
+        // currentJetsonPwrState_handler. Only arm the boot-confirmation
+        // guard on a genuine off->on transition: a redundant ON to an
+        // already-running, already-confirmed Jetson must not re-arm it,
+        // since the Jetson won't send a fresh unsolicited report just
+        // because it was told to turn on again -- re-arming here would
+        // leave OFF rejected until the bounded timeout, with nothing left
+        // to clear it sooner.
+        if (m_jetsonPowerStateKnown && m_currentJetsonPowerState.e == JetsonPowerStateID::ON) {
+          m_awaitingBootConfirmation = false;
+          m_bootConfirmationTimeoutTicks = 0;
+        } else {
+          m_awaitingBootConfirmation = true;
+          m_bootConfirmationTimeoutTicks = 0;
+        }
         this->tlmWrite_JetsonPowerState(jetsonState);
         if (this->isConnected_fpJetsonPowerStateOut_OutputPort(0)) {
           this->fpJetsonPowerStateOut_out(0, jetsonState);

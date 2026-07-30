@@ -47,6 +47,12 @@ TEST(Nominal, JetsonPowerStateReceiveOffReportsFailureOnNonzeroExitNotNegativeOn
     tester.jetsonPowerStateReceiveOffReportsFailureOnNonzeroExitNotNegativeOne();
 }
 
+TEST(Nominal, JetsonPowerStateReceiveOffTreatsSigtermAsSuccess) {
+    RecordProperty("requirement", "JPSM-008");
+    scalesSvc::JetsonPowerModeManagerTester tester;
+    tester.jetsonPowerStateReceiveOffTreatsSigtermAsSuccess();
+}
+
 TEST(Nominal, SchedInReportsOnceAfterBoot) {
     RecordProperty("requirement", "JPSM-001,JPSM-003");
     scalesSvc::JetsonPowerModeManagerTester tester;
@@ -99,6 +105,12 @@ TEST(Nominal, SetJetsonPowerStateCmdOffReportsExecutionErrorOnFailure) {
     RecordProperty("requirement", "JPSM-004,JPSM-006");
     scalesSvc::JetsonPowerModeManagerTester tester;
     tester.setJetsonPowerStateCmdOffReportsExecutionErrorOnFailure();
+}
+
+TEST(Nominal, SetJetsonPowerStateCmdOffTreatsSigtermAsSuccess) {
+    RecordProperty("requirement", "JPSM-008");
+    scalesSvc::JetsonPowerModeManagerTester tester;
+    tester.setJetsonPowerStateCmdOffTreatsSigtermAsSuccess();
 }
 
 int main(int argc, char** argv) {

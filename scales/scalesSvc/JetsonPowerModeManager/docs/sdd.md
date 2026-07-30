@@ -40,6 +40,26 @@ process is torn down mid-shutdown. If the shell command fails
 (`ShellCommandRunner` returns non-zero), `JETSON_POWER_STATE_CHANGE_FAILED`
 fires and ON is re-reported, since the Jetson is presumably still alive.
 
+A genuinely successful `shutdown -h now` does *not* always come back as a
+clean `0` exit, though: the real shutdown it triggers tears down this
+process's own systemd service (`jetson-deployment.service`) as part of the
+same sequence, which can send `SIGTERM` to the `sudo`/`shutdown` child before
+`std::system()`'s `wait()` observes a clean exit. A raw wait-status of just
+`SIGTERM` (`WIFSIGNALED(status) && WTERMSIG(status) == SIGTERM`, i.e. the low
+7 bits equal 15 with no core-dump bit) immediately after issuing that exact
+command is the textbook signature of "my own service got torn down as
+collateral of the shutdown I just triggered," not a real failure --
+`classifyShutdownStatus()` (file-local in `JetsonPowerModeManager.cpp`)
+treats it as `LikelySuccessKilledBySigterm` and neither handler reports a
+failure or re-reports `ON` for it. This matters beyond the local event log:
+an unwarranted `ON` correction here gets forwarded by `JetsonManager` to
+`FPManager`, which can flip `FPManager`'s `m_jetsonPowerState` back to `ON`
+while it's mid-wait in `disablingHpc` for a confirmed `OFF` -- see JPSM-008
+and the `JetsonManager`/`FPManager` SDDs for the downstream half of this. Any
+other non-zero outcome (real exit failure, killed by a different signal,
+`std::system()` failing to spawn a shell at all) is still reported as a
+genuine failure exactly as before.
+
 ## Port Descriptions
 | Kind | Name | Description |
 |---|---|---|
@@ -75,7 +95,7 @@ in any way.
 |---|---|
 | `SET_POWER_MODE` | Sets the Jetson power mode. No-op (`OK`, no shell call) if already in the requested mode; otherwise runs `nvpmodel -m <mode>` and responds `OK` regardless of that command's exit status (unlike the `powerModeReceive` hub path, this command handler does not check the exit code -- see Change Log). |
 | `GET_POWER_MODE` | Returns the Jetson's current power mode via `powerModeSend` and `OK`, or `VALIDATION_ERROR` if the reader returns the error sentinel (`4`). |
-| `SET_JETSON_POWER_STATE` | Locally requests a Jetson power-state change. ON reports ON immediately (already running, since this command is running locally on the Jetson). OFF reports OFF, runs `shutdown -h now`, and responds `OK` or `EXECUTION_ERROR` depending on the shell result -- exactly one response either way (see Change Log for a fixed double-response bug). Any other state responds `VALIDATION_ERROR`. |
+| `SET_JETSON_POWER_STATE` | Locally requests a Jetson power-state change. ON reports ON immediately (already running, since this command is running locally on the Jetson). OFF reports OFF, runs `shutdown -h now`, and responds `OK` or `EXECUTION_ERROR` depending on the classified shell result (a `SIGTERM`-killed status counts as `OK`, see JPSM-008) -- exactly one response either way (see Change Log for a fixed double-response bug). Any other state responds `VALIDATION_ERROR`. |
 
 ## Events
 | Name | Description |
@@ -85,7 +105,7 @@ in any way.
 | `POWER_MODE_CHANGE_FAILED` | The `nvpmodel -m` call (via the hub-driven `powerModeReceive` path only, not the `SET_POWER_MODE` command) returned a non-zero exit status. |
 | `JETSON_POWER_STATE_REQUEST_RECEIVED` | A power-state change request arrived via the hub port. |
 | `JETSON_SHUTDOWN_STARTED` | The Jetson-side OFF handler has acknowledged OFF and is about to run `shutdown -h now`. |
-| `JETSON_POWER_STATE_CHANGE_FAILED` | Either the `shutdown -h now` call returned non-zero (hub-driven `jetsonPowerStateReceive` path), or an unrecognized `JetsonPowerStateID` was received on either the hub port or the `SET_JETSON_POWER_STATE` command. |
+| `JETSON_POWER_STATE_CHANGE_FAILED` | Either the `shutdown -h now` call returned a genuine failure (hub-driven `jetsonPowerStateReceive` path) -- a `SIGTERM`-killed status is classified as likely success, not a failure, and does not fire this event (JPSM-008) -- or an unrecognized `JetsonPowerStateID` was received on either the hub port or the `SET_JETSON_POWER_STATE` command. |
 
 ## Telemetry
 | Name | Description |
@@ -95,8 +115,8 @@ in any way.
 
 ## Unit Tests
 
-Measured via `fprime-util check --coverage`: **84.8% line (95/112), 90.9%
-function (10/11), 48.5% branch (94/194)**. The one uncovered function is the
+Measured via `fprime-util check --coverage`: **85.7% line (108/126), 91.7%
+function (11/12), 51.8% branch (113/218)**. The one uncovered function is the
 real `get_nvp_mode()` free function itself, which is deliberately never
 called by any test (every test overrides `PowerModeReader` so the real
 implementation, which shells out to `nvpmodel -q`, is never exercised) --
@@ -116,6 +136,7 @@ touch a real shell or query real hardware.
 | `JetsonPowerStateReceiveOnReportsOn` | Confirms the ON path reports ON immediately with no shell call. | JPSM-005 |
 | `JetsonPowerStateReceiveOffShutsDownGracefully` | Confirms OFF is acknowledged before the shell call, `JETSON_SHUTDOWN_STARTED` fires, the shell runner is called with `shutdown -h now`, and a successful (`0`) exit produces no failure event or re-report. | JPSM-004 |
 | `JetsonPowerStateReceiveOffReportsFailureWhenShutdownFails` | Same but the shell runner returns `-1`; confirms `JETSON_POWER_STATE_CHANGE_FAILED` and a follow-up ON report. | JPSM-004 |
+| `JetsonPowerStateReceiveOffTreatsSigtermAsSuccess` | Shell runner returns a raw `SIGTERM`-killed status; confirms no `JETSON_POWER_STATE_CHANGE_FAILED` and no follow-up ON report -- only the original OFF acknowledgment. | JPSM-008 |
 | `SchedInReportsOnceAfterBoot` | First tick reports both power state and (mocked, non-error) power mode exactly once; a second tick repeats neither. | JPSM-001, JPSM-003 |
 | `SchedInSkipsModeReportOnReaderError` | Reader returns the error sentinel (`4`) on the first tick -- confirms the mode report is withheld (state is still reported) -- then confirms it fires once the reader recovers on a later tick. | JPSM-001 |
 | `SetPowerModeCmdChangesMode` | `SET_POWER_MODE` with a mismatched mode; confirms the correct `nvpmodel -m` argument and `OK`. | JPSM-002 |
@@ -125,6 +146,7 @@ touch a real shell or query real hardware.
 | `SetJetsonPowerStateCmdOnReportsOn` | `SET_JETSON_POWER_STATE(ON)`; confirms the report and `OK`. | JPSM-005 |
 | `SetJetsonPowerStateCmdOffShutsDownGracefully` | `SET_JETSON_POWER_STATE(OFF)` with a successful shell result; confirms **exactly one** `OK` response -- regression test for a double-`cmdResponse_out()` bug this audit fixed (see Change Log). | JPSM-004, JPSM-006 |
 | `SetJetsonPowerStateCmdOffReportsExecutionErrorOnFailure` | Same but the shell runner fails; confirms exactly one `EXECUTION_ERROR` response. | JPSM-004, JPSM-006 |
+| `SetJetsonPowerStateCmdOffTreatsSigtermAsSuccess` | Shell runner returns a raw `SIGTERM`-killed status; confirms `OK`, not `EXECUTION_ERROR`. | JPSM-008 |
 
 ## Requirements
 | Name | Description | Verified By |
@@ -132,10 +154,11 @@ touch a real shell or query real hardware.
 | JPSM-001 | The component shall obtain the current power mode from the Jetson, and shall treat the reader's error sentinel as "mode unknown" rather than a real mode. | `SchedInReportsOnceAfterBoot`, `SchedInSkipsModeReportOnReaderError`, `GetPowerModeCmdReturnsCurrentMode`, `GetPowerModeCmdValidationErrorOnReaderFailure` |
 | JPSM-002 | The component shall provide commands and a hub-driven path to change the Jetson's power mode, running `nvpmodel -m` only on an actual mismatch. | `PowerModeReceiveChangesModeWhenMismatched`, `PowerModeReceiveReportsFailureWhenNvpmodelFails`, `PowerModeReceiveNoopWhenAlreadyInMode`, `SetPowerModeCmdChangesMode`, `SetPowerModeCmdNoopWhenAlreadyInMode` |
 | JPSM-003 | The component shall report the Jetson's power mode back to `JetsonManager` once per boot so a deferred `REQUEST_POWER_MODE` command on the i.MX side can be confirmed without a manual `GET_POWER_MODE`. | `SchedInReportsOnceAfterBoot` |
-| JPSM-004 | A commanded or hub-driven Jetson OFF shall acknowledge OFF before running `shutdown -h now`, and shall report failure (and re-report ON) if the shutdown command does not succeed. | `JetsonPowerStateReceiveOffShutsDownGracefully`, `JetsonPowerStateReceiveOffReportsFailureWhenShutdownFails`, `SetJetsonPowerStateCmdOffShutsDownGracefully`, `SetJetsonPowerStateCmdOffReportsExecutionErrorOnFailure` |
+| JPSM-004 | A commanded or hub-driven Jetson OFF shall acknowledge OFF before running `shutdown -h now`, and shall report failure (and re-report ON) if the shutdown command does not genuinely succeed -- see JPSM-008 for what counts as genuine. | `JetsonPowerStateReceiveOffShutsDownGracefully`, `JetsonPowerStateReceiveOffReportsFailureWhenShutdownFails`, `SetJetsonPowerStateCmdOffShutsDownGracefully`, `SetJetsonPowerStateCmdOffReportsExecutionErrorOnFailure` |
 | JPSM-005 | A commanded or hub-driven Jetson ON shall report ON immediately, since this component only runs when the Jetson is already up. | `JetsonPowerStateReceiveOnReportsOn`, `SetJetsonPowerStateCmdOnReportsOn` |
 | JPSM-006 | Every command shall complete with exactly one response, and a `GET_POWER_MODE` with no valid reading available shall be rejected `VALIDATION_ERROR` rather than reporting a bogus mode. (Both handlers also have an `JETSON_POWER_STATE_CHANGE_FAILED`/`VALIDATION_ERROR` branch for a `JetsonPowerStateID` outside `{ON, OFF}`, but this cannot be safely unit-tested: constructing an out-of-range `JetsonPowerStateID` and letting anything format/log it -- which both of these paths do -- trips a hard assert in the generated enum-to-string conversion, verified by inspection only.) | `GetPowerModeCmdValidationErrorOnReaderFailure`, `SetJetsonPowerStateCmdOffShutsDownGracefully`, `SetJetsonPowerStateCmdOffReportsExecutionErrorOnFailure` |
 | JPSM-007 | The real `nvpmodel`/`shutdown` shell invocations and the `nvpmodel -q` read shall be behind an injectable seam so the rest of this component's behavior can be unit-tested without touching real hardware or a real shell. | N/A (verified by inspection: `configurePowerModeReader`/`configureShellRunner` in `JetsonPowerModeManager.hpp`; every test in this suite overrides both before exercising any handler) |
+| JPSM-008 | A `shutdown -h now` invocation killed by `SIGTERM` (this process's own service cgroup torn down as part of the real shutdown it just triggered) shall be classified as likely success, not failure -- it shall not fire `JETSON_POWER_STATE_CHANGE_FAILED`, shall not re-report `ON` (hub-driven path), and shall respond `OK` (local `SET_JETSON_POWER_STATE` command) -- while any other non-zero outcome (real exit failure, a different signal, or `std::system()` failing to spawn) still reports genuine failure exactly as before. | `JetsonPowerStateReceiveOffTreatsSigtermAsSuccess`, `SetJetsonPowerStateCmdOffTreatsSigtermAsSuccess` |
 
 ## Change Log
 | Date | Description |
@@ -144,3 +167,4 @@ touch a real shell or query real hardware.
 | December 4, 2025 | Use nvpmodel to change modes |
 | 2026-07-28 | SDD accuracy audit and first real unit test suite for this component (previously untested). Found and fixed two real bugs: (1) `get_nvp_mode()`/`std::system()` were called directly with no test seam at all -- a naive unit test would have shelled out to real `nvpmodel`/`sudo shutdown -h now` on whatever machine ran it. Added `PowerModeReader`/`ShellCommandRunner` injectable function-pointer members (`configurePowerModeReader`/`configureShellRunner`, mirroring the `configureTcpStatusPoller` pattern already used in `GdsCmdAuthMux`), defaulting to the real implementations, so unit tests never touch real hardware/shell state. (2) `SET_JETSON_POWER_STATE_cmdHandler`'s OFF branch called `cmdResponse_out()` twice for the same command -- once unconditionally right after the OFF report, then again after checking the shell result -- which would assert in the real F´ command dispatcher on hardware/GDS. Removed the first, unconditional call so exactly one response is ever sent. Documented the previously-undocumented `jetsonPowerStateReceive`/`jetsonPowerStateSend`/`schedIn` ports, `SET_JETSON_POWER_STATE` command, and `JETSON_POWER_STATE_*` events/telemetry, corrected the stale reference to an "IMX PowerManager"/`scalesSvc::PowerManager` component that does not exist (the real peer is `scalesSvc::JetsonManager`), and flagged two dead/unused declarations found during the audit (the `PWR_MODE_REQ` parameter and the `POWER_MODE_CHANGED` event) rather than guessing at removing or wiring them up. Discovered while writing this suite that a literally out-of-range `JetsonPowerStateID` cannot be safely unit-tested at all in this codebase -- the generated enum-to-string conversion (used whenever a value is formatted for an event or GDS display) hard-asserts on an invalid value, so the two "unrecognized state" defensive branches are verified by inspection only, not by test. Measured 84.8% line, 90.9% function, 48.5% branch coverage (the one uncovered function is the real `get_nvp_mode()`, deliberately never called). Added `Verified By`/`Verifies` traceability and `RecordProperty("requirement", ...)` tags. | Luca Lanzillotta |
 | 2026-07-30 | The `jetsonPowerStateReceive` OFF path's `JETSON_POWER_STATE_CHANGE_FAILED` event always reported a fixed `"shutdown command failed"` reason regardless of the actual failure, giving no way to tell a missing/misconfigured sudoers rule apart from a wrong binary path or the shell failing to spawn at all without SSHing into the Jetson to re-run the command by hand. The reason string now reports the actual outcome: `std::system()`'s raw wait-status is decoded into either "system() failed to spawn a shell" (`-1`), "process did not exit normally (raw status N)" (`!WIFEXITED`), or "shutdown exited with status N" (`WEXITSTATUS`) -- the real `sudo`/`shutdown` exit code is now visible directly in GDS/telemetry. `make jetson-setup` (repo root `Makefile`) now also installs a `NOPASSWD: /sbin/shutdown` sudoers rule alongside the existing `nvpmodel` one -- the `sudo -n /sbin/shutdown -h now` call here was already correct, it was simply missing that grant on Jetson images set up before this change (re-run `make jetson-setup` on the Jetson to pick it up). | Luca Lanzillotta |
+| 2026-07-30 | **Bug fix (JPSM-008)**: with the sudoers rule from the entry above actually installed, a real hardware OFF request now showed `shutdown -h now` genuinely succeeding but still reporting `JETSON_POWER_STATE_CHANGE_FAILED: "shutdown: process did not exit normally (raw status 15)"` -- raw status 15 is `SIGTERM` (`status & 0x7f == 15`, no core-dump bit): `jetson-deployment.service`'s own cgroup gets torn down as part of the real shutdown sequence it just triggered, killing the `sudo`/`shutdown` child before `std::system()`'s `wait()` observes a clean exit, immediately after the exact command that starts that teardown. This false failure wasn't just a misleading log line: `jetsonPowerStateReceive_handler`'s "shutdown failed, re-report ON" correction propagates through `JetsonManager::currentJetsonPwrState_handler` (which forwards every report to `FPManager` unconditionally) and `FPManager::jetsonPowerStateIn_handler` (which unconditionally trusts every report), flipping `FPManager`'s `m_jetsonPowerState` back to `ON` while it was mid-wait in `disablingHpc` for a confirmed `OFF` -- the sequence still eventually completed once JetsonManager's own grace-period GPIO cut re-reported `OFF`, but only after this spurious detour. Added a file-local `classifyShutdownStatus()` in `JetsonPowerModeManager.cpp` that treats a `SIGTERM`-killed status as `LikelySuccessKilledBySigterm`, distinct from a genuine `Failure` (any other nonzero/signal/spawn-failure outcome, unchanged) or a clean `Success`; applied to both `jetsonPowerStateReceive_handler`'s OFF branch (hub-driven path -- no failure event, no ON re-report) and `SET_JETSON_POWER_STATE_cmdHandler`'s OFF branch (local command path, which had the identical `ret == 0`-only version of this same bug and now responds `OK` instead of `EXECUTION_ERROR`). No new event added for the SIGTERM case -- `JETSON_SHUTDOWN_STARTED` already fired, and the absence of a failure event afterward is itself the "this worked" signal. Added `JetsonPowerStateReceiveOffTreatsSigtermAsSuccess`/`SetJetsonPowerStateCmdOffTreatsSigtermAsSuccess` (JPSM-008); all pre-existing failure-path tests (`-1`, packed nonzero exit) are unaffected since neither matches the `SIGTERM` classification. Coverage: 85.7% line / 91.7% function / 51.8% branch. | Luca Lanzillotta |

@@ -7,12 +7,50 @@
 #include "scales/scalesSvc/JetsonPowerModeManager/JetsonPowerModeManager.hpp"
 #include <cstdlib>
 #include <cstdio>
+#include <csignal>
 #include <string>
 #include <sys/wait.h>
 
 int get_nvp_mode();
 
 namespace scalesSvc {
+
+namespace {
+
+//! Outcome of a `sudo -n /sbin/shutdown -h now` invocation, decoded from
+//! std::system()'s raw wait-status return.
+enum class ShutdownOutcome {
+  Success,                   //!< Clean exit(0).
+  LikelySuccessKilledBySigterm, //!< See classifyShutdownStatus().
+  Failure                    //!< Any other outcome: real error.
+};
+
+//! `shutdown -h now` genuinely succeeding tears down the calling process's
+//! own systemd service (jetson-deployment.service) as part of the real
+//! system shutdown it just triggered -- which sends SIGTERM to this child
+//! before it can exit cleanly. std::system()'s wait() then reports "killed
+//! by signal 15", indistinguishable at the raw-status level from an
+//! unrelated SIGTERM, but the timing (immediately after issuing the exact
+//! command that starts tearing this process down) makes it overwhelmingly
+//! the expected success signature rather than a real failure. Treated as
+//! such so a successful shutdown doesn't get reported as a failed one (and
+//! doesn't trigger the "shutdown failed, Jetson still alive" ON
+//! correction below, which would otherwise be wrong and would propagate a
+//! false ON report to JetsonManager/FPManager on the i.MX side).
+ShutdownOutcome classifyShutdownStatus(int status) {
+  if (status == -1) {
+    return ShutdownOutcome::Failure;
+  }
+  if (WIFSIGNALED(status) && WTERMSIG(status) == SIGTERM) {
+    return ShutdownOutcome::LikelySuccessKilledBySigterm;
+  }
+  if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+    return ShutdownOutcome::Success;
+  }
+  return ShutdownOutcome::Failure;
+}
+
+}  // namespace
 
   // ----------------------------------------------------------------------
   // Component construction and destruction
@@ -128,15 +166,16 @@ namespace scalesSvc {
 
         const int status = this->m_shellRunner("sudo -n /sbin/shutdown -h now");
 
-        // std::system()'s return is a raw wait-status, not a plain exit code --
-        // checking only "== -1" catches nothing but the shell failing to even
-        // spawn. A real failure (e.g. no NOPASSWD sudoers rule for this exact
-        // command, so `sudo -n` refuses instead of prompting; or the wrong
-        // path for shutdown on this image) produces a normal nonzero exit that
-        // "== -1" silently treats as success, even though the OFF
-        // acknowledgment/JETSON_SHUTDOWN_STARTED above already told the i.MX
-        // the shutdown is underway.
-        if (status == -1 || !WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+        // std::system()'s return is a raw wait-status, not a plain exit code.
+        // See classifyShutdownStatus() above for why a SIGTERM-killed status
+        // (this process's own service cgroup torn down as part of the real
+        // shutdown it just triggered) is treated as success, not failure --
+        // reporting it as a failure here would be wrong and would send a
+        // false "still ON" correction to the i.MX side. A genuine failure
+        // (e.g. no NOPASSWD sudoers rule for this exact command, so
+        // `sudo -n` refuses instead of prompting; or the wrong path for
+        // shutdown on this image) still reports and corrects as before.
+        if (classifyShutdownStatus(status) == ShutdownOutcome::Failure) {
           // Include the actual exit status in the event so a GDS/telemetry
           // session can tell "no NOPASSWD sudoers rule" (sudo exits nonzero,
           // typically 1) apart from "wrong path for shutdown on this image"
@@ -255,7 +294,12 @@ namespace scalesSvc {
 
       int ret = this->m_shellRunner("sudo -n /sbin/shutdown -h now");
 
-      if (ret ==0) {
+      // See classifyShutdownStatus() for why a SIGTERM-killed status is
+      // treated the same as a clean exit here -- it's this process's own
+      // service cgroup being torn down as part of the real shutdown it
+      // just triggered, not a real failure. A plain "ret == 0" check would
+      // wrongly report EXECUTION_ERROR for a shutdown that actually worked.
+      if (classifyShutdownStatus(ret) != ShutdownOutcome::Failure) {
         this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
       } else {
         this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::EXECUTION_ERROR);
