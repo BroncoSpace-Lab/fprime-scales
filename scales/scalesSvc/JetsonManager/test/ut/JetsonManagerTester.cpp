@@ -33,6 +33,12 @@ Fw::Success JetsonManagerTester ::from_fpJetsonPowerAuthorize_handler(FwIndexTyp
 // ----------------------------------------------------------------------
 
 void JetsonManagerTester ::requestPowerModeDeferredCompletion() {
+    // REQUEST_POWER_MODE requires a trusted hub link (isJetsonHubLinkTrusted():
+    // Jetson confirmed ON) -- confirm it first via a real report.
+    this->invoke_to_currentJetsonPwrState(0, scalesSvc::JetsonPowerStateID::ON);
+    this->component.doDispatch();
+    this->clearHistory();
+
     this->sendCmd_REQUEST_POWER_MODE(0, 1, scalesSvc::PowerModeID::BALANCED);
     this->component.doDispatch();
 
@@ -56,6 +62,10 @@ void JetsonManagerTester ::requestPowerModeDeferredCompletion() {
 }
 
 void JetsonManagerTester ::requestPowerModeTimeout() {
+    this->invoke_to_currentJetsonPwrState(0, scalesSvc::JetsonPowerStateID::ON);
+    this->component.doDispatch();
+    this->clearHistory();
+
     this->sendCmd_REQUEST_POWER_MODE(0, 2, scalesSvc::PowerModeID::EXTRA);
     this->component.doDispatch();
     ASSERT_CMD_RESPONSE_SIZE(0);
@@ -70,6 +80,67 @@ void JetsonManagerTester ::requestPowerModeTimeout() {
     this->invoke_to_schedIn(0, 0);
     ASSERT_CMD_RESPONSE_SIZE(1);
     ASSERT_EQ(this->cmdResponseHistory->at(0).response, Fw::CmdResponse::EXECUTION_ERROR);
+}
+
+void JetsonManagerTester ::requestPowerModeBusyWhilePending() {
+    this->invoke_to_currentJetsonPwrState(0, scalesSvc::JetsonPowerStateID::ON);
+    this->component.doDispatch();
+    this->clearHistory();
+
+    this->sendCmd_REQUEST_POWER_MODE(0, 1, scalesSvc::PowerModeID::BALANCED);
+    this->component.doDispatch();
+    ASSERT_CMD_RESPONSE_SIZE(0);
+    ASSERT_from_reqPwrMode_SIZE(1);
+
+    // A second REQUEST_POWER_MODE while the first is still outstanding must
+    // not silently clobber the first's tracked opcode/seq -- it is rejected
+    // BUSY, and the first request's own tracking is untouched (proved below
+    // by completing it with its original mode).
+    this->sendCmd_REQUEST_POWER_MODE(0, 2, scalesSvc::PowerModeID::EXTRA);
+    this->component.doDispatch();
+    ASSERT_CMD_RESPONSE_SIZE(1);
+    ASSERT_EQ(this->cmdResponseHistory->at(0).response, Fw::CmdResponse::BUSY);
+    ASSERT_from_reqPwrMode_SIZE(1);  // still just the first request
+
+    this->invoke_to_currentPwrMode(0, scalesSvc::PowerModeID::BALANCED);
+    this->component.doDispatch();
+    ASSERT_CMD_RESPONSE_SIZE(2);
+    ASSERT_EQ(this->cmdResponseHistory->at(1).response, Fw::CmdResponse::OK);
+}
+
+void JetsonManagerTester ::requestPowerModeRejectedWhenUnconfirmed() {
+    // Fresh component: the Jetson has never reported in, so the hub link
+    // cannot be trusted. reqPwrMode_out() is wired straight through
+    // GenericHub into imx_hubComStub.dataIn with no queue/gate in between --
+    // calling it here risks the same ComStub crash JM-006 fixed for
+    // reqJetsonPwrState_out(). There is no hardware-safe fallback for "set
+    // power mode" the way OFF has GPIO-cut, so this fails fast instead.
+    this->sendCmd_REQUEST_POWER_MODE(0, 1, scalesSvc::PowerModeID::BALANCED);
+    this->component.doDispatch();
+
+    ASSERT_from_reqPwrMode_SIZE(0);
+    ASSERT_EVENTS_POWER_MODE_REQUEST_REJECTED_SIZE(1);
+    ASSERT_CMD_RESPONSE_SIZE(1);
+    ASSERT_EQ(this->cmdResponseHistory->at(0).response, Fw::CmdResponse::VALIDATION_ERROR);
+}
+
+void JetsonManagerTester ::requestPowerModeRejectedWhileAwaitingBootConfirmation() {
+    m_authorizeResult = Fw::Success::SUCCESS;
+    this->sendCmd_REQUEST_JETSON_POWER_STATE(0, 1, scalesSvc::JetsonPowerStateID::ON);
+    this->component.doDispatch();
+    this->clearHistory();
+
+    // Resolved design fork: REQUEST_POWER_MODE while the Jetson is still
+    // booting for the first time is rejected outright, not deferred -- this
+    // keeps m_hasPendingCmd and m_awaitingBootConfirmation provably mutually
+    // exclusive (see isJetsonHubLinkTrusted()).
+    this->sendCmd_REQUEST_POWER_MODE(0, 2, scalesSvc::PowerModeID::BALANCED);
+    this->component.doDispatch();
+
+    ASSERT_from_reqPwrMode_SIZE(0);
+    ASSERT_EVENTS_POWER_MODE_REQUEST_REJECTED_SIZE(1);
+    ASSERT_CMD_RESPONSE_SIZE(1);
+    ASSERT_EQ(this->cmdResponseHistory->at(0).response, Fw::CmdResponse::VALIDATION_ERROR);
 }
 
 void JetsonManagerTester ::requestJetsonPowerStateOnDrivesGpioImmediately() {
@@ -267,6 +338,92 @@ void JetsonManagerTester ::requestJetsonPowerStateOffAcceptedAfterRedundantOnCom
     ASSERT_EVENTS_JETSON_OFF_DEFERRED_BOOTING_SIZE(0);
     ASSERT_from_reqJetsonPwrState_SIZE(1);
     ASSERT_from_reqJetsonPwrState(0, scalesSvc::JetsonPowerStateID::OFF);
+}
+
+void JetsonManagerTester ::requestJetsonPowerStateOffDeferredWhileModeChangeInFlightThenAutoFiresOnModeConfirmation() {
+    // A REQUEST_POWER_MODE-triggered reboot leaves m_currentJetsonPowerState
+    // ON throughout (the Jetson never lost GPIO power, only its hub link is
+    // temporarily down while it reboots) -- a commanded OFF arriving during
+    // that window must not take the graceful hub path against a link that
+    // may be down for the same reboot-related reason. It defers instead,
+    // and fires automatically once the mode change is confirmed.
+    this->component.loadParameters();
+    m_authorizeResult = Fw::Success::SUCCESS;
+
+    this->invoke_to_currentJetsonPwrState(0, scalesSvc::JetsonPowerStateID::ON);
+    this->component.doDispatch();
+    this->clearHistory();
+
+    this->sendCmd_REQUEST_POWER_MODE(0, 1, scalesSvc::PowerModeID::BALANCED);
+    this->component.doDispatch();
+    ASSERT_from_reqPwrMode_SIZE(1);
+    ASSERT_CMD_RESPONSE_SIZE(0);
+
+    this->sendCmd_REQUEST_JETSON_POWER_STATE(0, 2, scalesSvc::JetsonPowerStateID::OFF);
+    this->component.doDispatch();
+    ASSERT_from_reqJetsonPwrState_SIZE(0);
+    ASSERT_from_gpioSet_SIZE(0);
+    ASSERT_EVENTS_JETSON_OFF_DEFERRED_MODE_CHANGE_PENDING_SIZE(1);
+    ASSERT_CMD_RESPONSE_SIZE(0);
+
+    // The mode change confirms -- the mode command completes OK, and the
+    // deferred OFF auto-fires via the graceful hub path (still confirmed ON).
+    this->invoke_to_currentPwrMode(0, scalesSvc::PowerModeID::BALANCED);
+    this->component.doDispatch();
+    ASSERT_CMD_RESPONSE_SIZE(1);
+    ASSERT_EQ(this->cmdResponseHistory->at(0).response, Fw::CmdResponse::OK);
+    ASSERT_from_reqJetsonPwrState_SIZE(1);
+    ASSERT_from_reqJetsonPwrState(0, scalesSvc::JetsonPowerStateID::OFF);
+    ASSERT_from_gpioSet_SIZE(0);
+
+    // Drive the rest of the graceful OFF sequence through to completion.
+    this->invoke_to_currentJetsonPwrState(0, scalesSvc::JetsonPowerStateID::OFF);
+    this->component.doDispatch();
+    for (U32 i = 0; i < 14; i++) {
+        this->invoke_to_schedIn(0, 0);
+    }
+    ASSERT_from_gpioSet_SIZE(0);
+    ASSERT_CMD_RESPONSE_SIZE(1);
+
+    this->invoke_to_schedIn(0, 0);
+    ASSERT_from_gpioSet_SIZE(1);
+    ASSERT_from_gpioSet(0, Fw::Logic::LOW);
+    ASSERT_CMD_RESPONSE_SIZE(2);
+    ASSERT_EQ(this->cmdResponseHistory->at(1).response, Fw::CmdResponse::OK);
+}
+
+void JetsonManagerTester ::requestJetsonPowerStateOffDeferredWhileModeChangeInFlightResumedAfterModeTimeout() {
+    this->component.loadParameters();
+    m_authorizeResult = Fw::Success::SUCCESS;
+
+    this->invoke_to_currentJetsonPwrState(0, scalesSvc::JetsonPowerStateID::ON);
+    this->component.doDispatch();
+    this->clearHistory();
+
+    this->sendCmd_REQUEST_POWER_MODE(0, 1, scalesSvc::PowerModeID::BALANCED);
+    this->component.doDispatch();
+    this->sendCmd_REQUEST_JETSON_POWER_STATE(0, 2, scalesSvc::JetsonPowerStateID::OFF);
+    this->component.doDispatch();
+    ASSERT_EVENTS_JETSON_OFF_DEFERRED_MODE_CHANGE_PENDING_SIZE(1);
+    ASSERT_CMD_RESPONSE_SIZE(0);
+
+    // The Jetson never reports a matching mode. CMD_TIMEOUT_TICKS = 120.
+    for (U32 i = 0; i < 119; i++) {
+        this->invoke_to_schedIn(0, 0);
+    }
+    ASSERT_CMD_RESPONSE_SIZE(0);
+    ASSERT_EVENTS_JETSON_DEFERRED_OFF_RESUMED_AFTER_MODE_TIMEOUT_SIZE(0);
+
+    this->invoke_to_schedIn(0, 0);
+    // The mode command times out with EXECUTION_ERROR, and the deferred OFF
+    // resumes -- still confirmed ON (unaffected by the mode-command
+    // timeout), so it takes the graceful hub path, not a direct GPIO cut.
+    ASSERT_CMD_RESPONSE_SIZE(1);
+    ASSERT_EQ(this->cmdResponseHistory->at(0).response, Fw::CmdResponse::EXECUTION_ERROR);
+    ASSERT_EVENTS_JETSON_DEFERRED_OFF_RESUMED_AFTER_MODE_TIMEOUT_SIZE(1);
+    ASSERT_from_reqJetsonPwrState_SIZE(1);
+    ASSERT_from_reqJetsonPwrState(0, scalesSvc::JetsonPowerStateID::OFF);
+    ASSERT_from_gpioSet_SIZE(0);
 }
 
 void JetsonManagerTester ::requestJetsonPowerStateOffConfirmedOnUsesGracefulThenCutsPower() {

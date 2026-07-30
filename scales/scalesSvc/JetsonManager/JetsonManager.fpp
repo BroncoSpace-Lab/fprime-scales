@@ -93,6 +93,33 @@ module scalesSvc {
         event JETSON_DEFERRED_OFF_FORCED_BY_TIMEOUT severity warning high id 8 \
             format "JetsonManager timed out waiting for the Jetson's boot confirmation; forcing the deferred OFF via direct GPIO cut"
 
+        @ Event indicating a REQUEST_POWER_MODE command was rejected because
+        @ the hub link to the Jetson cannot currently be trusted (confirmed
+        @ off, never confirmed, still awaiting first boot confirmation, or a
+        @ previous mode-change reboot is already in flight) -- unlike Jetson
+        @ OFF there is no hardware-safe fallback action for "set power
+        @ mode," so the command fails fast rather than risking
+        @ reqPwrMode_out() against an unproven hub link or deferring
+        @ indefinitely
+        event POWER_MODE_REQUEST_REJECTED(
+            mode: PowerModeID @< The requested power mode
+        ) severity warning high id 9 format "JetsonManager rejected REQUEST_POWER_MODE({}): Jetson/hub link not currently trusted"
+
+        @ Event indicating a commanded/internal Jetson OFF request was
+        @ deferred because a REQUEST_POWER_MODE-triggered reboot is
+        @ currently in flight; it will be sent automatically once the mode
+        @ change is confirmed (or force-resumed if that window times out)
+        event JETSON_OFF_DEFERRED_MODE_CHANGE_PENDING severity activity high id 10 \
+            format "Jetson OFF deferred: a power-mode-change reboot is in flight; will auto-fire once the Jetson reconfirms over the hub or the window times out"
+
+        @ Event indicating JetsonManager gave up waiting for the Jetson's
+        @ power-mode change to be confirmed while a deferred OFF request was
+        @ also pending; the deferred OFF is now resumed (graceful hub
+        @ request if the Jetson is still confirmed on, otherwise a direct
+        @ GPIO cut)
+        event JETSON_DEFERRED_OFF_RESUMED_AFTER_MODE_TIMEOUT severity warning high id 11 \
+            format "JetsonManager timed out waiting for the Jetson's power-mode confirmation; resuming the deferred OFF request"
+
         ###############################################################################
         #                                 Telemetry                                   #
         ###############################################################################

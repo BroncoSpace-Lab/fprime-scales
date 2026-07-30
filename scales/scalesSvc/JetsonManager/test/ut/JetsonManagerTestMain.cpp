@@ -17,6 +17,24 @@ TEST(JetsonManager, RequestPowerModeTimeout) {
     tester.requestPowerModeTimeout();
 }
 
+TEST(JetsonManager, RequestPowerModeBusyWhilePending) {
+    RecordProperty("requirement", "JM-012");
+    scalesSvc::JetsonManagerTester tester;
+    tester.requestPowerModeBusyWhilePending();
+}
+
+TEST(JetsonManager, RequestPowerModeRejectedWhenUnconfirmed) {
+    RecordProperty("requirement", "JM-013");
+    scalesSvc::JetsonManagerTester tester;
+    tester.requestPowerModeRejectedWhenUnconfirmed();
+}
+
+TEST(JetsonManager, RequestPowerModeRejectedWhileAwaitingBootConfirmation) {
+    RecordProperty("requirement", "JM-013");
+    scalesSvc::JetsonManagerTester tester;
+    tester.requestPowerModeRejectedWhileAwaitingBootConfirmation();
+}
+
 TEST(JetsonManager, RequestJetsonPowerStateOnDrivesGpioImmediately) {
     RecordProperty("requirement", "JM-001");
     scalesSvc::JetsonManagerTester tester;
@@ -51,6 +69,18 @@ TEST(JetsonManager, RequestJetsonPowerStateOffAcceptedAfterRedundantOnCommand) {
     RecordProperty("requirement", "JM-009");
     scalesSvc::JetsonManagerTester tester;
     tester.requestJetsonPowerStateOffAcceptedAfterRedundantOnCommand();
+}
+
+TEST(JetsonManager, RequestJetsonPowerStateOffDeferredWhileModeChangeInFlightThenAutoFiresOnModeConfirmation) {
+    RecordProperty("requirement", "JM-011");
+    scalesSvc::JetsonManagerTester tester;
+    tester.requestJetsonPowerStateOffDeferredWhileModeChangeInFlightThenAutoFiresOnModeConfirmation();
+}
+
+TEST(JetsonManager, RequestJetsonPowerStateOffDeferredWhileModeChangeInFlightResumedAfterModeTimeout) {
+    RecordProperty("requirement", "JM-011");
+    scalesSvc::JetsonManagerTester tester;
+    tester.requestJetsonPowerStateOffDeferredWhileModeChangeInFlightResumedAfterModeTimeout();
 }
 
 TEST(JetsonManager, RequestJetsonPowerStateOffConfirmedOnUsesGracefulThenCutsPower) {

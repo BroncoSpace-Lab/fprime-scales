@@ -6,7 +6,7 @@
 #include "JetsonPowerModeManagerTester.hpp"
 
 TEST(Nominal, PowerModeReceiveChangesModeWhenMismatched) {
-    RecordProperty("requirement", "JPSM-002");
+    RecordProperty("requirement", "JPSM-002,JPSM-010");
     scalesSvc::JetsonPowerModeManagerTester tester;
     tester.powerModeReceiveChangesModeWhenMismatched();
 }
@@ -17,10 +17,34 @@ TEST(Nominal, PowerModeReceiveReportsFailureWhenNvpmodelFails) {
     tester.powerModeReceiveReportsFailureWhenNvpmodelFails();
 }
 
+TEST(Nominal, PowerModeReceiveReportsFailureOnPackedNonzeroExit) {
+    RecordProperty("requirement", "JPSM-002,JPSM-009");
+    scalesSvc::JetsonPowerModeManagerTester tester;
+    tester.powerModeReceiveReportsFailureOnPackedNonzeroExit();
+}
+
+TEST(Nominal, PowerModeReceiveTreatsSigtermAsLikelySuccess) {
+    RecordProperty("requirement", "JPSM-009");
+    scalesSvc::JetsonPowerModeManagerTester tester;
+    tester.powerModeReceiveTreatsSigtermAsLikelySuccess();
+}
+
 TEST(Nominal, PowerModeReceiveNoopWhenAlreadyInMode) {
     RecordProperty("requirement", "JPSM-002");
     scalesSvc::JetsonPowerModeManagerTester tester;
     tester.powerModeReceiveNoopWhenAlreadyInMode();
+}
+
+TEST(Nominal, PowerModeReceiveIgnoredWhileRebootPending) {
+    RecordProperty("requirement", "JPSM-011");
+    scalesSvc::JetsonPowerModeManagerTester tester;
+    tester.powerModeReceiveIgnoredWhileRebootPending();
+}
+
+TEST(Nominal, PowerModeReceiveClearsRebootPendingOnGenuineFailure) {
+    RecordProperty("requirement", "JPSM-011");
+    scalesSvc::JetsonPowerModeManagerTester tester;
+    tester.powerModeReceiveClearsRebootPendingOnGenuineFailure();
 }
 
 TEST(Nominal, JetsonPowerStateReceiveOnReportsOn) {
@@ -75,6 +99,24 @@ TEST(Nominal, SetPowerModeCmdNoopWhenAlreadyInMode) {
     RecordProperty("requirement", "JPSM-002");
     scalesSvc::JetsonPowerModeManagerTester tester;
     tester.setPowerModeCmdNoopWhenAlreadyInMode();
+}
+
+TEST(Nominal, SetPowerModeCmdReportsExecutionErrorOnNvpmodelFailure) {
+    RecordProperty("requirement", "JPSM-012");
+    scalesSvc::JetsonPowerModeManagerTester tester;
+    tester.setPowerModeCmdReportsExecutionErrorOnNvpmodelFailure();
+}
+
+TEST(Nominal, SetPowerModeCmdTreatsSigtermAsSuccess) {
+    RecordProperty("requirement", "JPSM-009,JPSM-012");
+    scalesSvc::JetsonPowerModeManagerTester tester;
+    tester.setPowerModeCmdTreatsSigtermAsSuccess();
+}
+
+TEST(Nominal, SetPowerModeCmdIgnoredWhileRebootPending) {
+    RecordProperty("requirement", "JPSM-011");
+    scalesSvc::JetsonPowerModeManagerTester tester;
+    tester.setPowerModeCmdIgnoredWhileRebootPending();
 }
 
 TEST(Nominal, GetPowerModeCmdReturnsCurrentMode) {

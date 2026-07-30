@@ -22,7 +22,11 @@ class JetsonPowerModeManagerTester final : public JetsonPowerModeManagerGTestBas
 
     void powerModeReceiveChangesModeWhenMismatched();
     void powerModeReceiveReportsFailureWhenNvpmodelFails();
+    void powerModeReceiveReportsFailureOnPackedNonzeroExit();
+    void powerModeReceiveTreatsSigtermAsLikelySuccess();
     void powerModeReceiveNoopWhenAlreadyInMode();
+    void powerModeReceiveIgnoredWhileRebootPending();
+    void powerModeReceiveClearsRebootPendingOnGenuineFailure();
     void jetsonPowerStateReceiveOnReportsOn();
     void jetsonPowerStateReceiveOffShutsDownGracefully();
     void jetsonPowerStateReceiveOffReportsFailureWhenShutdownFails();
@@ -32,6 +36,9 @@ class JetsonPowerModeManagerTester final : public JetsonPowerModeManagerGTestBas
     void schedInSkipsModeReportOnReaderError();
     void setPowerModeCmdChangesMode();
     void setPowerModeCmdNoopWhenAlreadyInMode();
+    void setPowerModeCmdReportsExecutionErrorOnNvpmodelFailure();
+    void setPowerModeCmdTreatsSigtermAsSuccess();
+    void setPowerModeCmdIgnoredWhileRebootPending();
     void getPowerModeCmdReturnsCurrentMode();
     void getPowerModeCmdValidationErrorOnReaderFailure();
     void setJetsonPowerStateCmdOnReportsOn();

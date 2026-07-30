@@ -65,23 +65,10 @@ namespace scalesSvc {
     m_pendingPowerCmdRespond = false;
     m_requestedPowerState = stateReq;
 
-    if (m_awaitingBootConfirmation) {
-      // FPManager (e.g. beginDisableHpcMode) asked for this OFF unconditionally
-      // and immediately, but the Jetson was just commanded on and hasn't
-      // reported in yet -- defer instead of racing the boot. This fires
-      // automatically once a real report arrives (currentJetsonPwrState_handler)
-      // or the boot window times out (schedIn_handler force-fires it via a
-      // direct GPIO cut). See beginJetsonOffSequence() and the boot-confirmation
-      // guard comment in the header.
-      m_hasPendingPowerCmd = true;
-      m_deferredOffPending = true;
-      m_powerTimeoutTicks = 0;
-      m_waitingToCutJetsonPower = false;
-      m_powerOffDelayTicks = 0;
-      this->log_ACTIVITY_HI_JETSON_OFF_DEFERRED_BOOTING();
-      return;
-    }
-
+    // FPManager (e.g. beginDisableHpcMode) asks for this OFF unconditionally
+    // and immediately -- beginJetsonOffSequence() decides for itself
+    // whether that needs to be deferred (boot in progress, or a
+    // mode-change reboot in flight) or can execute now.
     this->beginJetsonOffSequence();
   }
 
@@ -147,6 +134,14 @@ namespace scalesSvc {
     if (m_hasPendingCmd && modeNow.e == m_requestedMode.e) {
       this->cmdResponse_out(m_pendingOpCode, m_pendingCmdSeq, Fw::CmdResponse::OK);
       m_hasPendingCmd = false;
+      m_timeoutTicks = 0;
+      if (m_deferredOffPending) {
+        // The mode change just confirmed and m_hasPendingCmd is now clear,
+        // so the hub-trust condition may be satisfiable again -- re-evaluate
+        // and fire the deferred OFF now, mirroring
+        // currentJetsonPwrState_handler's boot-confirmation auto-fire.
+        this->beginJetsonOffSequence();
+      }
     }
   }
 
@@ -188,6 +183,14 @@ namespace scalesSvc {
         this->cmdResponse_out(m_pendingOpCode, m_pendingCmdSeq, Fw::CmdResponse::EXECUTION_ERROR);
         m_hasPendingCmd = false;
         m_timeoutTicks = 0;
+        if (m_deferredOffPending) {
+          // Gave up waiting for the Jetson's power-mode confirmation with an
+          // OFF request still held pending it -- resume it now via
+          // beginJetsonOffSequence(), which re-evaluates the (unchanged by
+          // this timeout) cached power state itself.
+          this->log_WARNING_HI_JETSON_DEFERRED_OFF_RESUMED_AFTER_MODE_TIMEOUT();
+          this->beginJetsonOffSequence();
+        }
       }
     }
 
@@ -269,6 +272,27 @@ namespace scalesSvc {
         scalesSvc::PowerModeID mode
     )
   {
+    if (m_hasPendingCmd) {
+      this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::BUSY);
+      return;
+    }
+
+    // reqPwrMode_out() is wired straight through GenericHub into
+    // imx_hubComStub.dataIn with no queue or gate in between, exactly like
+    // reqJetsonPwrState_out() (see ImxDeployment/Top/topology.fpp and
+    // JM-006) -- calling it while the hub link can't be trusted trips
+    // Svc::ComStub's never-connected FW_ASSERT and crashes the whole i.MX
+    // flight software. Unlike Jetson OFF, there is no hardware-safe
+    // fallback action for "set power mode," so this fails fast instead of
+    // risking the hub call or deferring indefinitely (JM-013). This also
+    // keeps m_hasPendingCmd and m_awaitingBootConfirmation provably
+    // mutually exclusive -- see beginJetsonOffSequence().
+    if (!this->isJetsonHubLinkTrusted() || !this->isConnected_reqPwrMode_OutputPort(0)) {
+      this->log_WARNING_HI_POWER_MODE_REQUEST_REJECTED(mode);
+      this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::VALIDATION_ERROR);
+      return;
+    }
+
     // Store the command identifiers so we can send a deferred response once the
     // Jetson confirms the mode change after rebooting. Do NOT call cmdResponse_out
     // here — the command stays open until currentPwrMode_handler gets a matching
@@ -349,21 +373,11 @@ namespace scalesSvc {
 
       } else if (jetsonState.e == JetsonPowerStateID::OFF) {
         printf("Requesting Jetson power state change to OFF\n");
-        if (m_awaitingBootConfirmation) {
-          // The Jetson was just commanded on and hasn't reported in yet --
-          // defer this OFF instead of racing the boot (see the
-          // boot-confirmation guard comment in the header). It fires
-          // automatically once a real report arrives
-          // (currentJetsonPwrState_handler) or the boot window times out
-          // (schedIn_handler force-fires it via beginJetsonOffSequence()'s
-          // direct-cut fallback). The command stays open -- no
-          // cmdResponse_out here yet, exactly like the graceful-ack wait
-          // beginJetsonOffSequence() itself falls into below.
-          m_deferredOffPending = true;
-          this->log_ACTIVITY_HI_JETSON_OFF_DEFERRED_BOOTING();
-        } else {
-          this->beginJetsonOffSequence();
-        }
+        // beginJetsonOffSequence() decides for itself whether this needs to
+        // be deferred (boot in progress, or a mode-change reboot in
+        // flight) or can execute now -- the command stays open either way
+        // until it (or a later auto-fire/timeout-resume) responds.
+        this->beginJetsonOffSequence();
 
       } else {
         this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::VALIDATION_ERROR);
@@ -373,6 +387,38 @@ namespace scalesSvc {
     }
 
   void JetsonManager::beginJetsonOffSequence() {
+    m_requestedPowerState = JetsonPowerStateID::OFF;
+    m_hasPendingPowerCmd = true;
+    m_powerTimeoutTicks = 0;
+    m_waitingToCutJetsonPower = false;
+    m_powerOffDelayTicks = 0;
+
+    if (m_awaitingBootConfirmation) {
+      // The Jetson was just commanded on and hasn't reported in yet --
+      // defer instead of racing the boot. Fires automatically once a real
+      // report arrives (currentJetsonPwrState_handler) or the boot window
+      // times out (schedIn_handler force-fires it via the direct-cut tail
+      // below). See the boot-confirmation guard comment in the header.
+      m_deferredOffPending = true;
+      this->log_ACTIVITY_HI_JETSON_OFF_DEFERRED_BOOTING();
+      return;
+    }
+
+    if (m_hasPendingCmd) {
+      // A REQUEST_POWER_MODE-triggered reboot is in flight. The Jetson was
+      // confirmed alive when that reboot began, but m_currentJetsonPowerState
+      // stays ON throughout a mode-change reboot (the Jetson never lost GPIO
+      // power, only its OS/hub link is temporarily down) -- so treating
+      // "confirmed ON" alone as trustworthy here would risk the graceful
+      // hub call (reqJetsonPwrState_out) against a link that's down for the
+      // same reboot-related reason as reqPwrMode_out()'s own gate (JM-011).
+      // Defer instead; currentPwrMode_handler/schedIn_handler resume this
+      // once the mode change confirms or times out.
+      m_deferredOffPending = true;
+      this->log_ACTIVITY_HI_JETSON_OFF_DEFERRED_MODE_CHANGE_PENDING();
+      return;
+    }
+
     // Only take the graceful Jetson-side shutdown path when the Jetson is
     // CONFIRMED on -- reqJetsonPwrState_out() is wired straight through
     // GenericHub into imx_hubComStub.dataIn with no queue/gate in between
@@ -387,12 +433,6 @@ namespace scalesSvc {
     // explicitly confirmed) must be treated the same as confirmed-off here:
     // a direct, idempotent GPIO cut, never a hub call.
     m_deferredOffPending = false;
-    m_requestedPowerState = JetsonPowerStateID::OFF;
-    m_hasPendingPowerCmd = true;
-    m_powerTimeoutTicks = 0;
-    m_waitingToCutJetsonPower = false;
-    m_powerOffDelayTicks = 0;
-
     const bool confirmedOn =
         m_jetsonPowerStateKnown && m_currentJetsonPowerState.e == JetsonPowerStateID::ON;
     if (confirmedOn && this->isConnected_reqJetsonPwrState_OutputPort(0)) {
@@ -422,6 +462,13 @@ namespace scalesSvc {
     m_powerTimeoutTicks = 0;
     m_waitingToCutJetsonPower = false;
     m_powerOffDelayTicks = 0;
+  }
+
+  bool JetsonManager::isJetsonHubLinkTrusted() const {
+    return m_jetsonPowerStateKnown
+        && m_currentJetsonPowerState.e == JetsonPowerStateID::ON
+        && !m_awaitingBootConfirmation
+        && !m_hasPendingCmd;
   }
 
 }

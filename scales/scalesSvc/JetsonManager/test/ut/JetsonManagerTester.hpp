@@ -22,12 +22,17 @@ class JetsonManagerTester final : public JetsonManagerGTestBase {
 
     void requestPowerModeDeferredCompletion();
     void requestPowerModeTimeout();
+    void requestPowerModeBusyWhilePending();
+    void requestPowerModeRejectedWhenUnconfirmed();
+    void requestPowerModeRejectedWhileAwaitingBootConfirmation();
     void requestJetsonPowerStateOnDrivesGpioImmediately();
     void requestJetsonPowerStateOffUnconfirmedFallsBackToDirectCut();
     void requestJetsonPowerStateOffDeferredWhileBootingThenAutoFiresGracefulShutdown();
     void requestJetsonPowerStateOffDeferredButBootNeverConfirmsForcesDirectCutOnTimeout();
     void requestJetsonPowerStateOffFallsBackToDirectCutAfterBootConfirmationTimeoutWithNoDeferredOff();
     void requestJetsonPowerStateOffAcceptedAfterRedundantOnCommand();
+    void requestJetsonPowerStateOffDeferredWhileModeChangeInFlightThenAutoFiresOnModeConfirmation();
+    void requestJetsonPowerStateOffDeferredWhileModeChangeInFlightResumedAfterModeTimeout();
     void requestJetsonPowerStateOffConfirmedOnUsesGracefulThenCutsPower();
     void requestJetsonPowerStateOffConfirmedOffIsIdempotent();
     void requestJetsonPowerStateOffTimesOutAndFallsBackToDirectCut();

@@ -126,6 +126,25 @@ namespace scalesSvc {
       bool m_modeReported;
       bool m_powerStateReported; //!< False until we have reported the Jetson power state at least once after boot
 
+      // ----------------------------------------------------------------------
+      // Reboot-in-flight guard
+      //
+      // nvpmodel -m <mode> reboots the Jetson to apply a new mode -- this
+      // process's own systemd service is expected to be torn down and
+      // replaced by a fresh instance as part of that reboot. Between issuing
+      // the nvpmodel call and that reboot actually severing the hub link /
+      // killing this process, this same instance is still running and could
+      // otherwise process a second overlapping mode-change request (hub- or
+      // locally-driven) and double-invoke nvpmodel. Set immediately before
+      // the shell call in powerModeReceive_handler/SET_POWER_MODE_cmdHandler,
+      // checked at the top of both. Only cleared explicitly on a GENUINE
+      // (non-SIGTERM) nvpmodel failure, where no reboot is coming and this
+      // same process instance keeps running -- on success/likely-success it
+      // is intentionally left set, since the process is expected to be
+      // replaced (constructed fresh, defaulting false again) by the reboot.
+      // ----------------------------------------------------------------------
+      bool m_rebootPending;
+
       PowerModeReader m_powerModeReader; //!< Defaults to the real get_nvp_mode()
       ShellCommandRunner m_shellRunner;  //!< Defaults to std::system()
 

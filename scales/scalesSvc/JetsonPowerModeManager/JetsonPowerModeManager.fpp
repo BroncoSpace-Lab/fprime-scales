@@ -112,7 +112,21 @@ module scalesSvc {
       requested: JetsonPowerStateID @< The requested Jetson power state (on/off)
       reason: string size 64 @< Reason for failure
     ) severity warning high id 5 format "Jetson power state change request {} failed: {}"
-    
+
+    @ Event indicating the Jetson is about to reboot to apply a new power
+    @ mode, logged before the nvpmodel shell command runs so it reaches GDS
+    @ even if this process is torn down moments later by the reboot itself
+    event JETSON_POWER_MODE_REBOOT_STARTED(
+      requested: PowerModeID @< The power mode nvpmodel is about to apply
+    ) severity activity high id 6 format "Jetson rebooting to apply power mode {} (nvpmodel -m)"
+
+    @ Event indicating a power-mode change request (hub-driven or local) was
+    @ ignored because a previous mode-change-triggered reboot is already in
+    @ flight on this same process instance
+    event POWER_MODE_REQUEST_IGNORED_REBOOT_PENDING(
+      requested: PowerModeID @< The mode that was requested while a reboot was already pending
+    ) severity warning high id 7 format "Ignored power mode request {}: a mode-change reboot is already in flight"
+
     ###############################################################################
     #                                 Telemetry                                   #
     ###############################################################################

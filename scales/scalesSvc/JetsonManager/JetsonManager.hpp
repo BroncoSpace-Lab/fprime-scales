@@ -96,10 +96,22 @@ namespace scalesSvc {
       //! Shared graceful-vs-direct OFF sequence, used by
       //! REQUEST_JETSON_POWER_STATE(OFF), fpJetsonPowerRequestIn(OFF), and the
       //! deferred-OFF auto-fire/force-fire paths (currentJetsonPwrState_handler,
-      //! schedIn_handler). Re-evaluates m_jetsonPowerStateKnown/
-      //! m_currentJetsonPowerState itself, so it is correct no matter which of
-      //! those callers triggers it.
+      //! currentPwrMode_handler, schedIn_handler). Re-evaluates
+      //! m_jetsonPowerStateKnown/m_currentJetsonPowerState itself, so it is
+      //! correct no matter which of those callers triggers it.
       void beginJetsonOffSequence();
+
+      //! True only when it is currently safe to call a hub-routed output
+      //! port (reqPwrMode_out/reqJetsonPwrState_out): the Jetson is
+      //! confirmed ON by a real report, no ON command is still awaiting its
+      //! first boot confirmation, and no REQUEST_POWER_MODE-triggered
+      //! reboot is in flight. False for any other reason -- confirmed off,
+      //! never confirmed, booting, or mid a pending mode-change reboot --
+      //! since the hub TCP link's liveness cannot be trusted and
+      //! Svc::ComStub's never-connected FW_ASSERT would trip (JM-006's
+      //! crash class, which reqPwrMode_out() is equally exposed to as
+      //! reqJetsonPwrState_out() -- see JM-011).
+      bool isJetsonHubLinkTrusted() const;
 
       private:
 
@@ -162,6 +174,14 @@ namespace scalesSvc {
       // arrives (currentJetsonPwrState_handler) or the boot window times out
       // (schedIn_handler force-fires it via a direct GPIO cut, same fail-safe
       // philosophy as the existing post-ack timeout fallback below).
+      //
+      // m_hasPendingCmd (a REQUEST_POWER_MODE-triggered reboot in flight) is
+      // the same kind of "hub link cannot be trusted right now" condition as
+      // m_awaitingBootConfirmation, even though m_currentJetsonPowerState
+      // stays ON throughout (the Jetson never lost GPIO power -- only its
+      // OS/hub link is temporarily down while it reboots to apply the new
+      // mode). beginJetsonOffSequence() defers on this too, reusing
+      // m_deferredOffPending; see isJetsonHubLinkTrusted() and JM-011.
       // ----------------------------------------------------------------------
 
       bool m_awaitingBootConfirmation; //!< True after a genuine off->on ON command until a real report arrives or the boot window times out

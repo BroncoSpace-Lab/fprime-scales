@@ -62,6 +62,9 @@ void JetsonPowerModeManagerTester ::powerModeReceiveChangesModeWhenMismatched() 
     this->component.doDispatch();
 
     ASSERT_EVENTS_POWER_MODE_REQUEST_RECEIVED_SIZE(1);
+    // Logged before the nvpmodel shell call (JPSM-010) so it reaches GDS
+    // even if this process is torn down moments later by the reboot.
+    ASSERT_EVENTS_JETSON_POWER_MODE_REBOOT_STARTED_SIZE(1);
     ASSERT_EQ(g_shellCallCount, 1);
     ASSERT_NE(g_lastShellCommand.find("nvpmodel -m 2"), std::string::npos);
     // The mismatched-mode path does not report a mode itself when the
@@ -85,6 +88,37 @@ void JetsonPowerModeManagerTester ::powerModeReceiveReportsFailureWhenNvpmodelFa
     ASSERT_from_powerModeSend(0, scalesSvc::PowerModeID::MIN);
 }
 
+void JetsonPowerModeManagerTester ::powerModeReceiveReportsFailureOnPackedNonzeroExit() {
+    // Parity with jetsonPowerStateReceiveOffReportsFailureOnNonzeroExitNotNegativeOne:
+    // a real std::system() failure returns a packed wait-status, not a bare
+    // small int -- exit code 1 packs to 1 << 8 = 256 on Linux. This path
+    // never had a test exercising a realistic packed exit before.
+    g_mockPowerMode = static_cast<int>(scalesSvc::PowerModeID::MIN);
+    g_mockShellExitCode = 1 << 8;
+
+    this->invoke_to_powerModeReceive(0, scalesSvc::PowerModeID::BALANCED);
+    this->component.doDispatch();
+
+    ASSERT_EVENTS_POWER_MODE_CHANGE_FAILED_SIZE(1);
+    ASSERT_from_powerModeSend_SIZE(1);
+    ASSERT_from_powerModeSend(0, scalesSvc::PowerModeID::MIN);
+}
+
+void JetsonPowerModeManagerTester ::powerModeReceiveTreatsSigtermAsLikelySuccess() {
+    // nvpmodel -m <N> reboots the Jetson to apply the new mode, tearing down
+    // this process's own systemd service the same way shutdown -h now does
+    // -- the same SIGTERM-killed-by-collateral-teardown signature must be
+    // treated as (likely) success here too, not a genuine nvpmodel failure.
+    g_mockPowerMode = static_cast<int>(scalesSvc::PowerModeID::MIN);
+    g_mockShellExitCode = SIGTERM;
+
+    this->invoke_to_powerModeReceive(0, scalesSvc::PowerModeID::BALANCED);
+    this->component.doDispatch();
+
+    ASSERT_EVENTS_POWER_MODE_CHANGE_FAILED_SIZE(0);
+    ASSERT_from_powerModeSend_SIZE(0);
+}
+
 void JetsonPowerModeManagerTester ::powerModeReceiveNoopWhenAlreadyInMode() {
     g_mockPowerMode = static_cast<int>(scalesSvc::PowerModeID::BALANCED);
 
@@ -92,10 +126,54 @@ void JetsonPowerModeManagerTester ::powerModeReceiveNoopWhenAlreadyInMode() {
     this->component.doDispatch();
 
     ASSERT_EQ(g_shellCallCount, 0);
+    ASSERT_EVENTS_JETSON_POWER_MODE_REBOOT_STARTED_SIZE(0);
     ASSERT_from_powerModeSend_SIZE(1);
     ASSERT_from_powerModeSend(0, scalesSvc::PowerModeID::BALANCED);
     ASSERT_TLM_CurrentPowerMode_SIZE(1);
     ASSERT_TLM_CurrentPowerMode(0, scalesSvc::PowerModeID::BALANCED);
+}
+
+void JetsonPowerModeManagerTester ::powerModeReceiveIgnoredWhileRebootPending() {
+    // Defense-in-depth: a second mode-change request arriving in the narrow
+    // window between nvpmodel being invoked and the reboot actually
+    // severing the hub link/killing this process must not double-invoke
+    // nvpmodel. The i.MX side should already prevent this in normal
+    // operation (JetsonManager's own m_hasPendingCmd BUSY guard/hub-link-trust
+    // gate) -- this protects against a locally-issued SET_POWER_MODE or a
+    // narrow race overlapping a hub-driven change.
+    g_mockPowerMode = static_cast<int>(scalesSvc::PowerModeID::MIN);
+
+    this->invoke_to_powerModeReceive(0, scalesSvc::PowerModeID::BALANCED);
+    this->component.doDispatch();
+    ASSERT_EQ(g_shellCallCount, 1);
+
+    this->invoke_to_powerModeReceive(0, scalesSvc::PowerModeID::EXTRA);
+    this->component.doDispatch();
+
+    ASSERT_EQ(g_shellCallCount, 1);  // unchanged -- second request was dropped
+    ASSERT_EVENTS_POWER_MODE_REQUEST_IGNORED_REBOOT_PENDING_SIZE(1);
+}
+
+void JetsonPowerModeManagerTester ::powerModeReceiveClearsRebootPendingOnGenuineFailure() {
+    // On a GENUINE nvpmodel failure, no reboot is coming and this same
+    // process instance keeps running -- m_rebootPending must be cleared, or
+    // it would latch forever and permanently block all future mode changes.
+    g_mockPowerMode = static_cast<int>(scalesSvc::PowerModeID::MIN);
+    g_mockShellExitCode = 1 << 8;
+
+    this->invoke_to_powerModeReceive(0, scalesSvc::PowerModeID::BALANCED);
+    this->component.doDispatch();
+    ASSERT_EQ(g_shellCallCount, 1);
+    ASSERT_EVENTS_POWER_MODE_CHANGE_FAILED_SIZE(1);
+
+    // A subsequent mismatched-mode request must NOT be blocked -- proves the
+    // guard was actually cleared, not left latched by the failure above.
+    g_mockShellExitCode = 0;
+    this->invoke_to_powerModeReceive(0, scalesSvc::PowerModeID::EXTRA);
+    this->component.doDispatch();
+
+    ASSERT_EQ(g_shellCallCount, 2);
+    ASSERT_EVENTS_POWER_MODE_REQUEST_IGNORED_REBOOT_PENDING_SIZE(0);
 }
 
 void JetsonPowerModeManagerTester ::jetsonPowerStateReceiveOnReportsOn() {
@@ -241,6 +319,53 @@ void JetsonPowerModeManagerTester ::setPowerModeCmdNoopWhenAlreadyInMode() {
     ASSERT_EQ(g_shellCallCount, 0);
     ASSERT_CMD_RESPONSE_SIZE(1);
     ASSERT_EQ(this->cmdResponseHistory->at(0).response, Fw::CmdResponse::OK);
+}
+
+void JetsonPowerModeManagerTester ::setPowerModeCmdReportsExecutionErrorOnNvpmodelFailure() {
+    // Previously this handler discarded the shell command's exit status
+    // entirely and always responded OK -- now it must check it, same as the
+    // hub-driven powerModeReceive path.
+    g_mockPowerMode = static_cast<int>(scalesSvc::PowerModeID::MIN);
+    g_mockShellExitCode = 1 << 8;
+
+    this->sendCmd_SET_POWER_MODE(0, 9, scalesSvc::PowerModeID::MAX);
+    this->component.doDispatch();
+
+    ASSERT_EQ(g_shellCallCount, 1);
+    ASSERT_EVENTS_POWER_MODE_CHANGE_FAILED_SIZE(1);
+    ASSERT_CMD_RESPONSE_SIZE(1);
+    ASSERT_EQ(this->cmdResponseHistory->at(0).response, Fw::CmdResponse::EXECUTION_ERROR);
+}
+
+void JetsonPowerModeManagerTester ::setPowerModeCmdTreatsSigtermAsSuccess() {
+    g_mockPowerMode = static_cast<int>(scalesSvc::PowerModeID::MIN);
+    g_mockShellExitCode = SIGTERM;
+
+    this->sendCmd_SET_POWER_MODE(0, 10, scalesSvc::PowerModeID::MAX);
+    this->component.doDispatch();
+
+    ASSERT_EVENTS_POWER_MODE_CHANGE_FAILED_SIZE(0);
+    ASSERT_CMD_RESPONSE_SIZE(1);
+    ASSERT_EQ(this->cmdResponseHistory->at(0).response, Fw::CmdResponse::OK);
+}
+
+void JetsonPowerModeManagerTester ::setPowerModeCmdIgnoredWhileRebootPending() {
+    g_mockPowerMode = static_cast<int>(scalesSvc::PowerModeID::MIN);
+
+    this->sendCmd_SET_POWER_MODE(0, 11, scalesSvc::PowerModeID::MAX);
+    this->component.doDispatch();
+    ASSERT_EQ(g_shellCallCount, 1);
+    ASSERT_CMD_RESPONSE_SIZE(1);
+    ASSERT_EQ(this->cmdResponseHistory->at(0).response, Fw::CmdResponse::OK);
+
+    // A second SET_POWER_MODE while the first's reboot is still pending
+    // (m_rebootPending, left set by the success above) is rejected BUSY,
+    // not run through nvpmodel a second time.
+    this->sendCmd_SET_POWER_MODE(0, 12, scalesSvc::PowerModeID::BALANCED);
+    this->component.doDispatch();
+    ASSERT_EQ(g_shellCallCount, 1);
+    ASSERT_CMD_RESPONSE_SIZE(2);
+    ASSERT_EQ(this->cmdResponseHistory->at(1).response, Fw::CmdResponse::BUSY);
 }
 
 void JetsonPowerModeManagerTester ::getPowerModeCmdReturnsCurrentMode() {
