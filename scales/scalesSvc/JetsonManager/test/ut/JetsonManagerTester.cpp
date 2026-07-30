@@ -112,6 +112,75 @@ void JetsonManagerTester ::requestJetsonPowerStateOffUnconfirmedFallsBackToDirec
     ASSERT_EQ(this->cmdResponseHistory->at(0).response, Fw::CmdResponse::OK);
 }
 
+void JetsonManagerTester ::requestJetsonPowerStateOffRejectedWhileBooting() {
+    // Regression test for the exact bug this fixed: commanding ON completes
+    // synchronously (GPIO high, immediate OK) but does NOT mean the Jetson
+    // has actually booted. A commanded OFF sent before the Jetson's first
+    // real report used to race the boot -- taking the graceful hub-routed
+    // path against a link that might not exist yet, and getting stuck BUSY
+    // for the full CMD_TIMEOUT_TICKS window. It must now be rejected outright.
+    m_authorizeResult = Fw::Success::SUCCESS;
+
+    this->sendCmd_REQUEST_JETSON_POWER_STATE(0, 1, scalesSvc::JetsonPowerStateID::ON);
+    this->component.doDispatch();
+    ASSERT_from_gpioSet_SIZE(1);
+    ASSERT_from_gpioSet(0, Fw::Logic::HIGH);
+    ASSERT_CMD_RESPONSE_SIZE(1);
+    ASSERT_EQ(this->cmdResponseHistory->at(0).response, Fw::CmdResponse::OK);
+
+    // OFF sent before the Jetson has reported in must be rejected outright,
+    // not raced -- no hub call, no GPIO cut, no lingering pending-command state.
+    this->sendCmd_REQUEST_JETSON_POWER_STATE(0, 2, scalesSvc::JetsonPowerStateID::OFF);
+    this->component.doDispatch();
+    ASSERT_from_reqJetsonPwrState_SIZE(0);
+    ASSERT_from_gpioSet_SIZE(1);
+    ASSERT_EVENTS_JETSON_OFF_REJECTED_BOOTING_SIZE(1);
+    ASSERT_CMD_RESPONSE_SIZE(2);
+    ASSERT_EQ(this->cmdResponseHistory->at(1).response, Fw::CmdResponse::BUSY);
+
+    // The real boot report arrives -- OFF is no longer rejected on this basis,
+    // and (Jetson now confirmed ON) takes the graceful path as normal.
+    this->invoke_to_currentJetsonPwrState(0, scalesSvc::JetsonPowerStateID::ON);
+    this->component.doDispatch();
+    this->clearHistory();
+
+    this->sendCmd_REQUEST_JETSON_POWER_STATE(0, 3, scalesSvc::JetsonPowerStateID::OFF);
+    this->component.doDispatch();
+    ASSERT_EVENTS_JETSON_OFF_REJECTED_BOOTING_SIZE(0);
+    ASSERT_from_reqJetsonPwrState_SIZE(1);
+    ASSERT_from_reqJetsonPwrState(0, scalesSvc::JetsonPowerStateID::OFF);
+}
+
+void JetsonManagerTester ::requestJetsonPowerStateOffNoLongerRejectedAfterBootConfirmationTimeout() {
+    m_authorizeResult = Fw::Success::SUCCESS;
+
+    this->sendCmd_REQUEST_JETSON_POWER_STATE(0, 1, scalesSvc::JetsonPowerStateID::ON);
+    this->component.doDispatch();
+    this->clearHistory();
+
+    // The Jetson never reports in. CMD_TIMEOUT_TICKS = 120 in JetsonManager.hpp;
+    // the boot-confirmation guard must not clear before that many ticks.
+    for (U32 i = 0; i < 119; i++) {
+        this->invoke_to_schedIn(0, 0);
+    }
+    ASSERT_EVENTS_JETSON_BOOT_CONFIRMATION_TIMEOUT_SIZE(0);
+
+    this->invoke_to_schedIn(0, 0);
+    ASSERT_EVENTS_JETSON_BOOT_CONFIRMATION_TIMEOUT_SIZE(1);
+
+    // OFF is no longer rejected on the "still booting" basis -- it falls
+    // through to the normal confirmedOn-gated logic, which is unconfirmed
+    // (no real report ever arrived) so it takes the safe direct GPIO cut.
+    this->sendCmd_REQUEST_JETSON_POWER_STATE(0, 2, scalesSvc::JetsonPowerStateID::OFF);
+    this->component.doDispatch();
+    ASSERT_EVENTS_JETSON_OFF_REJECTED_BOOTING_SIZE(0);
+    ASSERT_from_reqJetsonPwrState_SIZE(0);
+    ASSERT_from_gpioSet_SIZE(1);
+    ASSERT_from_gpioSet(0, Fw::Logic::LOW);
+    ASSERT_CMD_RESPONSE_SIZE(1);
+    ASSERT_EQ(this->cmdResponseHistory->at(0).response, Fw::CmdResponse::OK);
+}
+
 void JetsonManagerTester ::requestJetsonPowerStateOffConfirmedOnUsesGracefulThenCutsPower() {
     this->component.loadParameters();
 

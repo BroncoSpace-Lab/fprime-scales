@@ -75,6 +75,17 @@ module scalesSvc {
             jetsonState: JetsonPowerStateID @< The Jetson power state that timed out
         ) severity warning high id 4 format "JetsonManager timed out waiting for Jetson power state response to command {}"
 
+        @ Event indicating a commanded OFF was rejected because the Jetson was
+        @ just commanded ON and has not yet reported in after booting
+        event JETSON_OFF_REJECTED_BOOTING severity warning high id 5 \
+            format "Jetson OFF rejected: Jetson has not finished booting since it was last commanded ON"
+
+        @ Event indicating JetsonManager gave up waiting for the Jetson's
+        @ first report after being commanded ON; OFF requests are no longer
+        @ rejected on that basis alone
+        event JETSON_BOOT_CONFIRMATION_TIMEOUT severity warning high id 6 \
+            format "JetsonManager timed out waiting for the Jetson's first report after being commanded ON"
+
         ###############################################################################
         #                                 Telemetry                                   #
         ###############################################################################

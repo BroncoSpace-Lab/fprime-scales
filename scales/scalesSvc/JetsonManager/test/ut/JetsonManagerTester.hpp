@@ -24,6 +24,8 @@ class JetsonManagerTester final : public JetsonManagerGTestBase {
     void requestPowerModeTimeout();
     void requestJetsonPowerStateOnDrivesGpioImmediately();
     void requestJetsonPowerStateOffUnconfirmedFallsBackToDirectCut();
+    void requestJetsonPowerStateOffRejectedWhileBooting();
+    void requestJetsonPowerStateOffNoLongerRejectedAfterBootConfirmationTimeout();
     void requestJetsonPowerStateOffConfirmedOnUsesGracefulThenCutsPower();
     void requestJetsonPowerStateOffConfirmedOffIsIdempotent();
     void requestJetsonPowerStateOffTimesOutAndFallsBackToDirectCut();

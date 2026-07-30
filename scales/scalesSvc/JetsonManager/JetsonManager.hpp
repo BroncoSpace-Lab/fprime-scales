@@ -136,6 +136,28 @@ namespace scalesSvc {
       U32 m_powerOffDelayTicks; //!< Ticks elapsed since sending the shutdown command, used to delay cutting power to allow for graceful shutdown
       bool m_pendingPowerCmdRespond; //!< Whether the pending power request has a command sequence to complete
 
+      // ----------------------------------------------------------------------
+      // Boot-confirmation guard
+      //
+      // ON completes synchronously (GPIO driven high, immediate OK response) --
+      // it does NOT mean the Jetson has actually finished booting. Previously
+      // m_jetsonPowerStateKnown/m_currentJetsonPowerState were set to
+      // "confirmed ON" optimistically at the moment ON was commanded, so a
+      // commanded OFF sent moments later (before the Jetson had booted far
+      // enough to be reachable over the hub) took the graceful hub-routed
+      // path against a link that may not exist yet, and its m_hasPendingPowerCmd
+      // bookkeeping could stay BUSY for the full CMD_TIMEOUT_TICKS window --
+      // during which every REQUEST_JETSON_POWER_STATE (on or off) is rejected
+      // BUSY. m_jetsonPowerStateKnown is now set ONLY by a real report
+      // received from the Jetson (see currentJetsonPwrState_handler); this
+      // separate flag tracks "commanded ON, first report not seen yet" and
+      // rejects a commanded OFF outright while it's true, instead of letting
+      // it race the boot.
+      // ----------------------------------------------------------------------
+
+      bool m_awaitingBootConfirmation; //!< True after ON is commanded until a real report arrives or the boot window times out
+      U32 m_bootConfirmationTimeoutTicks; //!< Ticks elapsed since ON was commanded, bounds m_awaitingBootConfirmation
+
   };
 
 }

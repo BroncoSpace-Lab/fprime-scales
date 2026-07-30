@@ -29,6 +29,18 @@ TEST(JetsonManager, RequestJetsonPowerStateOffUnconfirmedFallsBackToDirectCut) {
     tester.requestJetsonPowerStateOffUnconfirmedFallsBackToDirectCut();
 }
 
+TEST(JetsonManager, RequestJetsonPowerStateOffRejectedWhileBooting) {
+    RecordProperty("requirement", "JM-009");
+    scalesSvc::JetsonManagerTester tester;
+    tester.requestJetsonPowerStateOffRejectedWhileBooting();
+}
+
+TEST(JetsonManager, RequestJetsonPowerStateOffNoLongerRejectedAfterBootConfirmationTimeout) {
+    RecordProperty("requirement", "JM-009");
+    scalesSvc::JetsonManagerTester tester;
+    tester.requestJetsonPowerStateOffNoLongerRejectedAfterBootConfirmationTimeout();
+}
+
 TEST(JetsonManager, RequestJetsonPowerStateOffConfirmedOnUsesGracefulThenCutsPower) {
     RecordProperty("requirement", "JM-005,JM-006");
     scalesSvc::JetsonManagerTester tester;

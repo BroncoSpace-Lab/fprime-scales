@@ -33,7 +33,9 @@ namespace scalesSvc {
       m_powerTimeoutTicks(0),
       m_waitingToCutJetsonPower(false),
       m_powerOffDelayTicks(0),
-      m_pendingPowerCmdRespond(false)
+      m_pendingPowerCmdRespond(false),
+      m_awaitingBootConfirmation(false),
+      m_bootConfirmationTimeoutTicks(0)
       // instantiate private members in a constructor.
   {
 
@@ -82,6 +84,8 @@ namespace scalesSvc {
     this->gpioSet_out(0, JETSON_POWER_GPIO_OFF);
     m_currentJetsonPowerState = JetsonPowerStateID::OFF;
     m_jetsonPowerStateKnown = true;
+    m_awaitingBootConfirmation = false;
+    m_bootConfirmationTimeoutTicks = 0;
     this->tlmWrite_JetsonPowerState(JetsonPowerStateID::OFF);
     if (this->isConnected_fpJetsonPowerStateOut_OutputPort(0)) {
       this->fpJetsonPowerStateOut_out(0, JetsonPowerStateID::OFF);
@@ -97,6 +101,10 @@ namespace scalesSvc {
     this->log_ACTIVITY_LO_JETSON_POWER_STATE_RECEIVED(stateNow);
     m_currentJetsonPowerState = stateNow;
     m_jetsonPowerStateKnown = true;
+    // Any real report -- ON or OFF -- proves the Jetson has booted far enough
+    // to reach us over the hub, so the boot-confirmation guard is satisfied.
+    m_awaitingBootConfirmation = false;
+    m_bootConfirmationTimeoutTicks = 0;
     this->tlmWrite_JetsonPowerState(stateNow);
     if (this->isConnected_fpJetsonPowerStateOut_OutputPort(0)) {
       this->fpJetsonPowerStateOut_out(0, stateNow);
@@ -144,6 +152,20 @@ namespace scalesSvc {
         U32 context
     )
   {
+    // Bound how long a commanded ON can block OFF requests: if the Jetson
+    // never reports in (hardware fault, GPIO miswire, etc.), give up after
+    // CMD_TIMEOUT_TICKS so OFF is not rejected forever. Once this clears,
+    // OFF falls through to the normal confirmedOn-gated logic, which is safe
+    // either way (unconfirmed state -> direct GPIO cut, never a hub call).
+    if (m_awaitingBootConfirmation) {
+      m_bootConfirmationTimeoutTicks++;
+      if (m_bootConfirmationTimeoutTicks >= CMD_TIMEOUT_TICKS) {
+        m_awaitingBootConfirmation = false;
+        m_bootConfirmationTimeoutTicks = 0;
+        this->log_WARNING_HI_JETSON_BOOT_CONFIRMATION_TIMEOUT();
+      }
+    }
+
     // If a REQUEST_POWER_MODE is pending, tick the timeout counter.
     // The Jetson must reboot and reconnect within CMD_TIMEOUT_TICKS ticks or
     // the command is failed so the GDS doesn't wait forever.
@@ -166,6 +188,8 @@ namespace scalesSvc {
         this->gpioSet_out(0, JETSON_POWER_GPIO_OFF);
         m_currentJetsonPowerState = JetsonPowerStateID::OFF;
         m_jetsonPowerStateKnown = true;
+        m_awaitingBootConfirmation = false;
+        m_bootConfirmationTimeoutTicks = 0;
         this->tlmWrite_JetsonPowerState(JetsonPowerStateID::OFF);
         if (this->isConnected_fpJetsonPowerStateOut_OutputPort(0)) {
           this->fpJetsonPowerStateOut_out(0, JetsonPowerStateID::OFF);
@@ -196,6 +220,8 @@ namespace scalesSvc {
           this->gpioSet_out(0, JETSON_POWER_GPIO_OFF);
           m_currentJetsonPowerState = JetsonPowerStateID::OFF;
           m_jetsonPowerStateKnown = true;
+          m_awaitingBootConfirmation = false;
+          m_bootConfirmationTimeoutTicks = 0;
           this->tlmWrite_JetsonPowerState(JetsonPowerStateID::OFF);
           if (this->isConnected_fpJetsonPowerStateOut_OutputPort(0)) {
             this->fpJetsonPowerStateOut_out(0, JetsonPowerStateID::OFF);
@@ -261,6 +287,19 @@ namespace scalesSvc {
         return;
       }
 
+      // A commanded OFF must not race a commanded ON that hasn't booted far
+      // enough to report in yet -- cutting GPIO power mid-boot is exactly
+      // the "yank power from a live Jetson without asking" risk this
+      // component otherwise guards against, and racing it here is what
+      // previously left m_hasPendingPowerCmd BUSY for the full timeout
+      // window (the graceful OFF request going out over a hub link that
+      // wasn't up yet). Reject outright instead; ON itself is unaffected.
+      if (jetsonState.e == JetsonPowerStateID::OFF && m_awaitingBootConfirmation) {
+        this->log_WARNING_HI_JETSON_OFF_REJECTED_BOOTING();
+        this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::BUSY);
+        return;
+      }
+
       m_pendingPowerOpCode = opCode;
       m_pendingPowerCmdSeq = cmdSeq;
       m_requestedPowerState = jetsonState;
@@ -278,8 +317,13 @@ namespace scalesSvc {
         // to boot and report ON through currentJetsonPwrState_handler.
         printf("Requesting Jetson power state change to ON\n");
         this->gpioSet_out(0, JETSON_POWER_GPIO_ON);
-        m_currentJetsonPowerState = jetsonState;
-        m_jetsonPowerStateKnown = true;
+        // Driving GPIO high is not confirmation the Jetson is actually up --
+        // m_jetsonPowerStateKnown/m_currentJetsonPowerState are left alone
+        // here and only updated by a real report in
+        // currentJetsonPwrState_handler. Track "commanded ON, still booting"
+        // separately so a commanded OFF can be rejected instead of racing it.
+        m_awaitingBootConfirmation = true;
+        m_bootConfirmationTimeoutTicks = 0;
         this->tlmWrite_JetsonPowerState(jetsonState);
         if (this->isConnected_fpJetsonPowerStateOut_OutputPort(0)) {
           this->fpJetsonPowerStateOut_out(0, jetsonState);
@@ -323,6 +367,8 @@ namespace scalesSvc {
           this->gpioSet_out(0, JETSON_POWER_GPIO_OFF);
           m_currentJetsonPowerState = JetsonPowerStateID::OFF;
           m_jetsonPowerStateKnown = true;
+          m_awaitingBootConfirmation = false;
+          m_bootConfirmationTimeoutTicks = 0;
           this->tlmWrite_JetsonPowerState(jetsonState);
           if (this->isConnected_fpJetsonPowerStateOut_OutputPort(0)) {
             this->fpJetsonPowerStateOut_out(0, jetsonState);
