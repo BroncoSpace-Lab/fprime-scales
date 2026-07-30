@@ -20,6 +20,9 @@ class FPManagerTester final : public FPManagerGTestBase {
     void entersHpcModeAndAcceptsJetsonOn();
     void disablesHpcModeAndGatesJetsonOn();
     void disableHpcModeWaitsForJetsonOffConfirmation();
+    void disableHpcModeWithJetsonNeverToggledEmitsAlreadyOffEvent();
+    void disableHpcModeWhileJetsonBootingDefersAndEmitsBootingEvent();
+    void disableHpcModeAfterBootConfirmedEmitsOffRequestedEvent();
     void imxFaultDuringDisableHpcWaitStillTriggersEmergencyShutdown();
     void imxFaultTriggersEmergencyShutdown();
     void peripheralFaultPowersOffPeripheralOnly();

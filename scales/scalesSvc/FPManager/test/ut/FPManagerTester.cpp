@@ -183,6 +183,72 @@ void FPManagerTester::disableHpcModeWaitsForJetsonOffConfirmation() {
             Fw::CmdResponse::OK);
 }
 
+void FPManagerTester::disableHpcModeWithJetsonNeverToggledEmitsAlreadyOffEvent() {
+  // HPC enabled, but the Jetson was never authorized/confirmed on -- OFF
+  // must never be rejected/blocked, and DISABLE_HPC_MODE reports it as
+  // "already off" (nothing to shut down), not a boot-in-progress wait.
+  this->initializeSafeMode();
+  this->enterHpcMode();
+
+  this->sendCmd_DISABLE_HPC_MODE(0, 1);
+  this->drainStateMachine();
+
+  ASSERT_EVENTS_HPC_MODE_DISABLE_JETSON_ALREADY_OFF_SIZE(1);
+  ASSERT_EVENTS_HPC_MODE_DISABLE_JETSON_OFF_REQUESTED_SIZE(0);
+  ASSERT_EVENTS_HPC_MODE_DISABLE_JETSON_BOOTING_SIZE(0);
+  ASSERT_from_jetsonPowerRequestOut_SIZE(1);
+  ASSERT_from_jetsonPowerRequestOut(0, JetsonPowerStateID::OFF);
+  ASSERT_EQ(this->cmdResponseHistory->at(this->cmdResponseHistory->size() - 1).response,
+            Fw::CmdResponse::OK);
+}
+
+void FPManagerTester::disableHpcModeWhileJetsonBootingDefersAndEmitsBootingEvent() {
+  // The Jetson was just authorized ON (a real ON command would have gone to
+  // JetsonManager) but has not reported back yet -- DISABLE_HPC_MODE must
+  // NOT reject or block on this. It proceeds exactly as always (requesting
+  // OFF from JetsonManager unconditionally, which JetsonManager itself will
+  // defer until boot is confirmed), but reports it as "Jetson booting" so
+  // the operator knows why it may take longer than usual.
+  this->initializeSafeMode();
+  this->enterHpcMode();
+  const Fw::Success result =
+      this->invoke_to_jetsonPowerAuthorizeIn(0, JetsonPowerStateID::ON);
+  ASSERT_EQ(result, Fw::Success::SUCCESS);
+
+  this->sendCmd_DISABLE_HPC_MODE(0, 1);
+  this->drainStateMachine();
+
+  ASSERT_EVENTS_HPC_MODE_DISABLE_JETSON_BOOTING_SIZE(1);
+  ASSERT_EVENTS_HPC_MODE_DISABLE_JETSON_OFF_REQUESTED_SIZE(0);
+  ASSERT_EVENTS_HPC_MODE_DISABLE_JETSON_ALREADY_OFF_SIZE(0);
+  ASSERT_from_jetsonPowerRequestOut_SIZE(1);
+  ASSERT_from_jetsonPowerRequestOut(0, JetsonPowerStateID::OFF);
+  ASSERT_EQ(this->cmdResponseHistory->at(this->cmdResponseHistory->size() - 1).response,
+            Fw::CmdResponse::OK);
+}
+
+void FPManagerTester::disableHpcModeAfterBootConfirmedEmitsOffRequestedEvent() {
+  this->initializeSafeMode();
+  this->enterHpcMode();
+  const Fw::Success result =
+      this->invoke_to_jetsonPowerAuthorizeIn(0, JetsonPowerStateID::ON);
+  ASSERT_EQ(result, Fw::Success::SUCCESS);
+  // The real report arrives, confirming the Jetson booted.
+  this->invoke_to_jetsonPowerStateIn(0, JetsonPowerStateID::ON);
+  this->drainStateMachine();
+
+  this->sendCmd_DISABLE_HPC_MODE(0, 1);
+  this->drainStateMachine();
+
+  ASSERT_EVENTS_HPC_MODE_DISABLE_JETSON_OFF_REQUESTED_SIZE(1);
+  ASSERT_EVENTS_HPC_MODE_DISABLE_JETSON_BOOTING_SIZE(0);
+  ASSERT_EVENTS_HPC_MODE_DISABLE_JETSON_ALREADY_OFF_SIZE(0);
+  ASSERT_from_jetsonPowerRequestOut_SIZE(1);
+  ASSERT_from_jetsonPowerRequestOut(0, JetsonPowerStateID::OFF);
+  ASSERT_EQ(this->cmdResponseHistory->at(this->cmdResponseHistory->size() - 1).response,
+            Fw::CmdResponse::OK);
+}
+
 void FPManagerTester::imxFaultDuringDisableHpcWaitStillTriggersEmergencyShutdown() {
   this->initializeSafeMode();
   this->setFaultDebounce(1);

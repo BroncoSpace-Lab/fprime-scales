@@ -13,28 +13,41 @@ OFF.
 
 Powering the Jetson ON drives the Jetson power GPIO high and completes the
 command immediately -- but that is *not* confirmation the Jetson has actually
-booted. `m_jetsonPowerStateKnown`/`m_currentJetsonPowerState` are updated only
-by a real report received from the Jetson (`currentJetsonPwrState_handler`),
-never by the ON command itself. Instead, commanding ON sets a separate
-`m_awaitingBootConfirmation` guard -- but only on a genuine off->on
-transition: if the Jetson is already confirmed on (a real report already
-arrived), a redundant ON command leaves the guard alone (clearing it if it
-somehow were still set) rather than re-arming it. A redundant ON doesn't
-cause the Jetson to send a fresh unsolicited report, so re-arming on it would
-have nothing left to clear the guard except the bounded timeout -- this was
-a real bug: sending ON once (booting the Jetson), waiting for confirmation,
-then sending ON again (e.g. to double check) re-armed the guard and left a
-subsequent OFF rejected for up to `CMD_TIMEOUT_TICKS`. The guard rejects a
-commanded OFF outright
-(`BUSY` + `JETSON_OFF_REJECTED_BOOTING`) until either the Jetson's first real
-report arrives or `CMD_TIMEOUT_TICKS` elapses with no report at all (logging
-`JETSON_BOOT_CONFIRMATION_TIMEOUT` and giving up on that basis, after which
-OFF falls through to the normal confirmed-state gate below). Without this,
-an OFF sent while the Jetson was still booting raced the boot: it could take
-the graceful hub-routed path against a link that wasn't up yet, and its
-`m_hasPendingPowerCmd` bookkeeping could then sit `BUSY` -- rejecting every
-subsequent `REQUEST_JETSON_POWER_STATE`, ON or OFF -- for the full
-`CMD_TIMEOUT_TICKS` window. See JM-009.
+booted. `m_jetsonPowerStateKnown`/`m_currentJetsonPowerState` (and,
+downstream, FPManager's own `m_jetsonPowerState`) are updated only by a real
+report received from the Jetson (`currentJetsonPwrState_handler`), never by
+the ON command itself -- `fpJetsonPowerStateOut` must never be sent
+optimistically the instant ON is commanded, or FPManager's own Jetson-on
+gating (`remoteJetsonCmdIn_handler`, `jetsonPowerAuthorizeIn_handler`) would
+be defeated during exactly the boot window it exists to protect (JM-010).
+Instead, commanding ON sets a separate `m_awaitingBootConfirmation` guard --
+but only on a genuine off->on transition: if the Jetson is already confirmed
+on (a real report already arrived), a redundant ON command leaves the guard
+alone (clearing it if it somehow were still set) rather than re-arming it. A
+redundant ON doesn't cause the Jetson to send a fresh unsolicited report, so
+re-arming on it would have nothing left to clear the guard except the
+bounded timeout -- this was a real bug: sending ON once (booting the
+Jetson), waiting for confirmation, then sending ON again (e.g. to double
+check) re-armed the guard and left a subsequent OFF stuck for up to
+`CMD_TIMEOUT_TICKS`.
+
+A commanded OFF that arrives while `m_awaitingBootConfirmation` is set is
+**not** rejected. It is *deferred* (`m_deferredOffPending`, no
+`cmdResponse_out` yet) and automatically fired -- via the shared
+`beginJetsonOffSequence()` helper, which then takes the normal
+graceful-vs-direct-cut path below -- the instant a real report arrives
+(`currentJetsonPwrState_handler`) or the boot window times out
+(`schedIn_handler` force-fires it via a direct GPIO cut once
+`CMD_TIMEOUT_TICKS` elapses with no report at all, logging
+`JETSON_DEFERRED_OFF_FORCED_BY_TIMEOUT`; if no OFF was ever deferred, the
+timeout instead just clears the guard and logs
+`JETSON_BOOT_CONFIRMATION_TIMEOUT` as before). This applies identically
+whether the OFF intent came from the GDS-facing `REQUEST_JETSON_POWER_STATE`
+command or FPManager's internal `fpJetsonPowerRequestIn` path (e.g.
+`DISABLE_HPC_MODE`) -- neither may ever race the boot by sending the
+graceful hub request or cutting GPIO power to a Jetson that hasn't reported
+in yet, but both must still eventually complete rather than being rejected
+outright. See JM-009.
 
 A commanded Jetson OFF uses the graceful-ish Jetson-side
 shutdown path only when the Jetson's power state is *confirmed* on:
@@ -112,7 +125,7 @@ Add sequence diagrams here
 | Name | Description |
 |---|---|
 | `REQUEST_POWER_MODE` | Requests a Jetson power-mode change through the Jetson-side manager and waits for confirmation or timeout. |
-| `REQUEST_JETSON_POWER_STATE` | Requests Jetson ON or OFF after FPManager authorization. ON drives GPIO high and starts the boot-confirmation window. OFF is rejected `BUSY` while that window is open (JM-009); once closed, OFF is graceful when the Jetson is confirmed ON, and direct/idempotent otherwise. |
+| `REQUEST_JETSON_POWER_STATE` | Requests Jetson ON or OFF after FPManager authorization. ON drives GPIO high and starts the boot-confirmation window. OFF requested while that window is open is deferred (accepted, held open) and fires automatically once the Jetson's boot is confirmed or the window times out (JM-009); once confirmed, OFF is graceful when the Jetson is confirmed ON, and direct/idempotent otherwise. |
 
 ## Events
 | Name | Description |
@@ -122,8 +135,9 @@ Add sequence diagrams here
 | `JETSON_POWER_STATE_REQUESTED` | A Jetson power-state command was accepted. |
 | `JETSON_POWER_STATE_RECEIVED` | A current Jetson power state was received. |
 | `JETSON_POWER_STATE_TIMEOUT` | A deferred Jetson power-state operation timed out. |
-| `JETSON_OFF_REJECTED_BOOTING` | A commanded OFF was rejected because the Jetson was commanded ON and hasn't reported in yet. |
-| `JETSON_BOOT_CONFIRMATION_TIMEOUT` | JetsonManager gave up waiting for the Jetson's first report after ON; OFF is no longer rejected on that basis. |
+| `JETSON_BOOT_CONFIRMATION_TIMEOUT` | JetsonManager gave up waiting for the Jetson's first report after ON, with no OFF request deferred pending it. |
+| `JETSON_OFF_DEFERRED_BOOTING` | A commanded/internal Jetson OFF request was deferred because the Jetson was commanded ON and hasn't reported in yet; it will fire automatically once boot is confirmed. |
+| `JETSON_DEFERRED_OFF_FORCED_BY_TIMEOUT` | JetsonManager gave up waiting for the Jetson's first report while an OFF request was deferred pending it; the OFF was force-completed via a direct GPIO cut. |
 
 ## Telemetry
 | Name | Description |
@@ -133,8 +147,8 @@ Add sequence diagrams here
 
 ## Unit Tests
 
-Measured via `fprime-util check --coverage`: **94.1% line (177/188), 100%
-function (8/8), 56.6% branch (146/258)**. The remaining gaps are ASan/UBSan
+Measured via `fprime-util check --coverage`: **98.5% line (192/195), 100%
+function (9/9), 60.4% branch (145/240)**. The remaining gaps are ASan/UBSan
 instrumentation edges around construction (the same non-actionable pattern
 documented throughout this audit). Each test is tagged with
 `RecordProperty("requirement", "<REQ-IDs>")`, so running the test binary
@@ -145,17 +159,19 @@ with `--gtest_output=xml:<path>` produces a JUnit-style XML report whose
 |---|---|---|
 | `RequestPowerModeDeferredCompletion` | Sends `REQUEST_POWER_MODE`, confirms it stays open (no immediate response), confirms a mismatched `currentPwrMode` report does not complete it, then confirms a matching report completes it with `OK`. | JM-004 |
 | `RequestPowerModeTimeout` | Sends `REQUEST_POWER_MODE` and never reports a matching mode; confirms it stays open through 119 ticks and completes with `EXECUTION_ERROR` on the 120th (`CMD_TIMEOUT_TICKS`). | JM-004 |
-| `RequestJetsonPowerStateOnDrivesGpioImmediately` | Sends `REQUEST_JETSON_POWER_STATE(ON)` with authorization granted; confirms GPIO high, telemetry, the report to FPManager, and an immediate `OK`. | JM-001 |
+| `RequestJetsonPowerStateOnDrivesGpioImmediately` | Sends `REQUEST_JETSON_POWER_STATE(ON)` with authorization granted; confirms GPIO high, telemetry, an immediate `OK`, and -- JM-010 -- that the report to FPManager is NOT sent optimistically (`fpJetsonPowerStateOut` size 0). | JM-001, JM-010 |
 | `RequestJetsonPowerStateOffUnconfirmedFallsBackToDirectCut` | Regression test for the ComStub crash this fixed: on a fresh component (state unconfirmed, cached default is OFF), sends `REQUEST_JETSON_POWER_STATE(OFF)` and confirms it takes the direct GPIO-cut path immediately -- NOT the hub-routed `reqJetsonPwrState` call -- since the hub link's liveness is unproven when the Jetson has never reported in. | JM-006 |
-| `RequestJetsonPowerStateOffRejectedWhileBooting` | Regression test for the BUSY-lock bug this fixed: commands ON, then immediately commands OFF before any real report arrives; confirms OFF is rejected `BUSY` with `JETSON_OFF_REJECTED_BOOTING` and neither a hub call nor a GPIO cut happens, then confirms a real ON report clears the guard and a subsequent OFF takes the normal graceful path. | JM-009 |
-| `RequestJetsonPowerStateOffNoLongerRejectedAfterBootConfirmationTimeout` | Commands ON and never reports in; confirms the boot-confirmation guard holds through 119 ticks, clears on the 120th (`JETSON_BOOT_CONFIRMATION_TIMEOUT`), and a subsequent OFF is no longer rejected on that basis (falls to the safe direct GPIO cut, since the state is still otherwise unconfirmed). | JM-009 |
-| `RequestJetsonPowerStateOffAcceptedAfterRedundantOnCommand` | Regression test: commands ON, confirms via a real report, commands ON again (redundant -- Jetson already confirmed up), then commands OFF; confirms OFF is accepted and takes the graceful path, not rejected `JETSON_OFF_REJECTED_BOOTING`. | JM-009 |
+| `RequestJetsonPowerStateOffDeferredWhileBootingThenAutoFiresGracefulShutdown` | Commands ON, then immediately commands OFF before any real report arrives; confirms OFF is deferred (`JETSON_OFF_DEFERRED_BOOTING`, no hub call, no GPIO cut, no command response yet), confirms the real ON report auto-fires the graceful hub request, then drives the ack and `JETSON_POWER_OFF_DELAY_TICKS` grace period through to completion (`OK`). | JM-009 |
+| `RequestJetsonPowerStateOffDeferredButBootNeverConfirmsForcesDirectCutOnTimeout` | Commands ON, then OFF (deferred) with the Jetson never reporting in; confirms the deferral holds through 119 ticks and force-completes via a direct GPIO cut on the 120th (`JETSON_DEFERRED_OFF_FORCED_BY_TIMEOUT`, `OK`), not `JETSON_BOOT_CONFIRMATION_TIMEOUT`. | JM-009 |
+| `RequestJetsonPowerStateOffFallsBackToDirectCutAfterBootConfirmationTimeoutWithNoDeferredOff` | Commands ON and never reports in, with no OFF ever deferred; confirms the boot-confirmation guard holds through 119 ticks, clears on the 120th (`JETSON_BOOT_CONFIRMATION_TIMEOUT`, not the forced-timeout event), and a subsequent fresh OFF command takes the normal (unconfirmed) direct GPIO-cut path. | JM-009 |
+| `RequestJetsonPowerStateOffAcceptedAfterRedundantOnCommand` | Regression test: commands ON, confirms via a real report, commands ON again (redundant -- Jetson already confirmed up), then commands OFF; confirms OFF is accepted immediately and takes the graceful path, not deferred (`JETSON_OFF_DEFERRED_BOOTING` size 0). | JM-009 |
 | `RequestJetsonPowerStateOffConfirmedOnUsesGracefulThenCutsPower` | Confirms ON via a real status report, requests OFF, confirms the graceful request and no immediate GPIO cut, confirms a matching OFF report starts the delay window, confirms GPIO stays high through `JETSON_POWER_OFF_DELAY_TICKS - 1` ticks, then cuts on the final tick with `OK`. | JM-005, JM-006 |
 | `RequestJetsonPowerStateOffConfirmedOffIsIdempotent` | Confirms OFF via a real status report, then requests OFF again; confirms it completes synchronously via direct GPIO cut without ever attempting the graceful path. | JM-002, JM-006 |
 | `RequestJetsonPowerStateOffTimesOutAndFallsBackToDirectCut` | Confirms ON, requests OFF, and never acknowledges it; confirms `JETSON_POWER_STATE_TIMEOUT` fires and GPIO is cut directly after `CMD_TIMEOUT_TICKS`. | JM-003 |
 | `RequestJetsonPowerStateRejectedByAuthorization` | Mocks `fpJetsonPowerAuthorize` to return `FAILURE`; confirms `VALIDATION_ERROR` and no GPIO action. | JM-001 |
 | `RequestJetsonPowerStateBusyWhilePending` | Sends a second `REQUEST_JETSON_POWER_STATE` while the first is still outstanding; confirms `BUSY` and that the first request's state is untouched. | JM-007 |
 | `FpJetsonPowerRequestInIgnoresOnAndActsOnOff` | Confirms an ON request on the internal FPManager path is a no-op, then confirms an OFF request (Jetson known ON) takes the graceful path, mirroring the GDS-facing command. | JM-003 |
+| `FpJetsonPowerRequestInDefersOffWhileBootingThenAutoFires` | Confirms FPManager's internal OFF path defers exactly like the GDS-facing command while the Jetson is booting, auto-fires the graceful request on boot confirmation, and never sends a command response throughout (this port has none). | JM-003, JM-009 |
 | `CurrentJetsonPwrStateIgnoredWithoutPendingCommand` | Sends an unsolicited `currentJetsonPwrState` report with no pending power command; confirms telemetry/cache still update but no GPIO or command-response action is taken. | JM-008 |
 
 ## Requirements
@@ -169,7 +185,8 @@ with `--gtest_output=xml:<path>` produces a JUnit-style XML report whose
 | JM-006 | Commanded Jetson OFF shall take the graceful Jetson-side shutdown path only when the Jetson's power state has been *confirmed* on (a real status report received over the hub link) -- an unconfirmed cached state (e.g. the boot-time default) must never attempt the hub-routed `reqJetsonPwrState_out()` call, since the hub link's liveness is unproven and doing so can trip `Svc::ComStub`'s never-connected `FW_ASSERT` and crash the entire i.MX flight software; unconfirmed and confirmed-off both fall back to the same direct, idempotent GPIO cut. | `RequestJetsonPowerStateOffUnconfirmedFallsBackToDirectCut`, `RequestJetsonPowerStateOffConfirmedOnUsesGracefulThenCutsPower`, `RequestJetsonPowerStateOffConfirmedOffIsIdempotent` |
 | JM-007 | A `REQUEST_JETSON_POWER_STATE` received while a previous one is still outstanding shall be rejected `BUSY`. (The handler also has a `VALIDATION_ERROR` branch for a `JetsonPowerStateID` outside `{ON, OFF}`, but this cannot be safely unit-tested: the command dispatcher itself rejects an out-of-range enum with `FORMAT_ERROR` before the handler ever runs, and even directly constructing an out-of-range `JetsonPowerStateID` value trips a hard assert elsewhere the moment anything tries to format/log it -- verified by inspection only.) | `RequestJetsonPowerStateBusyWhilePending` |
 | JM-008 | An unsolicited `currentJetsonPwrState` report (no pending power command) shall still update the cached state and telemetry, but shall take no GPIO or command-response action. | `CurrentJetsonPwrStateIgnoredWithoutPendingCommand` |
-| JM-009 | A commanded OFF shall be rejected `BUSY` while a commanded ON is still awaiting the Jetson's first real report (the boot-confirmation window), rather than racing the graceful shutdown path against a hub link that may not exist yet; the window shall be bounded by `CMD_TIMEOUT_TICKS` so it can never block OFF indefinitely if the Jetson never reports in; and a redundant ON commanded while the Jetson is already confirmed on shall not re-arm the window. | `RequestJetsonPowerStateOffRejectedWhileBooting`, `RequestJetsonPowerStateOffNoLongerRejectedAfterBootConfirmationTimeout`, `RequestJetsonPowerStateOffAcceptedAfterRedundantOnCommand` |
+| JM-009 | A commanded/internal OFF request that arrives while a commanded ON is still awaiting the Jetson's first real report (the boot-confirmation window) shall be *deferred*, not rejected -- accepted and held open, then fired automatically (taking the normal graceful-vs-direct-cut path) the instant a real report arrives or the window times out. The window shall be bounded by `CMD_TIMEOUT_TICKS`, after which a still-pending deferred OFF is force-completed via a direct GPIO cut so it can never wait indefinitely; a redundant ON commanded while the Jetson is already confirmed on shall not re-arm the window. | `RequestJetsonPowerStateOffDeferredWhileBootingThenAutoFiresGracefulShutdown`, `RequestJetsonPowerStateOffDeferredButBootNeverConfirmsForcesDirectCutOnTimeout`, `RequestJetsonPowerStateOffFallsBackToDirectCutAfterBootConfirmationTimeoutWithNoDeferredOff`, `RequestJetsonPowerStateOffAcceptedAfterRedundantOnCommand`, `FpJetsonPowerRequestInDefersOffWhileBootingThenAutoFires` |
+| JM-010 | JetsonManager shall never report the Jetson's power state to FPManager (`fpJetsonPowerStateOut`) optimistically -- only a real report received from the Jetson (`currentJetsonPwrState_handler`) may do so. Commanding ON must not report ON the instant GPIO is driven high, since that would let FPManager's own Jetson-on gating (`remoteJetsonCmdIn_handler`, `jetsonPowerAuthorizeIn_handler`) be defeated during exactly the boot window it exists to protect. | `RequestJetsonPowerStateOnDrivesGpioImmediately` |
 
 ## Change Log
 | Date | Description |
@@ -182,3 +199,4 @@ with `--gtest_output=xml:<path>` produces a JUnit-style XML report whose
 | 2026-07-30 | **Bug fix (supersedes 2026-07-28's JM-006 fix)**: the previous fix made `REQUEST_JETSON_POWER_STATE(OFF)`/`fpJetsonPowerRequestIn` prefer the graceful `reqJetsonPwrState_out()` hub call whenever the Jetson's state merely *wasn't confirmed off* -- including the never-confirmed boot-time default. On hardware this meant enabling HPC Mode and immediately requesting Jetson OFF (with the Jetson genuinely powered off and its hub link never established) sent a port call straight through GenericHub into `imx_hubComStub.dataIn`, which has no queue or connectivity gate in front of it; `Svc::ComStub::dataIn_handler`'s `FW_ASSERT(!this->m_reinitialize || !this->isConnected_comStatusOut_OutputPort(0))` (ComStub.cpp:28) tripped immediately, and `FPManager::fatalIn_handler` latched `EMERGENCY_REBOOT`, restarting the *entire* i.MX flight software over what should have been a routine "Jetson is already off" acknowledgment -- the same crash class already fixed for `remoteJetsonCmdIn` (`ImxDeployment/Top/topology.fpp`), which this port had never been given the equivalent gate for. Flipped both gates (`REQUEST_JETSON_POWER_STATE_cmdHandler`'s OFF branch and `fpJetsonPowerRequestIn_handler`) to require *confirmed on* (`m_jetsonPowerStateKnown && m_currentJetsonPowerState.e == ON`) before ever attempting `reqJetsonPwrState_out()`; unconfirmed and confirmed-off now both take the same direct, idempotent, hub-independent GPIO cut. This knowingly reopens a narrower version of the 2026-07-28 concern (an i.MX that reboots independently while the Jetson stays alive will get a direct GPIO cut instead of a graceful ask, until the Jetson's next boot-time report re-confirms ON) in exchange for never crashing the whole flight computer over a Jetson power request -- the deliberate trade-off the fix prioritizes. Renamed `RequestJetsonPowerStateOffUnconfirmedPrefersGraceful` to `RequestJetsonPowerStateOffUnconfirmedFallsBackToDirectCut` with inverted assertions, and updated `RequestJetsonPowerStateBusyWhilePending` to confirm ON first so its first OFF request still exercises the pending/BUSY path. | Luca Lanzillotta |
 | 2026-07-30 | **Bug fix (JM-009)**: the 2026-07-30 JM-006 fix above removed the ComStub crash but exposed a second bug from the same root cause -- `REQUEST_JETSON_POWER_STATE_cmdHandler`'s ON branch set `m_jetsonPowerStateKnown = true`/`m_currentJetsonPowerState = ON` *optimistically*, the instant GPIO was driven high, not when the Jetson actually booted. A commanded OFF sent moments later (before the Jetson had booted far enough to be reachable over the hub) read that optimistic flag as "confirmed on," took the graceful `reqJetsonPwrState_out()` path against a hub link that wasn't up yet, and its `m_hasPendingPowerCmd` bookkeeping then sat `BUSY` for the full `CMD_TIMEOUT_TICKS` window -- during which *every* `REQUEST_JETSON_POWER_STATE`, ON or OFF, was rejected `BUSY`, observed on hardware as ON/OFF "no longer working" after testing an OFF sent while the Jetson was still booting. Stopped the ON branch from touching `m_jetsonPowerStateKnown`/`m_currentJetsonPowerState` at all (only a real report from `currentJetsonPwrState_handler` sets those now) and added a dedicated `m_awaitingBootConfirmation` guard, set when ON is commanded and cleared either by the Jetson's first real report or by a bounded `CMD_TIMEOUT_TICKS` timeout (`JETSON_BOOT_CONFIRMATION_TIMEOUT`) if it never reports in. A commanded OFF is now rejected outright (`BUSY` + new `JETSON_OFF_REJECTED_BOOTING` event) while that guard is set, instead of racing the boot. Added `RequestJetsonPowerStateOffRejectedWhileBooting` and `RequestJetsonPowerStateOffNoLongerRejectedAfterBootConfirmationTimeout`; all pre-existing tests pass unmodified (none exercised ON followed immediately by OFF against the optimistic-confirmation path). Coverage: 94.1% line / 100% function / 56.4% branch. | Luca Lanzillotta |
 | 2026-07-30 | **Bug fix (JM-009 follow-up)**: the guard added just above was still unconditionally re-armed on *every* ON command, including a redundant ON sent to a Jetson that was already confirmed up (a real report had already arrived). Observed on hardware: ON, wait for the real boot confirmation, ON again (harmless double-command), then OFF -- rejected `BUSY` again, because the second ON re-armed `m_awaitingBootConfirmation` with nothing left to clear it (the Jetson only sends its one-shot boot report once, not again just because it was told to turn on a second time), so the guard could only clear via the full `CMD_TIMEOUT_TICKS` fallback. The ON branch now only arms the guard on a genuine off->on transition (`!(m_jetsonPowerStateKnown && m_currentJetsonPowerState.e == ON)`); a redundant ON while already confirmed on explicitly clears it instead. Added `RequestJetsonPowerStateOffAcceptedAfterRedundantOnCommand`. Coverage: 94.1% line / 100% function / 56.6% branch. | Luca Lanzillotta |
+| 2026-07-30 | **Behavior change (JM-009 redesign) + bug fix (JM-010)**: consolidated Jetson-on gating so FPManager is the single authority for "is it safe to talk to the Jetson," sourced from JetsonPowerModeManager's real reports -- and changed a commanded/internal OFF that arrives while the Jetson is still booting from an outright *reject* (`BUSY` + `JETSON_OFF_REJECTED_BOOTING`) to a *defer*: accepted, held open, and automatically fired the instant a real boot report arrives or the boot window times out. Both call sites (`REQUEST_JETSON_POWER_STATE_cmdHandler`'s OFF branch and `fpJetsonPowerRequestIn_handler`, used by FPManager's `DISABLE_HPC_MODE`) now share a single `beginJetsonOffSequence()` helper for the confirmedOn-graceful-vs-direct-cut decision, avoiding two copies of that logic. Added `m_deferredOffPending`; the boot-confirmation timeout in `schedIn_handler` now force-completes a still-pending deferred OFF via a direct GPIO cut (`JETSON_DEFERRED_OFF_FORCED_BY_TIMEOUT`) instead of merely clearing the guard, and the pre-existing power-state timeout no longer double-ticks during the defer-wait phase. Removed `JETSON_OFF_REJECTED_BOOTING`; added `JETSON_OFF_DEFERRED_BOOTING` and `JETSON_DEFERRED_OFF_FORCED_BY_TIMEOUT`. Also fixed **JM-010**: the ON branch was still unconditionally forwarding an optimistic `ON` report to FPManager (`fpJetsonPowerStateOut_out`) the instant GPIO was driven high, before any real confirmation -- this defeated FPManager's own `remoteJetsonCmdIn_handler`/`jetsonPowerAuthorizeIn_handler` gating during the exact boot window it exists to protect, and undermined the new FPManager-side boot-outstanding tracking this redesign depends on. That optimistic forward is removed; only a real report ever updates FPManager's view now. Rewrote/renamed the JM-009 test trio to match (`RequestJetsonPowerStateOffDeferredWhileBootingThenAutoFiresGracefulShutdown`, `RequestJetsonPowerStateOffDeferredButBootNeverConfirmsForcesDirectCutOnTimeout`, `RequestJetsonPowerStateOffFallsBackToDirectCutAfterBootConfirmationTimeoutWithNoDeferredOff`), added `FpJetsonPowerRequestInDefersOffWhileBootingThenAutoFires`, and updated `RequestJetsonPowerStateOnDrivesGpioImmediately` for JM-010. Coordinated with a matching FPManager change (`m_jetsonBootOutstanding`, `DISABLE_HPC_MODE`'s three-branch response wording, see FPManager's own change log). Coverage: 98.5% line / 100% function / 60.4% branch. | Luca Lanzillotta |

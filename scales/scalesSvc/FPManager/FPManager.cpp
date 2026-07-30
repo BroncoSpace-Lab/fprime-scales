@@ -46,7 +46,8 @@ FPManager::FPManager(const char* const compName)
       m_peripheralLastSource(SRC_PERIF_MCP),
       m_activeFaultDebounceCount(FAULT_DEBOUNCE_DEFAULT),
       m_justBooted(true),
-      m_paramValid(Fw::ParamValid::VALID) {}
+      m_paramValid(Fw::ParamValid::VALID),
+      m_jetsonBootOutstanding(false) {}
 
 FPManager::~FPManager() {}
 
@@ -183,6 +184,10 @@ void FPManager::remoteJetsonCmdResponseIn_handler(
 
 void FPManager::jetsonPowerStateIn_handler(FwIndexType portNum,
                                            const JetsonPowerStateID& stateNow) {
+    // Any real report -- ON or OFF -- proves JetsonManager has heard back
+    // from the Jetson, so the (cosmetic-only) boot-outstanding mirror is
+    // satisfied. See the m_jetsonBootOutstanding comment in FPManager.hpp.
+    this->m_jetsonBootOutstanding = false;
     this->m_jetsonPowerState = stateNow;
     if (stateNow == JetsonPowerStateID::OFF) {
         this->invalidateJetsonReadings();
@@ -208,6 +213,14 @@ Fw::Success FPManager::jetsonPowerAuthorizeIn_handler(
         return Fw::Success::FAILURE;
     }
 
+    if (stateReq.e == JetsonPowerStateID::ON) {
+        // Mirrors JetsonManager's own "only arm on a genuine off->on
+        // transition" nuance (see JetsonManager.hpp's boot-confirmation
+        // guard comment) -- a redundant ON authorization to an
+        // already-confirmed-on Jetson must not re-arm this.
+        this->m_jetsonBootOutstanding = (this->m_jetsonPowerState != JetsonPowerStateID::ON);
+    }
+
     return Fw::Success::SUCCESS;
 }
 
@@ -230,6 +243,20 @@ void FPManager::DISABLE_HPC_MODE_cmdHandler(FwOpcodeType opCode, U32 cmdSeq) {
     if (this->m_mode != FPManagerState::HPC) {
         this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::VALIDATION_ERROR);
         return;
+    }
+
+    // Informational only -- picks the right operator-facing wording for
+    // what's about to happen. Does not change what happens: beginDisableHpcMode
+    // (below) unconditionally requests Jetson OFF regardless of this, and
+    // JetsonManager's own m_awaitingBootConfirmation/m_deferredOffPending is
+    // the actual source of truth for deferring/firing that request -- this
+    // must never reject or block while booting.
+    if (this->m_jetsonBootOutstanding) {
+        this->log_ACTIVITY_HI_HPC_MODE_DISABLE_JETSON_BOOTING();
+    } else if (this->m_jetsonPowerState == JetsonPowerStateID::ON) {
+        this->log_ACTIVITY_HI_HPC_MODE_DISABLE_JETSON_OFF_REQUESTED();
+    } else {
+        this->log_ACTIVITY_HI_HPC_MODE_DISABLE_JETSON_ALREADY_OFF();
     }
 
     this->fpStateMachine_sendSignal_hpcMode_dis();

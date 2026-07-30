@@ -82,8 +82,11 @@ void JetsonManagerTester ::requestJetsonPowerStateOnDrivesGpioImmediately() {
     ASSERT_from_gpioSet(0, Fw::Logic::HIGH);
     ASSERT_TLM_JetsonPowerState_SIZE(1);
     ASSERT_TLM_JetsonPowerState(0, scalesSvc::JetsonPowerStateID::ON);
-    ASSERT_from_fpJetsonPowerStateOut_SIZE(1);
-    ASSERT_from_fpJetsonPowerStateOut(0, scalesSvc::JetsonPowerStateID::ON);
+    // Driving GPIO high is not confirmation the Jetson has booted -- JM-010:
+    // this must NOT be optimistically forwarded to FPManager. Only a real
+    // report via currentJetsonPwrState_handler does that (see
+    // currentJetsonPwrStateIgnoredWithoutPendingCommand).
+    ASSERT_from_fpJetsonPowerStateOut_SIZE(0);
     ASSERT_CMD_RESPONSE_SIZE(1);
     ASSERT_EQ(this->cmdResponseHistory->at(0).response, Fw::CmdResponse::OK);
 }
@@ -112,13 +115,15 @@ void JetsonManagerTester ::requestJetsonPowerStateOffUnconfirmedFallsBackToDirec
     ASSERT_EQ(this->cmdResponseHistory->at(0).response, Fw::CmdResponse::OK);
 }
 
-void JetsonManagerTester ::requestJetsonPowerStateOffRejectedWhileBooting() {
+void JetsonManagerTester ::requestJetsonPowerStateOffDeferredWhileBootingThenAutoFiresGracefulShutdown() {
     // Regression test for the exact bug this fixed: commanding ON completes
     // synchronously (GPIO high, immediate OK) but does NOT mean the Jetson
     // has actually booted. A commanded OFF sent before the Jetson's first
-    // real report used to race the boot -- taking the graceful hub-routed
-    // path against a link that might not exist yet, and getting stuck BUSY
-    // for the full CMD_TIMEOUT_TICKS window. It must now be rejected outright.
+    // real report used to either race the boot or be rejected BUSY. It must
+    // now be DEFERRED -- accepted, held open, and automatically completed
+    // (graceful hub request, then grace-period GPIO cut) the moment the
+    // boot is confirmed.
+    this->component.loadParameters();
     m_authorizeResult = Fw::Success::SUCCESS;
 
     this->sendCmd_REQUEST_JETSON_POWER_STATE(0, 1, scalesSvc::JetsonPowerStateID::ON);
@@ -128,38 +133,88 @@ void JetsonManagerTester ::requestJetsonPowerStateOffRejectedWhileBooting() {
     ASSERT_CMD_RESPONSE_SIZE(1);
     ASSERT_EQ(this->cmdResponseHistory->at(0).response, Fw::CmdResponse::OK);
 
-    // OFF sent before the Jetson has reported in must be rejected outright,
-    // not raced -- no hub call, no GPIO cut, no lingering pending-command state.
+    // OFF sent before the Jetson has reported in is deferred -- accepted (no
+    // command response yet), no hub call, no GPIO cut.
     this->sendCmd_REQUEST_JETSON_POWER_STATE(0, 2, scalesSvc::JetsonPowerStateID::OFF);
     this->component.doDispatch();
     ASSERT_from_reqJetsonPwrState_SIZE(0);
     ASSERT_from_gpioSet_SIZE(1);
-    ASSERT_EVENTS_JETSON_OFF_REJECTED_BOOTING_SIZE(1);
-    ASSERT_CMD_RESPONSE_SIZE(2);
-    ASSERT_EQ(this->cmdResponseHistory->at(1).response, Fw::CmdResponse::BUSY);
+    ASSERT_EVENTS_JETSON_OFF_DEFERRED_BOOTING_SIZE(1);
+    ASSERT_CMD_RESPONSE_SIZE(1);
 
-    // The real boot report arrives -- OFF is no longer rejected on this basis,
-    // and (Jetson now confirmed ON) takes the graceful path as normal.
+    // The real boot report arrives -- the deferred OFF fires automatically:
+    // Jetson is now confirmed ON, so it takes the graceful hub path, still
+    // without completing the command.
     this->invoke_to_currentJetsonPwrState(0, scalesSvc::JetsonPowerStateID::ON);
+    this->component.doDispatch();
+    ASSERT_from_reqJetsonPwrState_SIZE(1);
+    ASSERT_from_reqJetsonPwrState(0, scalesSvc::JetsonPowerStateID::OFF);
+    ASSERT_from_gpioSet_SIZE(1);
+    ASSERT_CMD_RESPONSE_SIZE(1);
+
+    // Jetson acknowledges OFF -- grace period starts.
+    this->invoke_to_currentJetsonPwrState(0, scalesSvc::JetsonPowerStateID::OFF);
+    this->component.doDispatch();
+    ASSERT_from_gpioSet_SIZE(1);
+
+    // JETSON_POWER_OFF_DELAY_TICKS defaults to 15 in JetsonManager.fpp.
+    for (U32 i = 0; i < 14; i++) {
+        this->invoke_to_schedIn(0, 0);
+    }
+    ASSERT_from_gpioSet_SIZE(1);
+    ASSERT_CMD_RESPONSE_SIZE(1);
+
+    this->invoke_to_schedIn(0, 0);
+    ASSERT_from_gpioSet_SIZE(2);
+    ASSERT_from_gpioSet(1, Fw::Logic::LOW);
+    ASSERT_CMD_RESPONSE_SIZE(2);
+    ASSERT_EQ(this->cmdResponseHistory->at(1).response, Fw::CmdResponse::OK);
+}
+
+void JetsonManagerTester ::requestJetsonPowerStateOffDeferredButBootNeverConfirmsForcesDirectCutOnTimeout() {
+    // Safety net: if the Jetson never reports in at all after being
+    // commanded ON, a deferred OFF must not wait forever -- once the boot
+    // window (CMD_TIMEOUT_TICKS) times out, it is force-completed via a
+    // direct GPIO cut, same "OFF always eventually completes" philosophy as
+    // the other timeout fallbacks in this component.
+    m_authorizeResult = Fw::Success::SUCCESS;
+
+    this->sendCmd_REQUEST_JETSON_POWER_STATE(0, 1, scalesSvc::JetsonPowerStateID::ON);
+    this->component.doDispatch();
+    this->sendCmd_REQUEST_JETSON_POWER_STATE(0, 2, scalesSvc::JetsonPowerStateID::OFF);
     this->component.doDispatch();
     this->clearHistory();
 
-    this->sendCmd_REQUEST_JETSON_POWER_STATE(0, 3, scalesSvc::JetsonPowerStateID::OFF);
-    this->component.doDispatch();
-    ASSERT_EVENTS_JETSON_OFF_REJECTED_BOOTING_SIZE(0);
-    ASSERT_from_reqJetsonPwrState_SIZE(1);
-    ASSERT_from_reqJetsonPwrState(0, scalesSvc::JetsonPowerStateID::OFF);
+    ASSERT_from_gpioSet_SIZE(0);
+    ASSERT_CMD_RESPONSE_SIZE(0);
+
+    // CMD_TIMEOUT_TICKS = 120 in JetsonManager.hpp; must not fire before that.
+    for (U32 i = 0; i < 119; i++) {
+        this->invoke_to_schedIn(0, 0);
+    }
+    ASSERT_from_gpioSet_SIZE(0);
+    ASSERT_EVENTS_JETSON_DEFERRED_OFF_FORCED_BY_TIMEOUT_SIZE(0);
+
+    this->invoke_to_schedIn(0, 0);
+    ASSERT_EVENTS_JETSON_DEFERRED_OFF_FORCED_BY_TIMEOUT_SIZE(1);
+    ASSERT_EVENTS_JETSON_BOOT_CONFIRMATION_TIMEOUT_SIZE(0);
+    ASSERT_from_reqJetsonPwrState_SIZE(0);
+    ASSERT_from_gpioSet_SIZE(1);
+    ASSERT_from_gpioSet(0, Fw::Logic::LOW);
+    ASSERT_CMD_RESPONSE_SIZE(1);
+    ASSERT_EQ(this->cmdResponseHistory->at(0).response, Fw::CmdResponse::OK);
 }
 
-void JetsonManagerTester ::requestJetsonPowerStateOffNoLongerRejectedAfterBootConfirmationTimeout() {
+void JetsonManagerTester ::requestJetsonPowerStateOffFallsBackToDirectCutAfterBootConfirmationTimeoutWithNoDeferredOff() {
     m_authorizeResult = Fw::Success::SUCCESS;
 
     this->sendCmd_REQUEST_JETSON_POWER_STATE(0, 1, scalesSvc::JetsonPowerStateID::ON);
     this->component.doDispatch();
     this->clearHistory();
 
-    // The Jetson never reports in. CMD_TIMEOUT_TICKS = 120 in JetsonManager.hpp;
-    // the boot-confirmation guard must not clear before that many ticks.
+    // The Jetson never reports in, and no OFF was ever requested while
+    // booting -- CMD_TIMEOUT_TICKS = 120 in JetsonManager.hpp; the
+    // boot-confirmation guard must not clear before that many ticks.
     for (U32 i = 0; i < 119; i++) {
         this->invoke_to_schedIn(0, 0);
     }
@@ -167,13 +222,14 @@ void JetsonManagerTester ::requestJetsonPowerStateOffNoLongerRejectedAfterBootCo
 
     this->invoke_to_schedIn(0, 0);
     ASSERT_EVENTS_JETSON_BOOT_CONFIRMATION_TIMEOUT_SIZE(1);
+    ASSERT_EVENTS_JETSON_DEFERRED_OFF_FORCED_BY_TIMEOUT_SIZE(0);
 
-    // OFF is no longer rejected on the "still booting" basis -- it falls
-    // through to the normal confirmedOn-gated logic, which is unconfirmed
-    // (no real report ever arrived) so it takes the safe direct GPIO cut.
+    // A fresh OFF command now falls through to the normal confirmedOn-gated
+    // logic, which is unconfirmed (no real report ever arrived) so it takes
+    // the safe direct GPIO cut, same as if the guard had never armed.
     this->sendCmd_REQUEST_JETSON_POWER_STATE(0, 2, scalesSvc::JetsonPowerStateID::OFF);
     this->component.doDispatch();
-    ASSERT_EVENTS_JETSON_OFF_REJECTED_BOOTING_SIZE(0);
+    ASSERT_EVENTS_JETSON_OFF_DEFERRED_BOOTING_SIZE(0);
     ASSERT_from_reqJetsonPwrState_SIZE(0);
     ASSERT_from_gpioSet_SIZE(1);
     ASSERT_from_gpioSet(0, Fw::Logic::LOW);
@@ -204,11 +260,11 @@ void JetsonManagerTester ::requestJetsonPowerStateOffAcceptedAfterRedundantOnCom
     ASSERT_CMD_RESPONSE_SIZE(1);
     ASSERT_EQ(this->cmdResponseHistory->at(0).response, Fw::CmdResponse::OK);
 
-    // OFF must be accepted -- not rejected as "still booting" -- and takes
-    // the graceful path since the Jetson is confirmed on.
+    // OFF must be accepted immediately -- not deferred as "still booting" --
+    // and takes the graceful path since the Jetson is confirmed on.
     this->sendCmd_REQUEST_JETSON_POWER_STATE(0, 3, scalesSvc::JetsonPowerStateID::OFF);
     this->component.doDispatch();
-    ASSERT_EVENTS_JETSON_OFF_REJECTED_BOOTING_SIZE(0);
+    ASSERT_EVENTS_JETSON_OFF_DEFERRED_BOOTING_SIZE(0);
     ASSERT_from_reqJetsonPwrState_SIZE(1);
     ASSERT_from_reqJetsonPwrState(0, scalesSvc::JetsonPowerStateID::OFF);
 }
@@ -348,6 +404,33 @@ void JetsonManagerTester ::fpJetsonPowerRequestInIgnoresOnAndActsOnOff() {
     this->invoke_to_fpJetsonPowerRequestIn(0, scalesSvc::JetsonPowerStateID::OFF);
     ASSERT_from_reqJetsonPwrState_SIZE(1);
     ASSERT_from_gpioSet_SIZE(0);
+}
+
+void JetsonManagerTester ::fpJetsonPowerRequestInDefersOffWhileBootingThenAutoFires() {
+    // FPManager's internal OFF path (e.g. beginDisableHpcMode) requests OFF
+    // unconditionally and immediately, with no awareness of whether the
+    // Jetson has finished booting. This path must defer exactly like the
+    // GDS-facing command does, and it never responds to a command (there is
+    // no opcode/cmdSeq on this internal port) throughout.
+    m_authorizeResult = Fw::Success::SUCCESS;
+    this->sendCmd_REQUEST_JETSON_POWER_STATE(0, 1, scalesSvc::JetsonPowerStateID::ON);
+    this->component.doDispatch();
+    this->clearHistory();
+
+    this->invoke_to_fpJetsonPowerRequestIn(0, scalesSvc::JetsonPowerStateID::OFF);
+    ASSERT_from_reqJetsonPwrState_SIZE(0);
+    ASSERT_from_gpioSet_SIZE(0);
+    ASSERT_EVENTS_JETSON_OFF_DEFERRED_BOOTING_SIZE(1);
+    ASSERT_CMD_RESPONSE_SIZE(0);
+
+    // Boot confirms -- the deferred OFF fires automatically via the graceful
+    // hub path, still with no command response (this path never has one).
+    this->invoke_to_currentJetsonPwrState(0, scalesSvc::JetsonPowerStateID::ON);
+    this->component.doDispatch();
+    ASSERT_from_reqJetsonPwrState_SIZE(1);
+    ASSERT_from_reqJetsonPwrState(0, scalesSvc::JetsonPowerStateID::OFF);
+    ASSERT_from_gpioSet_SIZE(0);
+    ASSERT_CMD_RESPONSE_SIZE(0);
 }
 
 void JetsonManagerTester ::currentJetsonPwrStateIgnoredWithoutPendingCommand() {

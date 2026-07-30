@@ -93,6 +93,14 @@ namespace scalesSvc {
           scalesSvc::JetsonPowerStateID jetsonState //!< Requested power state (on/off)
       ) override;
 
+      //! Shared graceful-vs-direct OFF sequence, used by
+      //! REQUEST_JETSON_POWER_STATE(OFF), fpJetsonPowerRequestIn(OFF), and the
+      //! deferred-OFF auto-fire/force-fire paths (currentJetsonPwrState_handler,
+      //! schedIn_handler). Re-evaluates m_jetsonPowerStateKnown/
+      //! m_currentJetsonPowerState itself, so it is correct no matter which of
+      //! those callers triggers it.
+      void beginJetsonOffSequence();
+
       private:
 
        // ----------------------------------------------------------------------
@@ -140,23 +148,25 @@ namespace scalesSvc {
       // Boot-confirmation guard
       //
       // ON completes synchronously (GPIO driven high, immediate OK response) --
-      // it does NOT mean the Jetson has actually finished booting. Previously
-      // m_jetsonPowerStateKnown/m_currentJetsonPowerState were set to
-      // "confirmed ON" optimistically at the moment ON was commanded, so a
-      // commanded OFF sent moments later (before the Jetson had booted far
-      // enough to be reachable over the hub) took the graceful hub-routed
-      // path against a link that may not exist yet, and its m_hasPendingPowerCmd
-      // bookkeeping could stay BUSY for the full CMD_TIMEOUT_TICKS window --
-      // during which every REQUEST_JETSON_POWER_STATE (on or off) is rejected
-      // BUSY. m_jetsonPowerStateKnown is now set ONLY by a real report
-      // received from the Jetson (see currentJetsonPwrState_handler); this
-      // separate flag tracks "commanded ON, first report not seen yet" and
-      // rejects a commanded OFF outright while it's true, instead of letting
-      // it race the boot.
+      // it does NOT mean the Jetson has actually finished booting.
+      // m_jetsonPowerStateKnown/m_currentJetsonPowerState are set ONLY by a
+      // real report received from the Jetson (see currentJetsonPwrState_handler)
+      // or by a GPIO action JetsonManager itself took -- never optimistically
+      // by the ON command path. m_awaitingBootConfirmation separately tracks
+      // "commanded ON, first report not seen yet".
+      //
+      // A commanded OFF that arrives while m_awaitingBootConfirmation is true
+      // is NOT rejected: it is deferred (m_deferredOffPending) and
+      // automatically fired -- via beginJetsonOffSequence(), which then takes
+      // the normal graceful hub-routed path -- the instant a real report
+      // arrives (currentJetsonPwrState_handler) or the boot window times out
+      // (schedIn_handler force-fires it via a direct GPIO cut, same fail-safe
+      // philosophy as the existing post-ack timeout fallback below).
       // ----------------------------------------------------------------------
 
-      bool m_awaitingBootConfirmation; //!< True after ON is commanded until a real report arrives or the boot window times out
+      bool m_awaitingBootConfirmation; //!< True after a genuine off->on ON command until a real report arrives or the boot window times out
       U32 m_bootConfirmationTimeoutTicks; //!< Ticks elapsed since ON was commanded, bounds m_awaitingBootConfirmation
+      bool m_deferredOffPending; //!< True while an OFF request is being held pending a boot confirmation (see beginJetsonOffSequence())
 
   };
 

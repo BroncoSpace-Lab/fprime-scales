@@ -75,16 +75,23 @@ module scalesSvc {
             jetsonState: JetsonPowerStateID @< The Jetson power state that timed out
         ) severity warning high id 4 format "JetsonManager timed out waiting for Jetson power state response to command {}"
 
-        @ Event indicating a commanded OFF was rejected because the Jetson was
-        @ just commanded ON and has not yet reported in after booting
-        event JETSON_OFF_REJECTED_BOOTING severity warning high id 5 \
-            format "Jetson OFF rejected: Jetson has not finished booting since it was last commanded ON"
-
         @ Event indicating JetsonManager gave up waiting for the Jetson's
-        @ first report after being commanded ON; OFF requests are no longer
-        @ rejected on that basis alone
+        @ first report after being commanded ON, with no OFF request pending
         event JETSON_BOOT_CONFIRMATION_TIMEOUT severity warning high id 6 \
             format "JetsonManager timed out waiting for the Jetson's first report after being commanded ON"
+
+        @ Event indicating a commanded/internal Jetson OFF request was
+        @ deferred because a boot confirmation is still outstanding; it will
+        @ be sent automatically once the Jetson's first real report arrives
+        @ (or force-completed if that window times out)
+        event JETSON_OFF_DEFERRED_BOOTING severity activity high id 7 \
+            format "Jetson OFF deferred: Jetson has not finished booting since it was last commanded ON; will auto-fire once boot is confirmed"
+
+        @ Event indicating JetsonManager gave up waiting for the Jetson's
+        @ first report while a deferred OFF was pending; the OFF was
+        @ force-completed via a direct GPIO cut
+        event JETSON_DEFERRED_OFF_FORCED_BY_TIMEOUT severity warning high id 8 \
+            format "JetsonManager timed out waiting for the Jetson's boot confirmation; forcing the deferred OFF via direct GPIO cut"
 
         ###############################################################################
         #                                 Telemetry                                   #

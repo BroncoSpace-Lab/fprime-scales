@@ -35,7 +35,8 @@ namespace scalesSvc {
       m_powerOffDelayTicks(0),
       m_pendingPowerCmdRespond(false),
       m_awaitingBootConfirmation(false),
-      m_bootConfirmationTimeoutTicks(0)
+      m_bootConfirmationTimeoutTicks(0),
+      m_deferredOffPending(false)
       // instantiate private members in a constructor.
   {
 
@@ -61,35 +62,27 @@ namespace scalesSvc {
 
     m_pendingPowerOpCode = 0;
     m_pendingPowerCmdSeq = 0;
-    m_requestedPowerState = stateReq;
-    m_hasPendingPowerCmd = false;
     m_pendingPowerCmdRespond = false;
-    m_powerTimeoutTicks = 0;
-    m_waitingToCutJetsonPower = false;
-    m_powerOffDelayTicks = 0;
-    if (m_jetsonPowerStateKnown && m_currentJetsonPowerState.e == JetsonPowerStateID::ON &&
-        this->isConnected_reqJetsonPwrState_OutputPort(0)) {
-      // FP recovery OFF is graceful only when the Jetson is CONFIRMED alive
-      // (see the matching gate/comment in REQUEST_JETSON_POWER_STATE_cmdHandler
-      // for why an unconfirmed state must not attempt the hub-routed
-      // reqJetsonPwrState_out call): request Jetson-side shutdown, then reuse
-      // the existing ack/timeout path to cut GPIO power.
+    m_requestedPowerState = stateReq;
+
+    if (m_awaitingBootConfirmation) {
+      // FPManager (e.g. beginDisableHpcMode) asked for this OFF unconditionally
+      // and immediately, but the Jetson was just commanded on and hasn't
+      // reported in yet -- defer instead of racing the boot. This fires
+      // automatically once a real report arrives (currentJetsonPwrState_handler)
+      // or the boot window times out (schedIn_handler force-fires it via a
+      // direct GPIO cut). See beginJetsonOffSequence() and the boot-confirmation
+      // guard comment in the header.
       m_hasPendingPowerCmd = true;
-      this->reqJetsonPwrState_out(0, stateReq);
+      m_deferredOffPending = true;
+      m_powerTimeoutTicks = 0;
+      m_waitingToCutJetsonPower = false;
+      m_powerOffDelayTicks = 0;
+      this->log_ACTIVITY_HI_JETSON_OFF_DEFERRED_BOOTING();
       return;
     }
 
-    // If the Jetson is already off or cannot receive the request, remove
-    // physical power directly.
-    this->gpioSet_out(0, JETSON_POWER_GPIO_OFF);
-    m_currentJetsonPowerState = JetsonPowerStateID::OFF;
-    m_jetsonPowerStateKnown = true;
-    m_awaitingBootConfirmation = false;
-    m_bootConfirmationTimeoutTicks = 0;
-    this->tlmWrite_JetsonPowerState(JetsonPowerStateID::OFF);
-    if (this->isConnected_fpJetsonPowerStateOut_OutputPort(0)) {
-      this->fpJetsonPowerStateOut_out(0, JetsonPowerStateID::OFF);
-    }
+    this->beginJetsonOffSequence();
   }
 
   void JetsonManager ::
@@ -99,6 +92,7 @@ namespace scalesSvc {
     )
   {
     this->log_ACTIVITY_LO_JETSON_POWER_STATE_RECEIVED(stateNow);
+    const bool bootWasOutstanding = m_awaitingBootConfirmation;
     m_currentJetsonPowerState = stateNow;
     m_jetsonPowerStateKnown = true;
     // Any real report -- ON or OFF -- proves the Jetson has booted far enough
@@ -108,6 +102,16 @@ namespace scalesSvc {
     this->tlmWrite_JetsonPowerState(stateNow);
     if (this->isConnected_fpJetsonPowerStateOut_OutputPort(0)) {
       this->fpJetsonPowerStateOut_out(0, stateNow);
+    }
+
+    if (bootWasOutstanding && m_deferredOffPending) {
+      // A boot confirmation just arrived while an OFF request was being held
+      // pending it -- fire it now. beginJetsonOffSequence() re-evaluates the
+      // just-updated confirmed state itself, so this is correct whether this
+      // report says ON (normal case: proceed with the graceful ask) or OFF
+      // (treated the same as already-off: idempotent direct cut).
+      this->beginJetsonOffSequence();
+      return;
     }
 
     if (!m_hasPendingPowerCmd) {
@@ -152,17 +156,26 @@ namespace scalesSvc {
         U32 context
     )
   {
-    // Bound how long a commanded ON can block OFF requests: if the Jetson
-    // never reports in (hardware fault, GPIO miswire, etc.), give up after
-    // CMD_TIMEOUT_TICKS so OFF is not rejected forever. Once this clears,
-    // OFF falls through to the normal confirmedOn-gated logic, which is safe
-    // either way (unconfirmed state -> direct GPIO cut, never a hub call).
+    // Bound how long a commanded ON can leave a deferred OFF waiting: if the
+    // Jetson never reports in (hardware fault, GPIO miswire, etc.), give up
+    // after CMD_TIMEOUT_TICKS rather than waiting forever.
     if (m_awaitingBootConfirmation) {
       m_bootConfirmationTimeoutTicks++;
       if (m_bootConfirmationTimeoutTicks >= CMD_TIMEOUT_TICKS) {
         m_awaitingBootConfirmation = false;
         m_bootConfirmationTimeoutTicks = 0;
-        this->log_WARNING_HI_JETSON_BOOT_CONFIRMATION_TIMEOUT();
+        if (m_deferredOffPending) {
+          // Gave up waiting for the Jetson's first report with an OFF
+          // request still held pending it -- force it through via
+          // beginJetsonOffSequence()'s direct-cut fallback rather than
+          // leaving it stuck forever (same "OFF always eventually
+          // completes" philosophy as the power-state timeout fallback
+          // below).
+          this->log_WARNING_HI_JETSON_DEFERRED_OFF_FORCED_BY_TIMEOUT();
+          this->beginJetsonOffSequence();
+        } else {
+          this->log_WARNING_HI_JETSON_BOOT_CONFIRMATION_TIMEOUT();
+        }
       }
     }
 
@@ -207,8 +220,11 @@ namespace scalesSvc {
       }
     }
 
-    // Timeout for Jetson power-state command 
-    if (m_hasPendingPowerCmd && !m_waitingToCutJetsonPower) {
+    // Timeout for Jetson power-state command. Must not tick while an OFF is
+    // still deferred, waiting on a boot confirmation -- that phase has its
+    // own bound above (m_bootConfirmationTimeoutTicks); this one only starts
+    // once the graceful ask has actually been sent.
+    if (m_hasPendingPowerCmd && !m_waitingToCutJetsonPower && !m_deferredOffPending) {
       m_powerTimeoutTicks++;
 
       if (m_powerTimeoutTicks >= CMD_TIMEOUT_TICKS) {
@@ -287,19 +303,6 @@ namespace scalesSvc {
         return;
       }
 
-      // A commanded OFF must not race a commanded ON that hasn't booted far
-      // enough to report in yet -- cutting GPIO power mid-boot is exactly
-      // the "yank power from a live Jetson without asking" risk this
-      // component otherwise guards against, and racing it here is what
-      // previously left m_hasPendingPowerCmd BUSY for the full timeout
-      // window (the graceful OFF request going out over a hub link that
-      // wasn't up yet). Reject outright instead; ON itself is unaffected.
-      if (jetsonState.e == JetsonPowerStateID::OFF && m_awaitingBootConfirmation) {
-        this->log_WARNING_HI_JETSON_OFF_REJECTED_BOOTING();
-        this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::BUSY);
-        return;
-      }
-
       m_pendingPowerOpCode = opCode;
       m_pendingPowerCmdSeq = cmdSeq;
       m_requestedPowerState = jetsonState;
@@ -318,15 +321,19 @@ namespace scalesSvc {
         printf("Requesting Jetson power state change to ON\n");
         this->gpioSet_out(0, JETSON_POWER_GPIO_ON);
         // Driving GPIO high is not confirmation the Jetson is actually up --
-        // m_jetsonPowerStateKnown/m_currentJetsonPowerState are left alone
-        // here and only updated by a real report in
-        // currentJetsonPwrState_handler. Only arm the boot-confirmation
-        // guard on a genuine off->on transition: a redundant ON to an
-        // already-running, already-confirmed Jetson must not re-arm it,
-        // since the Jetson won't send a fresh unsolicited report just
-        // because it was told to turn on again -- re-arming here would
-        // leave OFF rejected until the bounded timeout, with nothing left
-        // to clear it sooner.
+        // m_jetsonPowerStateKnown/m_currentJetsonPowerState (and, downstream,
+        // FPManager's own m_jetsonPowerState) are left alone here and only
+        // updated by a real report in currentJetsonPwrState_handler: this
+        // component's fpJetsonPowerStateOut report to FPManager must never be
+        // sent optimistically here, or FPManager's own Jetson-on gating
+        // (remoteJetsonCmdIn_handler, jetsonPowerAuthorizeIn_handler) would be
+        // defeated during exactly the boot window it exists to protect
+        // (JM-010). Only arm the boot-confirmation guard on a genuine
+        // off->on transition: a redundant ON to an already-running,
+        // already-confirmed Jetson must not re-arm it, since the Jetson
+        // won't send a fresh unsolicited report just because it was told to
+        // turn on again -- re-arming here would leave a deferred OFF waiting
+        // until the bounded timeout, with nothing left to clear it sooner.
         if (m_jetsonPowerStateKnown && m_currentJetsonPowerState.e == JetsonPowerStateID::ON) {
           m_awaitingBootConfirmation = false;
           m_bootConfirmationTimeoutTicks = 0;
@@ -335,9 +342,6 @@ namespace scalesSvc {
           m_bootConfirmationTimeoutTicks = 0;
         }
         this->tlmWrite_JetsonPowerState(jetsonState);
-        if (this->isConnected_fpJetsonPowerStateOut_OutputPort(0)) {
-          this->fpJetsonPowerStateOut_out(0, jetsonState);
-        }
         m_hasPendingPowerCmd = false;
 
         // Report command completed
@@ -345,49 +349,20 @@ namespace scalesSvc {
 
       } else if (jetsonState.e == JetsonPowerStateID::OFF) {
         printf("Requesting Jetson power state change to OFF\n");
-        // Only take the graceful Jetson-side shutdown path when the Jetson
-        // is CONFIRMED on -- reqJetsonPwrState_out() is wired straight
-        // through GenericHub into imx_hubComStub.dataIn with no queue/gate
-        // in between (see reqJetsonPwrState -> imx_hub.serialIn[1] in
-        // ImxDeployment/Top/topology.fpp); if the underlying TCP link isn't
-        // actually connected, ComStub's "never send while reinitializing"
-        // FW_ASSERT trips immediately and takes down the whole i.MX flight
-        // software -- the same class of bug already fixed for
-        // remoteJetsonCmdIn (see the topology comment there). A real report
-        // received over that link is the ONLY evidence JetsonManager ever
-        // has that it's alive, so an unconfirmed state (the boot-time
-        // default, or a state that was never explicitly confirmed) must be
-        // treated the same as confirmed-off here: a direct, idempotent GPIO
-        // cut, never a hub call. This trades away an instant graceful
-        // shutdown in the narrow case where the i.MX rebooted independently
-        // while the Jetson stayed alive and hasn't re-reported yet -- that
-        // window closes as soon as the Jetson's next boot-time report
-        // arrives, and a Jetson that's actually off is unaffected either way.
-        const bool confirmedOn =
-            m_jetsonPowerStateKnown && m_currentJetsonPowerState.e == JetsonPowerStateID::ON;
-        if (confirmedOn && this->isConnected_reqJetsonPwrState_OutputPort(0)) {
-          // The commanded OFF path is graceful when the Jetson is confirmed
-          // ON: ask the Jetson-side manager to shut down, wait for its OFF
-          // report, then cut physical power after JETSON_POWER_OFF_DELAY_TICKS.
-          this->reqJetsonPwrState_out(0, jetsonState);
+        if (m_awaitingBootConfirmation) {
+          // The Jetson was just commanded on and hasn't reported in yet --
+          // defer this OFF instead of racing the boot (see the
+          // boot-confirmation guard comment in the header). It fires
+          // automatically once a real report arrives
+          // (currentJetsonPwrState_handler) or the boot window times out
+          // (schedIn_handler force-fires it via beginJetsonOffSequence()'s
+          // direct-cut fallback). The command stays open -- no
+          // cmdResponse_out here yet, exactly like the graceful-ack wait
+          // beginJetsonOffSequence() itself falls into below.
+          m_deferredOffPending = true;
+          this->log_ACTIVITY_HI_JETSON_OFF_DEFERRED_BOOTING();
         } else {
-          // Jetson state unknown or confirmed off, or the Jetson-side
-          // shutdown port is unavailable: OFF is idempotent and
-          // hardware-safe, and never touches the hub transport.
-          this->gpioSet_out(0, JETSON_POWER_GPIO_OFF);
-          m_currentJetsonPowerState = JetsonPowerStateID::OFF;
-          m_jetsonPowerStateKnown = true;
-          m_awaitingBootConfirmation = false;
-          m_bootConfirmationTimeoutTicks = 0;
-          this->tlmWrite_JetsonPowerState(jetsonState);
-          if (this->isConnected_fpJetsonPowerStateOut_OutputPort(0)) {
-            this->fpJetsonPowerStateOut_out(0, jetsonState);
-          }
-          m_hasPendingPowerCmd = false;
-          m_powerTimeoutTicks = 0;
-          m_waitingToCutJetsonPower = false;
-          m_powerOffDelayTicks = 0;
-          this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
+          this->beginJetsonOffSequence();
         }
 
       } else {
@@ -396,5 +371,57 @@ namespace scalesSvc {
       }
 
     }
+
+  void JetsonManager::beginJetsonOffSequence() {
+    // Only take the graceful Jetson-side shutdown path when the Jetson is
+    // CONFIRMED on -- reqJetsonPwrState_out() is wired straight through
+    // GenericHub into imx_hubComStub.dataIn with no queue/gate in between
+    // (see reqJetsonPwrState -> imx_hub.serialIn[1] in
+    // ImxDeployment/Top/topology.fpp); if the underlying TCP link isn't
+    // actually connected, ComStub's "never send while reinitializing"
+    // FW_ASSERT trips immediately and takes down the whole i.MX flight
+    // software -- the same class of bug already fixed for remoteJetsonCmdIn
+    // (see the topology comment there). A real report received over that
+    // link is the ONLY evidence JetsonManager ever has that it's alive, so
+    // an unconfirmed state (the boot-time default, or a state that was never
+    // explicitly confirmed) must be treated the same as confirmed-off here:
+    // a direct, idempotent GPIO cut, never a hub call.
+    m_deferredOffPending = false;
+    m_requestedPowerState = JetsonPowerStateID::OFF;
+    m_hasPendingPowerCmd = true;
+    m_powerTimeoutTicks = 0;
+    m_waitingToCutJetsonPower = false;
+    m_powerOffDelayTicks = 0;
+
+    const bool confirmedOn =
+        m_jetsonPowerStateKnown && m_currentJetsonPowerState.e == JetsonPowerStateID::ON;
+    if (confirmedOn && this->isConnected_reqJetsonPwrState_OutputPort(0)) {
+      // The commanded OFF path is graceful when the Jetson is confirmed ON:
+      // ask the Jetson-side manager to shut down, wait for its OFF report,
+      // then cut physical power after JETSON_POWER_OFF_DELAY_TICKS.
+      this->reqJetsonPwrState_out(0, JetsonPowerStateID::OFF);
+      return;  // stays pending -- currentJetsonPwrState_handler/schedIn_handler finish it
+    }
+
+    // Jetson state unknown or confirmed off, or the Jetson-side shutdown
+    // port is unavailable: OFF is idempotent and hardware-safe, and never
+    // touches the hub transport.
+    this->gpioSet_out(0, JETSON_POWER_GPIO_OFF);
+    m_currentJetsonPowerState = JetsonPowerStateID::OFF;
+    m_jetsonPowerStateKnown = true;
+    m_awaitingBootConfirmation = false;
+    m_bootConfirmationTimeoutTicks = 0;
+    this->tlmWrite_JetsonPowerState(JetsonPowerStateID::OFF);
+    if (this->isConnected_fpJetsonPowerStateOut_OutputPort(0)) {
+      this->fpJetsonPowerStateOut_out(0, JetsonPowerStateID::OFF);
+    }
+    if (m_pendingPowerCmdRespond) {
+      this->cmdResponse_out(m_pendingPowerOpCode, m_pendingPowerCmdSeq, Fw::CmdResponse::OK);
+    }
+    m_hasPendingPowerCmd = false;
+    m_powerTimeoutTicks = 0;
+    m_waitingToCutJetsonPower = false;
+    m_powerOffDelayTicks = 0;
+  }
 
 }

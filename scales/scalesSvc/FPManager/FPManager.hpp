@@ -160,6 +160,16 @@ class FPManager final : public FPManagerComponentBase {
     U32 m_activeFaultDebounceCount;
     bool m_justBooted;
     Fw::ParamValid m_paramValid;
+
+    //! Cosmetic-only mirror of "was a genuine off->on Jetson boot just
+    //! authorized, with no real report back yet". Armed in
+    //! jetsonPowerAuthorizeIn_handler, cleared in jetsonPowerStateIn_handler.
+    //! Used ONLY to pick accurate wording for DISABLE_HPC_MODE's response
+    //! event -- JetsonManager's own m_awaitingBootConfirmation/
+    //! m_deferredOffPending is the actual safety-critical source of truth
+    //! for deferring/firing the Jetson OFF request; this flag being stale in
+    //! some edge case has no effect on correctness.
+    bool m_jetsonBootOutstanding;
 };
 
 }  // namespace scalesSvc

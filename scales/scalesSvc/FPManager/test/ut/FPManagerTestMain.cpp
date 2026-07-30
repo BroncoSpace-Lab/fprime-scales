@@ -30,6 +30,24 @@ TEST(FPManager, DisableHpcModeWaitsForJetsonOffConfirmation) {
   tester.disableHpcModeWaitsForJetsonOffConfirmation();
 }
 
+TEST(FPManager, DisableHpcModeWithJetsonNeverToggledEmitsAlreadyOffEvent) {
+  RecordProperty("requirement", "FP-021");
+  scalesSvc::FPManagerTester tester;
+  tester.disableHpcModeWithJetsonNeverToggledEmitsAlreadyOffEvent();
+}
+
+TEST(FPManager, DisableHpcModeWhileJetsonBootingDefersAndEmitsBootingEvent) {
+  RecordProperty("requirement", "FP-021");
+  scalesSvc::FPManagerTester tester;
+  tester.disableHpcModeWhileJetsonBootingDefersAndEmitsBootingEvent();
+}
+
+TEST(FPManager, DisableHpcModeAfterBootConfirmedEmitsOffRequestedEvent) {
+  RecordProperty("requirement", "FP-021");
+  scalesSvc::FPManagerTester tester;
+  tester.disableHpcModeAfterBootConfirmedEmitsOffRequestedEvent();
+}
+
 TEST(FPManager, ImxFaultDuringDisableHpcWaitStillTriggersEmergencyShutdown) {
   RecordProperty("requirement", "FP-009,FP-007");
   scalesSvc::FPManagerTester tester;

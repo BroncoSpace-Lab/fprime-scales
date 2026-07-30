@@ -24,8 +24,9 @@ class JetsonManagerTester final : public JetsonManagerGTestBase {
     void requestPowerModeTimeout();
     void requestJetsonPowerStateOnDrivesGpioImmediately();
     void requestJetsonPowerStateOffUnconfirmedFallsBackToDirectCut();
-    void requestJetsonPowerStateOffRejectedWhileBooting();
-    void requestJetsonPowerStateOffNoLongerRejectedAfterBootConfirmationTimeout();
+    void requestJetsonPowerStateOffDeferredWhileBootingThenAutoFiresGracefulShutdown();
+    void requestJetsonPowerStateOffDeferredButBootNeverConfirmsForcesDirectCutOnTimeout();
+    void requestJetsonPowerStateOffFallsBackToDirectCutAfterBootConfirmationTimeoutWithNoDeferredOff();
     void requestJetsonPowerStateOffAcceptedAfterRedundantOnCommand();
     void requestJetsonPowerStateOffConfirmedOnUsesGracefulThenCutsPower();
     void requestJetsonPowerStateOffConfirmedOffIsIdempotent();
@@ -33,6 +34,7 @@ class JetsonManagerTester final : public JetsonManagerGTestBase {
     void requestJetsonPowerStateRejectedByAuthorization();
     void requestJetsonPowerStateBusyWhilePending();
     void fpJetsonPowerRequestInIgnoresOnAndActsOnOff();
+    void fpJetsonPowerRequestInDefersOffWhileBootingThenAutoFires();
     void currentJetsonPwrStateIgnoredWithoutPendingCommand();
 
     // Overrides for the synchronous fpJetsonPowerAuthorize output port so

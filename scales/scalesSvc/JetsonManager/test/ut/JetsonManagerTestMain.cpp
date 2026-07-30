@@ -29,16 +29,22 @@ TEST(JetsonManager, RequestJetsonPowerStateOffUnconfirmedFallsBackToDirectCut) {
     tester.requestJetsonPowerStateOffUnconfirmedFallsBackToDirectCut();
 }
 
-TEST(JetsonManager, RequestJetsonPowerStateOffRejectedWhileBooting) {
+TEST(JetsonManager, RequestJetsonPowerStateOffDeferredWhileBootingThenAutoFiresGracefulShutdown) {
     RecordProperty("requirement", "JM-009");
     scalesSvc::JetsonManagerTester tester;
-    tester.requestJetsonPowerStateOffRejectedWhileBooting();
+    tester.requestJetsonPowerStateOffDeferredWhileBootingThenAutoFiresGracefulShutdown();
 }
 
-TEST(JetsonManager, RequestJetsonPowerStateOffNoLongerRejectedAfterBootConfirmationTimeout) {
+TEST(JetsonManager, RequestJetsonPowerStateOffDeferredButBootNeverConfirmsForcesDirectCutOnTimeout) {
     RecordProperty("requirement", "JM-009");
     scalesSvc::JetsonManagerTester tester;
-    tester.requestJetsonPowerStateOffNoLongerRejectedAfterBootConfirmationTimeout();
+    tester.requestJetsonPowerStateOffDeferredButBootNeverConfirmsForcesDirectCutOnTimeout();
+}
+
+TEST(JetsonManager, RequestJetsonPowerStateOffFallsBackToDirectCutAfterBootConfirmationTimeoutWithNoDeferredOff) {
+    RecordProperty("requirement", "JM-009");
+    scalesSvc::JetsonManagerTester tester;
+    tester.requestJetsonPowerStateOffFallsBackToDirectCutAfterBootConfirmationTimeoutWithNoDeferredOff();
 }
 
 TEST(JetsonManager, RequestJetsonPowerStateOffAcceptedAfterRedundantOnCommand) {
@@ -81,6 +87,12 @@ TEST(JetsonManager, FpJetsonPowerRequestInIgnoresOnAndActsOnOff) {
     RecordProperty("requirement", "JM-003");
     scalesSvc::JetsonManagerTester tester;
     tester.fpJetsonPowerRequestInIgnoresOnAndActsOnOff();
+}
+
+TEST(JetsonManager, FpJetsonPowerRequestInDefersOffWhileBootingThenAutoFires) {
+    RecordProperty("requirement", "JM-003,JM-009");
+    scalesSvc::JetsonManagerTester tester;
+    tester.fpJetsonPowerRequestInDefersOffWhileBootingThenAutoFires();
 }
 
 TEST(JetsonManager, CurrentJetsonPwrStateIgnoredWithoutPendingCommand) {

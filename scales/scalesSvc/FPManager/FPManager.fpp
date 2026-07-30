@@ -206,6 +206,21 @@ module scalesSvc {
         ) severity warning high id 0x0A \
             format "FAULT_DEBOUNCE_COUNT {} rejected (max {}); keeping {}"
 
+        @ DISABLE_HPC_MODE accepted; the Jetson was confirmed on, so a real
+        @ OFF request was sent to JetsonManager.
+        event HPC_MODE_DISABLE_JETSON_OFF_REQUESTED severity activity high id 0x0B \
+            format "DISABLE_HPC_MODE: HPC Mode disabled; Jetson OFF requested"
+
+        @ DISABLE_HPC_MODE accepted; the Jetson was already off, nothing to shut down.
+        event HPC_MODE_DISABLE_JETSON_ALREADY_OFF severity activity high id 0x0C \
+            format "DISABLE_HPC_MODE: HPC Mode disabled; Jetson was already off"
+
+        @ DISABLE_HPC_MODE accepted; the Jetson is still booting. The OFF
+        @ request is not rejected -- JetsonManager will send it automatically
+        @ once the Jetson's boot is confirmed.
+        event HPC_MODE_DISABLE_JETSON_BOOTING severity activity high id 0x0D \
+            format "DISABLE_HPC_MODE: HPC Mode disabled; Jetson currently booting -- Jetson OFF will be requested automatically once boot is confirmed"
+
         @ Current FP state for downlink and diagnostics.
         telemetry FP_STATE: FPManagerState id 0x00
 
