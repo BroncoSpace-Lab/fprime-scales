@@ -41,6 +41,20 @@ forwards -- but the guard is cheap and matches the safer default for a
 receive path whose caller isn't guaranteed to be the same thread as the
 send path's callers.
 
+A fifth pair, `comStatusIn`/`comStatusOut[2]` (HSR-001), is unrelated to the
+buffer-bridging role above -- it exists purely because `Svc::ComStub`'s
+`comStatusOut` (real transport-level connection status) is a single-
+connection port, but two independent consumers need to see it: the
+hub-link `Svc::ComQueue` (needs it to actually gate sends -- see
+`ImxDeployment/Top/topology.fpp`'s `send_hub` connections) and
+`JetsonManager` (needs it directly for its own fast, informative rejection
+-- JM-016 in `JetsonManager`'s SDD). `HubComAdapter` was already the
+minimal, stateless, topologically-adjacent pass-through component sitting
+in exactly this part of the pipeline, so this fan-out was added here
+rather than as a new single-purpose component. `comStatusIn_handler`
+forwards to every connected index of `comStatusOut` unconditionally
+(currently both are always connected).
+
 ## Functional Diagrams
 
 ### Component Relationships
@@ -50,6 +64,10 @@ flowchart LR
     subgraph Hub["Svc.GenericHub (imx_hub)"]
         HubSend["toBufferDriver / toBufferDriverReturn"]
         HubRecv["fromBufferDriver / fromBufferDriverReturn"]
+    end
+
+    subgraph Queue["Svc.ComQueue (imx_hubComQueue)"]
+        Q["imx_hubComQueue"]
     end
 
     subgraph Adapter["HubComAdapter"]
@@ -63,17 +81,26 @@ flowchart LR
         Drv["imx_hubComDriver (Drv.TcpServer)"]
     end
 
-    HubSend -->|"bufferIn (Fw.BufferSend)"| A
-    A -->|"bufferInReturn (Fw.BufferSend)"| HubSend
-    A -->|"comOut (Svc.ComDataWithContext)"| Framer
-    Framer -->|"dataReturnOut -> comReturnIn"| A
+    %% Send direction: HubComAdapter's bufferIn/comOut/comReturnIn are
+    %% retired -- imx_hubComQueue now bridges Fw.BufferSend/Svc.ComDataWithContext
+    %% on the send side (JM-016 backstop, see imx_hubComQueue's own config).
+    HubSend -->|"bufferQueueIn[0] (Fw.BufferSend)"| Q
+    Q -->|"bufferReturnOut[0] (Fw.BufferSend)"| HubSend
+    Q -->|"dataOut (Svc.ComDataWithContext)"| Framer
+    Framer -->|"dataReturnOut -> dataReturnIn"| Q
     Framer --> Stub --> Drv
 
+    %% Receive direction: HubComAdapter's original role, unchanged.
     Drv --> Stub --> Deframer
     Deframer -->|"dataOut -> comIn (Svc.ComDataWithContext)"| A
     A -->|"comInReturn (Svc.ComDataWithContext)"| Deframer
     A -->|"bufferOut (Fw.BufferSend)"| HubRecv
     HubRecv -->|"fromBufferDriverReturn -> bufferOutReturn"| A
+
+    %% comStatus fan-out: HubComAdapter's new, unrelated role.
+    Stub -->|"comStatusOut (Fw.SuccessCondition)"| A
+    A -->|"comStatusOut[0]"| Q
+    A -.->|"comStatusOut[1]"| JM["imx_jetsonManager.hubComStatusIn (JM-016)"]
 ```
 
 ### Send and Receive Sequences
@@ -105,6 +132,19 @@ sequenceDiagram
     A->>Deframer: comInReturn(buffer, default context)
 ```
 
+```mermaid
+sequenceDiagram
+    participant Stub as imx_hubComStub
+    participant A as HubComAdapter
+    participant Q as imx_hubComQueue
+    participant JM as imx_jetsonManager
+
+    Note over Stub,JM: comStatus fan-out (HSR-001): one signal, two consumers
+    Stub->>A: comStatusOut(condition)
+    A->>Q: comStatusOut[0](condition)
+    A->>JM: comStatusOut[1](condition)
+```
+
 ## Operating Rules
 
 1. Every buffer handed to `bufferIn` is forwarded to `comOut` unchanged,
@@ -121,6 +161,10 @@ sequenceDiagram
    no error handling of its own; a malformed or zero-length buffer is passed
    through exactly as received; correctness of the buffer's contents is the
    responsibility of `GenericHub` and the framer/deframer stack.
+6. Every `comStatusIn` condition is forwarded, unmodified, to every
+   currently-connected index of `comStatusOut` -- not just the first. No
+   condition is cached, inspected, or dropped; a disconnected index is
+   simply skipped (`isConnected_comStatusOut_OutputPort`).
 
 ## Implementation Progress
 
@@ -156,6 +200,8 @@ blocks; the instance itself (`imx_hubComAdapter`) is declared in
 | `comInReturn` | Returns a consumed deframed buffer (with a default `FrameContext`) to the deframer. |
 | `bufferOut` | Forwards a deframed buffer into `GenericHub`. |
 | `bufferOutReturn` | Receives a consumed buffer back from `GenericHub`. |
+| `comStatusIn` | Real hub-link transport status from `imx_hubComStub.comStatusOut`. Unrelated to the buffer-bridging ports above -- see Design Summary. |
+| `comStatusOut` | `[2]`-sized fan-out of `comStatusIn`: index 0 to `imx_hubComQueue`, index 1 to `imx_jetsonManager` (JM-016). |
 
 ## Component States
 | Name | Description |
@@ -184,8 +230,8 @@ blocks; the instance itself (`imx_hubComAdapter`) is declared in
 
 ## Unit Tests
 
-Measured via `fprime-util check --coverage`: **100% line (16/16), 100%
-function (6/6), 50.0% branch (4/8)**. The uncovered branches are ASan/UBSan
+Measured via `fprime-util check --coverage`: **100% line (21/21), 100%
+function (7/7), 58.3% branch (7/12)**. The uncovered branches are ASan/UBSan
 instrumentation edges around construction (the same non-actionable pattern
 documented throughout this audit), unsurprising for a component this small.
 Each test is tagged with `RecordProperty("requirement", "<REQ-ID>")`, so
@@ -199,6 +245,7 @@ machine-checkable artifact.
 | `ComReturnInForwardsToBufferInReturn` | Invokes `comReturnIn` and confirms `bufferInReturn` receives the same buffer. | HCA-002 |
 | `ComInForwardsToBufferOut` | Invokes `comIn` and confirms `bufferOut` receives the same buffer. | HCA-003 |
 | `BufferOutReturnForwardsToComInReturnWithDefaultContext` | Invokes `bufferOutReturn` and confirms `comInReturn` receives the same buffer paired with a default-constructed `FrameContext`. | HCA-004 |
+| `ComStatusInFansOutToAllConnectedIndices` | Invokes `comStatusIn` with `SUCCESS` and confirms `comStatusOut` fires exactly twice (once per connected index), both carrying `SUCCESS`. | HSR-001 |
 
 ## Requirements
 | Name | Description | Verified By |
@@ -207,9 +254,11 @@ machine-checkable artifact.
 | HCA-002 | A buffer received on `comReturnIn` shall be forwarded to `bufferInReturn` unchanged. | `ComReturnInForwardsToBufferInReturn` |
 | HCA-003 | A buffer received on `comIn` shall be forwarded to `bufferOut` unchanged. | `ComInForwardsToBufferOut` |
 | HCA-004 | A buffer received on `bufferOutReturn` shall be forwarded to `comInReturn` unchanged, paired with a default `FrameContext`. | `BufferOutReturnForwardsToComInReturnWithDefaultContext` |
+| HSR-001 | A condition received on `comStatusIn` shall be forwarded, unmodified, to every currently-connected index of `comStatusOut`. | `ComStatusInFansOutToAllConnectedIndices` |
 
 ## Change Log
 | Date | Description |
 |---|---|
 | 2026-07-27 | Initial SDD documenting the implemented pass-through adapter, its topology wiring, and the current absence of unit test coverage. No functional changes; this is a documentation-only pass. |
 | 2026-07-28 | Added `HubComAdapterTester` (`test/ut/`) with one test per handler and wired `register_fprime_ut` into `CMakeLists.txt` -- this component had no test target at all before. Measured 100% line, 100% function, 50.0% branch coverage. Tagged every test with `RecordProperty("requirement", ...)` and added `Verified By`/`Verifies` traceability to the Requirements/Unit Tests tables. | Luca Lanzillotta |
+| 2026-07-31 | **Added `comStatusIn`/`comStatusOut[2]` fan-out (HSR-001)**: as part of adding a `Svc::ComQueue` safety net under the imx<->Jetson hub link (see JetsonManager's SDD, JM-016), two independent consumers needed `imx_hubComStub.comStatusOut` -- the new `imx_hubComQueue` (to actually gate sends) and `imx_jetsonManager` (already reading it directly for its own fast rejection path). F Prime ports are strictly 1:1, so something had to split the signal. Considered a new single-purpose component first; rejected it as unnecessary overhead (new directory, build target, base ID, SDD) for ~3 lines of logic when `HubComAdapter` was already the minimal, stateless, topologically-adjacent pass-through component sitting in exactly this part of the pipeline -- added the fan-out here instead. Unrelated to this component's existing buffer-bridging role (see Design Summary), but a natural fit for "small, stateless, sits in the hub pipeline." `imx_hubComAdapter`'s send-side buffer-bridging ports (`bufferIn`/`comOut`/`comReturnIn`) are retired as part of the same change -- `imx_hubComQueue` now performs that bridging on the send side, using the identical default-`FrameContext` construction; the receive-side role (`comIn`/`bufferOut`/etc.) is unchanged. Added `ComStatusInFansOutToAllConnectedIndices`. Coverage: 100% line / 100% function / 58.3% branch. | Luca Lanzillotta |

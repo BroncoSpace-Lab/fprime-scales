@@ -33,4 +33,12 @@ void HubComAdapter::bufferOutReturn_handler(FwIndexType portNum, Fw::Buffer& buf
     this->comInReturn_out(0, buffer, context);
 }
 
+void HubComAdapter::comStatusIn_handler(FwIndexType portNum, Fw::Success& condition) {
+    for (FwIndexType i = 0; i < NUM_COMSTATUSOUT_OUTPUT_PORTS; i++) {
+        if (this->isConnected_comStatusOut_OutputPort(i)) {
+            this->comStatusOut_out(i, condition);
+        }
+    }
+}
+
 }  // namespace scalesSvc

@@ -29,6 +29,12 @@ TEST(Nominal, BufferOutReturnForwardsToComInReturnWithDefaultContext) {
     tester.bufferOutReturnForwardsToComInReturnWithDefaultContext();
 }
 
+TEST(Nominal, ComStatusInFansOutToAllConnectedIndices) {
+    RecordProperty("requirement", "HCA-005");
+    scalesSvc::HubComAdapterTester tester;
+    tester.comStatusInFansOutToAllConnectedIndices();
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

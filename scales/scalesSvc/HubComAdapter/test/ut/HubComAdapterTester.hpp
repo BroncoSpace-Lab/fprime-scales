@@ -23,6 +23,7 @@ class HubComAdapterTester final : public HubComAdapterGTestBase {
     void comReturnInForwardsToBufferInReturn();
     void comInForwardsToBufferOut();
     void bufferOutReturnForwardsToComInReturnWithDefaultContext();
+    void comStatusInFansOutToAllConnectedIndices();
 
   private:
     void connectPorts();

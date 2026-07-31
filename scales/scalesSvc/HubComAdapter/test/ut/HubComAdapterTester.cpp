@@ -51,6 +51,19 @@ void HubComAdapterTester ::comInForwardsToBufferOut() {
     ASSERT_from_bufferOut(0, buffer);
 }
 
+void HubComAdapterTester ::comStatusInFansOutToAllConnectedIndices() {
+    Fw::Success success = Fw::Success::SUCCESS;
+
+    this->invoke_to_comStatusIn(0, success);
+
+    // comStatusOut is [2]-sized (the hub-link ComQueue and JetsonManager,
+    // see JM-016) -- one comStatusIn call must fan out to both connected
+    // indices, not just the first.
+    ASSERT_from_comStatusOut_SIZE(2);
+    ASSERT_from_comStatusOut(0, Fw::Success::SUCCESS);
+    ASSERT_from_comStatusOut(1, Fw::Success::SUCCESS);
+}
+
 void HubComAdapterTester ::bufferOutReturnForwardsToComInReturnWithDefaultContext() {
     U8 data[4] = {13, 14, 15, 16};
     Fw::Buffer buffer(data, sizeof(data));
