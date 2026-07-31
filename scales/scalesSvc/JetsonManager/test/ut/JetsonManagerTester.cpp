@@ -28,15 +28,28 @@ Fw::Success JetsonManagerTester ::from_fpJetsonPowerAuthorize_handler(FwIndexTyp
     return m_authorizeResult;
 }
 
+void JetsonManagerTester ::confirmJetsonOnAndHubConnected() {
+    // Hub-connected first, then the Jetson's own confirmation report --
+    // matches reality (a report from the Jetson can only arrive over a hub
+    // link that's already up) and avoids a same-tick ordering hazard: some
+    // callers (e.g. the deferred-OFF auto-fire path) synchronously
+    // re-evaluate isJetsonHubLinkTrusted() from inside the ON-confirmation
+    // handler itself, before this function returns.
+    Fw::Success connected = Fw::Success::SUCCESS;
+    this->invoke_to_hubComStatusIn(0, connected);
+    this->component.doDispatch();
+    this->invoke_to_currentJetsonPwrState(0, scalesSvc::JetsonPowerStateID::ON);
+    this->component.doDispatch();
+}
+
 // ----------------------------------------------------------------------
 // Tests
 // ----------------------------------------------------------------------
 
 void JetsonManagerTester ::requestPowerModeDeferredCompletion() {
     // REQUEST_POWER_MODE requires a trusted hub link (isJetsonHubLinkTrusted():
-    // Jetson confirmed ON) -- confirm it first via a real report.
-    this->invoke_to_currentJetsonPwrState(0, scalesSvc::JetsonPowerStateID::ON);
-    this->component.doDispatch();
+    // Jetson confirmed ON, hub TCP link connected) -- confirm both first.
+    this->confirmJetsonOnAndHubConnected();
     this->clearHistory();
 
     this->sendCmd_REQUEST_POWER_MODE(0, 1, scalesSvc::PowerModeID::BALANCED);
@@ -62,8 +75,7 @@ void JetsonManagerTester ::requestPowerModeDeferredCompletion() {
 }
 
 void JetsonManagerTester ::requestPowerModeTimeout() {
-    this->invoke_to_currentJetsonPwrState(0, scalesSvc::JetsonPowerStateID::ON);
-    this->component.doDispatch();
+    this->confirmJetsonOnAndHubConnected();
     this->clearHistory();
 
     this->sendCmd_REQUEST_POWER_MODE(0, 2, scalesSvc::PowerModeID::EXTRA);
@@ -83,8 +95,7 @@ void JetsonManagerTester ::requestPowerModeTimeout() {
 }
 
 void JetsonManagerTester ::requestPowerModeBusyWhilePending() {
-    this->invoke_to_currentJetsonPwrState(0, scalesSvc::JetsonPowerStateID::ON);
-    this->component.doDispatch();
+    this->confirmJetsonOnAndHubConnected();
     this->clearHistory();
 
     this->sendCmd_REQUEST_POWER_MODE(0, 1, scalesSvc::PowerModeID::BALANCED);
@@ -214,10 +225,9 @@ void JetsonManagerTester ::requestJetsonPowerStateOffDeferredWhileBootingThenAut
     ASSERT_CMD_RESPONSE_SIZE(1);
 
     // The real boot report arrives -- the deferred OFF fires automatically:
-    // Jetson is now confirmed ON, so it takes the graceful hub path, still
-    // without completing the command.
-    this->invoke_to_currentJetsonPwrState(0, scalesSvc::JetsonPowerStateID::ON);
-    this->component.doDispatch();
+    // Jetson is now confirmed ON, and the hub link is connected, so it
+    // takes the graceful hub path, still without completing the command.
+    this->confirmJetsonOnAndHubConnected();
     ASSERT_from_reqJetsonPwrState_SIZE(1);
     ASSERT_from_reqJetsonPwrState(0, scalesSvc::JetsonPowerStateID::OFF);
     ASSERT_from_gpioSet_SIZE(1);
@@ -319,8 +329,7 @@ void JetsonManagerTester ::requestJetsonPowerStateOffAcceptedAfterRedundantOnCom
     this->sendCmd_REQUEST_JETSON_POWER_STATE(0, 1, scalesSvc::JetsonPowerStateID::ON);
     this->component.doDispatch();
 
-    this->invoke_to_currentJetsonPwrState(0, scalesSvc::JetsonPowerStateID::ON);
-    this->component.doDispatch();
+    this->confirmJetsonOnAndHubConnected();
     this->clearHistory();
 
     // Redundant ON: Jetson is already confirmed on.
@@ -350,8 +359,7 @@ void JetsonManagerTester ::requestJetsonPowerStateOffDeferredWhileModeChangeInFl
     this->component.loadParameters();
     m_authorizeResult = Fw::Success::SUCCESS;
 
-    this->invoke_to_currentJetsonPwrState(0, scalesSvc::JetsonPowerStateID::ON);
-    this->component.doDispatch();
+    this->confirmJetsonOnAndHubConnected();
     this->clearHistory();
 
     this->sendCmd_REQUEST_POWER_MODE(0, 1, scalesSvc::PowerModeID::BALANCED);
@@ -396,8 +404,7 @@ void JetsonManagerTester ::requestJetsonPowerStateOffDeferredWhileModeChangeInFl
     this->component.loadParameters();
     m_authorizeResult = Fw::Success::SUCCESS;
 
-    this->invoke_to_currentJetsonPwrState(0, scalesSvc::JetsonPowerStateID::ON);
-    this->component.doDispatch();
+    this->confirmJetsonOnAndHubConnected();
     this->clearHistory();
 
     this->sendCmd_REQUEST_POWER_MODE(0, 1, scalesSvc::PowerModeID::BALANCED);
@@ -429,9 +436,8 @@ void JetsonManagerTester ::requestJetsonPowerStateOffDeferredWhileModeChangeInFl
 void JetsonManagerTester ::requestJetsonPowerStateOffConfirmedOnUsesGracefulThenCutsPower() {
     this->component.loadParameters();
 
-    // Confirm ON via a real status report first.
-    this->invoke_to_currentJetsonPwrState(0, scalesSvc::JetsonPowerStateID::ON);
-    this->component.doDispatch();
+    // Confirm ON and hub-connected via real reports first.
+    this->confirmJetsonOnAndHubConnected();
     this->clearHistory();
 
     m_authorizeResult = Fw::Success::SUCCESS;
@@ -485,9 +491,9 @@ void JetsonManagerTester ::requestJetsonPowerStateOffConfirmedOffIsIdempotent() 
 void JetsonManagerTester ::requestJetsonPowerStateOffTimesOutAndFallsBackToDirectCut() {
     this->component.loadParameters();
 
-    // Confirm ON so the graceful path is taken, then never acknowledge it.
-    this->invoke_to_currentJetsonPwrState(0, scalesSvc::JetsonPowerStateID::ON);
-    this->component.doDispatch();
+    // Confirm ON and hub-connected so the graceful path is taken, then
+    // never acknowledge it.
+    this->confirmJetsonOnAndHubConnected();
     this->clearHistory();
 
     m_authorizeResult = Fw::Success::SUCCESS;
@@ -525,10 +531,10 @@ void JetsonManagerTester ::requestJetsonPowerStateRejectedByAuthorization() {
 void JetsonManagerTester ::requestJetsonPowerStateBusyWhilePending() {
     this->component.loadParameters();
 
-    // Confirm ON first so the first OFF request below takes the graceful
-    // (pending) path instead of completing synchronously via direct GPIO cut.
-    this->invoke_to_currentJetsonPwrState(0, scalesSvc::JetsonPowerStateID::ON);
-    this->component.doDispatch();
+    // Confirm ON and hub-connected first so the first OFF request below
+    // takes the graceful (pending) path instead of completing synchronously
+    // via direct GPIO cut.
+    this->confirmJetsonOnAndHubConnected();
     this->clearHistory();
 
     m_authorizeResult = Fw::Success::SUCCESS;
@@ -552,10 +558,9 @@ void JetsonManagerTester ::fpJetsonPowerRequestInIgnoresOnAndActsOnOff() {
     ASSERT_from_gpioSet_SIZE(0);
     ASSERT_from_reqJetsonPwrState_SIZE(0);
 
-    // Confirm ON, then request OFF: the graceful path is preferred when the
-    // Jetson is known ON, same as the GDS-facing command.
-    this->invoke_to_currentJetsonPwrState(0, scalesSvc::JetsonPowerStateID::ON);
-    this->component.doDispatch();
+    // Confirm ON and hub-connected, then request OFF: the graceful path is
+    // preferred when the Jetson is known ON, same as the GDS-facing command.
+    this->confirmJetsonOnAndHubConnected();
     this->clearHistory();
 
     this->invoke_to_fpJetsonPowerRequestIn(0, scalesSvc::JetsonPowerStateID::OFF);
@@ -582,8 +587,7 @@ void JetsonManagerTester ::fpJetsonPowerRequestInDefersOffWhileBootingThenAutoFi
 
     // Boot confirms -- the deferred OFF fires automatically via the graceful
     // hub path, still with no command response (this path never has one).
-    this->invoke_to_currentJetsonPwrState(0, scalesSvc::JetsonPowerStateID::ON);
-    this->component.doDispatch();
+    this->confirmJetsonOnAndHubConnected();
     ASSERT_from_reqJetsonPwrState_SIZE(1);
     ASSERT_from_reqJetsonPwrState(0, scalesSvc::JetsonPowerStateID::OFF);
     ASSERT_from_gpioSet_SIZE(0);
@@ -608,8 +612,7 @@ void JetsonManagerTester ::localModeChangeStartedArmsHubTrustGuardThenClearsOnNe
     // by default -- localModeChangeStarted closes that gap by letting
     // JetsonPowerModeManager notify it directly, over the hub, right before
     // the reboot it's about to trigger.
-    this->invoke_to_currentJetsonPwrState(0, scalesSvc::JetsonPowerStateID::ON);
-    this->component.doDispatch();
+    this->confirmJetsonOnAndHubConnected();
     this->clearHistory();
 
     this->invoke_to_localModeChangeStarted(0, scalesSvc::PowerModeID::BALANCED);
@@ -644,8 +647,7 @@ void JetsonManagerTester ::localModeChangeStartedDoesNotClobberPendingRequestPow
     // bookkeeping -- otherwise its GDS/CmdSequencer caller would never get
     // a response, and schedIn's timeout wouldn't fire one either (both are
     // now gated on m_modeChangeCmdRespond).
-    this->invoke_to_currentJetsonPwrState(0, scalesSvc::JetsonPowerStateID::ON);
-    this->component.doDispatch();
+    this->confirmJetsonOnAndHubConnected();
     this->clearHistory();
 
     this->sendCmd_REQUEST_POWER_MODE(0, 1, scalesSvc::PowerModeID::BALANCED);
@@ -671,8 +673,7 @@ void JetsonManagerTester ::localModeChangeStartedDefersJetsonOffLikeHubDrivenMod
     this->component.loadParameters();
     m_authorizeResult = Fw::Success::SUCCESS;
 
-    this->invoke_to_currentJetsonPwrState(0, scalesSvc::JetsonPowerStateID::ON);
-    this->component.doDispatch();
+    this->confirmJetsonOnAndHubConnected();
     this->clearHistory();
 
     this->invoke_to_localModeChangeStarted(0, scalesSvc::PowerModeID::BALANCED);
@@ -692,8 +693,7 @@ void JetsonManagerTester ::localModeChangeStartedDefersJetsonOffLikeHubDrivenMod
 }
 
 void JetsonManagerTester ::schedInRepublishesHubTrustStatusEveryTick() {
-    this->invoke_to_currentJetsonPwrState(0, scalesSvc::JetsonPowerStateID::ON);
-    this->component.doDispatch();
+    this->confirmJetsonOnAndHubConnected();
     this->clearHistory();
 
     this->invoke_to_schedIn(0, 0);
@@ -703,6 +703,74 @@ void JetsonManagerTester ::schedInRepublishesHubTrustStatusEveryTick() {
     ASSERT_from_fpJetsonHubTrustedOut(0, true);
     ASSERT_from_fpJetsonHubTrustedOut(1, true);
     ASSERT_from_fpJetsonHubTrustedOut(2, true);
+}
+
+void JetsonManagerTester ::hubLinkDownPreventsTrustEvenWhenModeReportRacesAheadOfReconnect() {
+    // Regression test for the exact hardware-observed race (JM-016): an
+    // nvpmodel-triggered reboot can leave JetsonPowerModeManager's own
+    // process reporting a matching mode over the hub BEFORE the real TCP
+    // link has actually reconnected. m_hasPendingCmd clearing on that
+    // report (the pre-JM-016 behavior, still correct on its own terms) must
+    // NOT be enough by itself to restore hub trust -- m_hubLinkConnected
+    // has to independently confirm the transport layer is back too.
+    this->confirmJetsonOnAndHubConnected();
+    this->clearHistory();
+
+    this->invoke_to_localModeChangeStarted(0, scalesSvc::PowerModeID::BALANCED);
+    this->component.doDispatch();
+    this->invoke_to_schedIn(0, 0);
+    ASSERT_from_fpJetsonHubTrustedOut_SIZE(1);
+    ASSERT_from_fpJetsonHubTrustedOut(0, false);
+
+    // The real hub link actually goes down -- the reboot severing the TCP
+    // connection, discovered via imx_hubComStub's first failed send.
+    Fw::Success failure = Fw::Success::FAILURE;
+    this->invoke_to_hubComStatusIn(0, failure);
+    this->component.doDispatch();
+
+    // The premature self-report arrives and clears m_hasPendingCmd -- but
+    // trust must stay false, since the real transport link is still known
+    // down.
+    this->invoke_to_currentPwrMode(0, scalesSvc::PowerModeID::BALANCED);
+    this->component.doDispatch();
+    this->invoke_to_schedIn(0, 0);
+    ASSERT_from_fpJetsonHubTrustedOut_SIZE(2);
+    ASSERT_from_fpJetsonHubTrustedOut(1, false);
+
+    // Only once the real link reconnects does trust return.
+    Fw::Success success = Fw::Success::SUCCESS;
+    this->invoke_to_hubComStatusIn(0, success);
+    this->component.doDispatch();
+    this->invoke_to_schedIn(0, 0);
+    ASSERT_from_fpJetsonHubTrustedOut_SIZE(3);
+    ASSERT_from_fpJetsonHubTrustedOut(2, true);
+}
+
+void JetsonManagerTester ::hubComStatusInLogsTransitionsOnlyOnce() {
+    // imx_hubComStub reports comStatus every time it sends or receives, not
+    // just on an actual transition -- JETSON_HUB_LINK_DOWN/RECONNECTED must
+    // fire once per transition, not once per report.
+    this->confirmJetsonOnAndHubConnected();
+    this->clearHistory();
+
+    Fw::Success success = Fw::Success::SUCCESS;
+    Fw::Success failure = Fw::Success::FAILURE;
+
+    this->invoke_to_hubComStatusIn(0, success);
+    this->component.doDispatch();
+    ASSERT_EVENTS_JETSON_HUB_LINK_RECONNECTED_SIZE(0);  // already connected, no transition
+
+    this->invoke_to_hubComStatusIn(0, failure);
+    this->component.doDispatch();
+    ASSERT_EVENTS_JETSON_HUB_LINK_DOWN_SIZE(1);
+
+    this->invoke_to_hubComStatusIn(0, failure);
+    this->component.doDispatch();
+    ASSERT_EVENTS_JETSON_HUB_LINK_DOWN_SIZE(1);  // unchanged -- still down, no new transition
+
+    this->invoke_to_hubComStatusIn(0, success);
+    this->component.doDispatch();
+    ASSERT_EVENTS_JETSON_HUB_LINK_RECONNECTED_SIZE(1);
 }
 
 // connectPorts()/initComponents() are auto-generated into

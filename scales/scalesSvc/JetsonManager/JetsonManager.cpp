@@ -37,7 +37,8 @@ namespace scalesSvc {
       m_pendingPowerCmdRespond(false),
       m_awaitingBootConfirmation(false),
       m_bootConfirmationTimeoutTicks(0),
-      m_deferredOffPending(false)
+      m_deferredOffPending(false),
+      m_hubLinkConnected(false)
       // instantiate private members in a constructor.
   {
 
@@ -188,6 +189,21 @@ namespace scalesSvc {
     m_modeChangeCmdRespond = false;
     m_timeoutTicks = 0;
     this->log_ACTIVITY_HI_LOCAL_MODE_CHANGE_STARTED_RECEIVED(mode);
+  }
+
+  void JetsonManager ::
+    hubComStatusIn_handler(
+        FwIndexType portNum,
+        Fw::Success& condition
+    )
+  {
+    const bool wasConnected = m_hubLinkConnected;
+    m_hubLinkConnected = (condition == Fw::Success::SUCCESS);
+    if (wasConnected && !m_hubLinkConnected) {
+      this->log_WARNING_HI_JETSON_HUB_LINK_DOWN();
+    } else if (!wasConnected && m_hubLinkConnected) {
+      this->log_ACTIVITY_HI_JETSON_HUB_LINK_RECONNECTED();
+    }
   }
 
   void JetsonManager ::
@@ -475,23 +491,28 @@ namespace scalesSvc {
       return;
     }
 
-    // Only take the graceful Jetson-side shutdown path when the Jetson is
-    // CONFIRMED on -- reqJetsonPwrState_out() is wired straight through
+    // Only take the graceful Jetson-side shutdown path when the hub link is
+    // fully trusted -- reqJetsonPwrState_out() is wired straight through
     // GenericHub into imx_hubComStub.dataIn with no queue/gate in between
     // (see reqJetsonPwrState -> imx_hub.serialIn[1] in
     // ImxDeployment/Top/topology.fpp); if the underlying TCP link isn't
     // actually connected, ComStub's "never send while reinitializing"
     // FW_ASSERT trips immediately and takes down the whole i.MX flight
     // software -- the same class of bug already fixed for remoteJetsonCmdIn
-    // (see the topology comment there). A real report received over that
-    // link is the ONLY evidence JetsonManager ever has that it's alive, so
-    // an unconfirmed state (the boot-time default, or a state that was never
+    // (see the topology comment there). Reusing isJetsonHubLinkTrusted()
+    // here (rather than hand-deriving the same "confirmed on" subset, as
+    // this used to) means this can never drift out of sync with
+    // REQUEST_POWER_MODE_cmdHandler's own gate -- in particular it now also
+    // requires m_hubLinkConnected, closing the same premature-trust race
+    // this function used to be exposed to (JM-016). By this point
+    // m_awaitingBootConfirmation and m_hasPendingCmd are already known
+    // false (the two branches above return early otherwise), so this
+    // reduces to exactly "confirmed on and the real hub link is up." An
+    // unconfirmed state (the boot-time default, or a state that was never
     // explicitly confirmed) must be treated the same as confirmed-off here:
     // a direct, idempotent GPIO cut, never a hub call.
     m_deferredOffPending = false;
-    const bool confirmedOn =
-        m_jetsonPowerStateKnown && m_currentJetsonPowerState.e == JetsonPowerStateID::ON;
-    if (confirmedOn && this->isConnected_reqJetsonPwrState_OutputPort(0)) {
+    if (this->isJetsonHubLinkTrusted() && this->isConnected_reqJetsonPwrState_OutputPort(0)) {
       // The commanded OFF path is graceful when the Jetson is confirmed ON:
       // ask the Jetson-side manager to shut down, wait for its OFF report,
       // then cut physical power after JETSON_POWER_OFF_DELAY_TICKS.
@@ -524,7 +545,8 @@ namespace scalesSvc {
     return m_jetsonPowerStateKnown
         && m_currentJetsonPowerState.e == JetsonPowerStateID::ON
         && !m_awaitingBootConfirmation
-        && !m_hasPendingCmd;
+        && !m_hasPendingCmd
+        && m_hubLinkConnected;
   }
 
 }

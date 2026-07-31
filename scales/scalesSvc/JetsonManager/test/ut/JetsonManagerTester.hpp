@@ -50,6 +50,8 @@ class JetsonManagerTester final : public JetsonManagerGTestBase {
     void localModeChangeStartedDoesNotClobberPendingRequestPowerMode();
     void localModeChangeStartedDefersJetsonOffLikeHubDrivenModeChangePending();
     void schedInRepublishesHubTrustStatusEveryTick();
+    void hubLinkDownPreventsTrustEvenWhenModeReportRacesAheadOfReconnect();
+    void hubComStatusInLogsTransitionsOnlyOnce();
 
     // Overrides for the synchronous fpJetsonPowerAuthorize output port so
     // tests can control FPManager's authorization result without a real
@@ -60,6 +62,14 @@ class JetsonManagerTester final : public JetsonManagerGTestBase {
   private:
     void connectPorts();
     void initComponents();
+
+    //! Establishes both preconditions isJetsonHubLinkTrusted() now requires:
+    //! a real "Jetson confirmed ON" report AND a real "hub TCP link
+    //! connected" report (JM-016). Most existing tests want both true and
+    //! don't care about the distinction between them -- this collapses that
+    //! setup to one call. Tests that specifically exercise the unconfirmed/
+    //! disconnected cases invoke the underlying ports directly instead.
+    void confirmJetsonOnAndHubConnected();
 
     JetsonManager component;
     Fw::Success m_authorizeResult;

@@ -33,6 +33,14 @@ module scalesSvc {
         @ (FPManager.cpp run_handler). i.MX-internal only. See JM-015.
         output port fpJetsonHubTrustedOut: JetsonHubTrustStatus
 
+        @ Real transport-level status of the imx<->Jetson hub TCP link,
+        @ fed directly from imx_hubComStub.comStatusOut (SUCCESS on a real
+        @ reconnect, FAILURE the first time a send actually fails). Unlike
+        @ the mode/power-state self-reports above, this cannot arrive
+        @ before the link has actually gone down or come back up -- see
+        @ isJetsonHubLinkTrusted() and JM-016.
+        async input port hubComStatusIn: Fw.SuccessCondition
+
         @ Port that receives the rate group tick
         sync input port schedIn: Svc.Sched
 
@@ -141,6 +149,18 @@ module scalesSvc {
         event LOCAL_MODE_CHANGE_STARTED_RECEIVED(
             mode: PowerModeID @< The power mode nvpmodel is applying locally
         ) severity activity high id 12 format "JetsonManager received local mode-change-started notification for mode {}; hub link not trusted until the reboot completes"
+
+        @ Event indicating the real imx<->Jetson hub TCP link was just lost
+        @ (comStatusOut reported FAILURE for the first time since the last
+        @ reconnect). Logged only on the down transition, not every report.
+        event JETSON_HUB_LINK_DOWN severity warning high id 13 \
+            format "imx<->Jetson hub TCP link reported down; Jetson-bound traffic held until it reconnects"
+
+        @ Event indicating the real imx<->Jetson hub TCP link just came back
+        @ (comStatusOut reported SUCCESS after having been down). Logged
+        @ only on the up transition, not every report.
+        event JETSON_HUB_LINK_RECONNECTED severity activity high id 14 \
+            format "imx<->Jetson hub TCP link reconnected"
 
         ###############################################################################
         #                                 Telemetry                                   #

@@ -67,6 +67,15 @@ namespace scalesSvc {
           const scalesSvc::PowerModeID& mode
       ) override;
 
+      //! Handler implementation for hubComStatusIn
+      //!
+      //! Real transport-level status of the imx<->Jetson hub TCP link, fed
+      //! from imx_hubComStub.comStatusOut.
+      void hubComStatusIn_handler(
+          FwIndexType portNum, //!< The port number
+          Fw::Success& condition
+      ) override;
+
       //! Handler implementation for schedIn
       //!
       //! Port that receives the rate group tick
@@ -113,13 +122,19 @@ namespace scalesSvc {
       //! True only when it is currently safe to call a hub-routed output
       //! port (reqPwrMode_out/reqJetsonPwrState_out): the Jetson is
       //! confirmed ON by a real report, no ON command is still awaiting its
-      //! first boot confirmation, and no REQUEST_POWER_MODE-triggered
-      //! reboot is in flight. False for any other reason -- confirmed off,
-      //! never confirmed, booting, or mid a pending mode-change reboot --
-      //! since the hub TCP link's liveness cannot be trusted and
-      //! Svc::ComStub's never-connected FW_ASSERT would trip (JM-006's
-      //! crash class, which reqPwrMode_out() is equally exposed to as
-      //! reqJetsonPwrState_out() -- see JM-011).
+      //! first boot confirmation, no REQUEST_POWER_MODE-triggered reboot is
+      //! in flight, AND the real hub TCP link is currently connected
+      //! (m_hubLinkConnected). False for any other reason -- confirmed off,
+      //! never confirmed, booting, mid a pending mode-change reboot, or the
+      //! transport link itself known down -- since Svc::ComStub's
+      //! never-connected FW_ASSERT would trip otherwise (JM-006's crash
+      //! class, which reqPwrMode_out() is equally exposed to as
+      //! reqJetsonPwrState_out() -- see JM-011). The m_hubLinkConnected
+      //! clause exists because an nvpmodel-triggered reboot can leave the
+      //! Jetson's own process reporting a matching mode/state well BEFORE
+      //! the actual reboot severs the TCP link -- app-level self-reports
+      //! alone cannot prove the link is safe; only the transport layer's
+      //! own comStatus can (see JM-016).
       bool isJetsonHubLinkTrusted() const;
 
       private:
@@ -211,6 +226,15 @@ namespace scalesSvc {
       bool m_awaitingBootConfirmation; //!< True after a genuine off->on ON command until a real report arrives or the boot window times out
       U32 m_bootConfirmationTimeoutTicks; //!< Ticks elapsed since ON was commanded, bounds m_awaitingBootConfirmation
       bool m_deferredOffPending; //!< True while an OFF request is being held pending a boot confirmation (see beginJetsonOffSequence())
+
+      //! True only while imx_hubComStub's real transport-level comStatus is
+      //! last known SUCCESS (drvConnected fired since the last failed
+      //! send). Defaults false at construction -- conservative, mirrors
+      //! m_jetsonPowerStateKnown's "unknown until a real report arrives"
+      //! pattern -- and is the only thing isJetsonHubLinkTrusted() relies
+      //! on that cannot be spoofed by a premature application-level
+      //! self-report racing ahead of an actual reboot. See JM-016.
+      bool m_hubLinkConnected;
 
   };
 

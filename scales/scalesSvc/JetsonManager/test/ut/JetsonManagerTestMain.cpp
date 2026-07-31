@@ -155,6 +155,18 @@ TEST(JetsonManager, SchedInRepublishesHubTrustStatusEveryTick) {
     tester.schedInRepublishesHubTrustStatusEveryTick();
 }
 
+TEST(JetsonManager, HubLinkDownPreventsTrustEvenWhenModeReportRacesAheadOfReconnect) {
+    RecordProperty("requirement", "JM-016");
+    scalesSvc::JetsonManagerTester tester;
+    tester.hubLinkDownPreventsTrustEvenWhenModeReportRacesAheadOfReconnect();
+}
+
+TEST(JetsonManager, HubComStatusInLogsTransitionsOnlyOnce) {
+    RecordProperty("requirement", "JM-016");
+    scalesSvc::JetsonManagerTester tester;
+    tester.hubComStatusInLogsTransitionsOnlyOnce();
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
