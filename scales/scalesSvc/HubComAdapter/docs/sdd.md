@@ -11,49 +11,134 @@ verification status.
 
 ## Design Summary
 
-`Svc.GenericHub` exchanges plain `Fw::Buffer` values over the `Fw.BufferSend`
-port family (`toBufferDriver`/`toBufferDriverReturn` on the send side,
-`fromBufferDriver`/`fromBufferDriverReturn` on the receive side). The F
-Prime framer/deframer stack (`Svc.FprimeFramer`, `Svc.FprimeDeframer`)
-instead exchanges `Svc.ComDataWithContext`, i.e. a buffer paired with a
-`ComCfg::FrameContext` the framer/deframer needs. GenericHub has no concept
-of that context. `HubComAdapter` is the shim in between: on the send side it
-manufactures a default-constructed `ComCfg::FrameContext` when handing a hub
-buffer to the framer; on the receive side it discards the `FrameContext`
-when handing a deframed buffer back to the hub.
+### Why this component has to exist at all
 
-The component is `passive` and holds no state between calls: every handler
-is a direct, single-line pass-through (see `HubComAdapter.cpp`). It defines
-no commands, events, telemetry, or parameters, and (unlike most F Prime
-components) has no standard AC ports at all (no `time get`, `command
-recv`/`reg`/`resp`, `event`, `telemetry`, or `param` ports) -- there is
-nothing here that needs the framework's logging/command/parameter
-infrastructure, and no boilerplate is included for machinery this component
-never uses.
+Two pieces of F Prime framework code need to talk to each other on the
+imx<->Jetson hub link, and neither one was written with the other in mind.
 
-The `comIn` port (receive direction, hub-bound) is `guarded` rather than
-`sync`; the other three handlers are `sync`. This suggests `comIn` may be
-invoked from a different calling context/thread than the send-path ports,
-and the framework-provided mutex guard protects the (stateless) handler from
-concurrent reentry. No shared state actually needs protecting today since
-each handler only touches its own local `FrameContext` and immediately
-forwards -- but the guard is cheap and matches the safer default for a
-receive path whose caller isn't guaranteed to be the same thread as the
-send path's callers.
+`Svc.GenericHub` is a general-purpose multiplexer: its whole job is to take
+*every* logical port a deployment routes across a link -- commands,
+telemetry, events, arbitrary serialized ports -- and reduce them all down to
+one dead-simple interface: "here is a buffer of bytes to send" / "here is a
+buffer of bytes I received." It doesn't know or care what transport carries
+those bytes -- TCP here, could be UART, could be a radio link on a different
+project. Concretely, it speaks `Fw.BufferSend`: a port type that carries
+nothing but a `Fw::Buffer` (a pointer + a length).
 
-A fifth pair, `comStatusIn`/`comStatusOut[2]` (HSR-001), is unrelated to the
-buffer-bridging role above -- it exists purely because `Svc::ComStub`'s
-`comStatusOut` (real transport-level connection status) is a single-
-connection port, but two independent consumers need to see it: the
-hub-link `Svc::ComQueue` (needs it to actually gate sends -- see
-`ImxDeployment/Top/topology.fpp`'s `send_hub` connections) and
-`JetsonManager` (needs it directly for its own fast, informative rejection
--- JM-016 in `JetsonManager`'s SDD). `HubComAdapter` was already the
-minimal, stateless, topologically-adjacent pass-through component sitting
-in exactly this part of the pipeline, so this fan-out was added here
-rather than as a new single-purpose component. `comStatusIn_handler`
-forwards to every connected index of `comStatusOut` unconditionally
-(currently both are always connected).
+The standard F Prime send/receive pipeline (`Svc.FprimeFramer` ->
+`Svc.ComStub` -> the TCP driver, and `Svc.FprimeDeframer` coming back) is a
+*different* piece of reusable framework code, built to handle framing
+(marking where one message ends and the next begins on a raw byte stream),
+retries, and link status. It wasn't designed around GenericHub specifically
+-- it's the general-purpose uplink/downlink pipeline any F Prime deployment
+can plug a driver into. Its ports don't speak plain `Fw.BufferSend`; they
+speak `Svc.ComDataWithContext` -- a buffer *plus* a small `ComCfg::FrameContext`
+struct that lets pipeline stages attach metadata to a chunk of data as it
+moves through.
+
+F Prime enforces that a port's output type must exactly match whatever it's
+wired to -- there's no automatic conversion. `Fw.BufferSend` and
+`Svc.ComDataWithContext` are different types, full stop, so `GenericHub`
+cannot be wired directly to the framer/ComStub stack any more than you could
+plug a USB cable straight into an RCA jack: both carry "a signal," but the
+connector shapes don't match. `HubComAdapter` is that adapter cable -- one
+end shaped like what `GenericHub` expects, the other end shaped like what
+the framer/deframer stack expects, translating between the two, every time
+data crosses in either direction.
+
+Since `HubComAdapter` sits *between* the two and has no idea what should
+actually go inside a `ComCfg::FrameContext` (that's meaningful to the
+framer/deframer, not to the hub), the only correct thing it can do is hand
+across a blank, default-constructed one on the way toward the framer, and
+throw the context away on the way back toward the hub (`GenericHub` has no
+use for it either). It isn't guessing or approximating a value here -- there
+genuinely is no more-correct value it could supply, since it has no
+visibility into anything protocol-specific.
+
+### Why every port has a matching "return" port
+
+Flight software generally avoids allocating memory at runtime (`malloc`/
+`free`) -- unpredictable timing and the risk of fragmentation are both bad
+news for something that might run for years without a reboot. Instead,
+buffers come from a fixed-size pool set up once at startup (a
+`Svc::BufferManager` -- `imx_hubBufferManager`/`imx_hubIoBufferManager`
+elsewhere in this deployment). If you've worked with a fixed pool of DMA
+descriptors or ring-buffer slots in embedded/driver code, this is the exact
+same idea: when one component hands a buffer to another, it isn't giving
+that memory away -- it's lending it, the same way you'd check a numbered
+tool out of a shared toolbox. Every buffer that goes out has to come back
+in, or the pool eventually runs dry and nothing can be sent anymore.
+
+That's why almost every "forward this buffer" port in the F Prime comm stack
+has a matching "give it back" port running in the *opposite* direction --
+and it's why `HubComAdapter`, sitting in the middle of two directions of
+traffic, ends up with eight ports instead of two. It has to participate in
+both halves of the borrow/return cycle, for both directions it bridges:
+
+| Direction | Forward (lend the buffer) | Return (give it back) |
+|---|---|---|
+| Send (hub -> framer) | `bufferIn` (from `GenericHub`) -> `comOut` (to the framer) | `comReturnIn` (framer is done) -> `bufferInReturn` (back to `GenericHub`) |
+| Receive (deframer -> hub) | `comIn` (from the deframer) -> `bufferOut` (to `GenericHub`) | `bufferOutReturn` (`GenericHub` is done) -> `comInReturn` (back to the deframer) |
+
+Every one of those four ports exists because *something on one side of this
+adapter has a port with that exact name and type, and this adapter has to
+have a matching port to connect to it* -- none of them are optional or
+stylistic; each is satisfying a concrete connection requirement from either
+`GenericHub` or the framer/deframer stack.
+
+### Why `comIn` is `guarded` instead of `sync`
+
+The other three handlers are `sync`: they run immediately, inline, on
+whatever thread happens to call them -- fine as long as you're sure only one
+caller will ever invoke that specific port. `comIn` is fed from the
+deframer, which sits on the receive side of the stack and may end up driven
+from a different calling context than the send-side ports (e.g. whatever
+context the TCP driver's own receive processing runs in). A `guarded` port
+still runs immediately/inline like `sync` does, but the framework wraps the
+call in a mutex first, so two callers arriving around the same time get
+serialized instead of racing. Nothing in `HubComAdapter` actually has shared
+state that could be corrupted today -- every handler only ever touches a
+local variable -- so this guard isn't fixing an active bug, it's cheap
+insurance on the one port where "could this get called from two places at
+once" is a real, not just theoretical, question.
+
+### Why there's no command, event, telemetry, or parameter ports
+
+Most F Prime components carry a standard set of extra ports so they can
+receive commands, log events, publish telemetry, and read/write parameters
+-- even `HubComAdapter`'s close neighbors in this deployment (`JetsonManager`,
+`FPManager`) have all of these. `HubComAdapter` deliberately has none of
+them. That's not an oversight; it follows directly from the fact that this
+component has nothing to say. It never makes a decision, never detects an
+error worth reporting, never has a value worth downlinking, and never needs
+an operator-tunable setting -- every handler is an unconditional, one-line
+forward. Adding command/event/telemetry/parameter ports here would mean
+including framework machinery this component would never actually use, just
+because most components happen to need it. The requirement really is "bridge
+two port types, nothing else," so the port list reflects exactly that and
+nothing more.
+
+### The `comStatus` fan-out: a second, unrelated job riding along
+
+A fifth pair, `comStatusIn`/`comStatusOut[2]` (HSR-001), has nothing to do
+with the buffer-bridging role above -- it's a completely separate problem
+that happened to need a home. `Svc::ComStub`'s `comStatusOut` reports the
+hub link's real, transport-level connection status (`SUCCESS` when it's up,
+`FAILURE` the moment a send fails), and it's a single-connection port -- but
+two independent things need to see that same signal: the hub-link
+`Svc::ComQueue` (which needs it to actually decide whether to release a
+buffer -- see `ImxDeployment/Top/topology.fpp`'s `send_hub` connections) and
+`JetsonManager` (which needs it directly for its own fast, informative
+command rejection -- JM-016 in `JetsonManager`'s SDD). F Prime ports are
+strictly one-to-one, so *something* has to split that one signal into two.
+
+A dedicated new component for just this was considered and rejected: three
+lines of logic don't justify a new directory, build target, base ID, and
+SDD when `HubComAdapter` was already sitting in exactly this part of the
+pipeline, already minimal, already stateless. So the fan-out lives here
+instead -- `comStatusIn_handler` forwards whatever it receives to every
+currently-connected index of `comStatusOut` unconditionally (today, both
+index 0 and index 1 are always connected).
 
 ## Functional Diagrams
 

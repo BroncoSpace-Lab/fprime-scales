@@ -9,6 +9,32 @@ transitions, and verification status.
 
 ## Design Summary
 
+### Why FPManager exists
+
+Every other component in this deployment is a specialist: `ImxThermalManager`
+reads one sensor, `JetsonManager` turns the Jetson on and off, `PerifBoardManager`
+controls the peripheral board's power. None of them, individually, knows the
+whole picture -- and none of them *should* have to. If `ImxThermalManager` had
+to also know "and if I'm overheating, remember to cut Jetson power, warn the
+operator, and maybe shut the whole board down," that logic would end up
+duplicated (and inevitably drift out of sync) across every sensor-reading
+component in the system.
+
+FPManager exists to be the one place that *does* know the whole picture. It
+collects readings from every thermal source, decides what they mean together
+(is this a minor, single-sensor blip, or a confirmed, sustained fault that
+needs action?), and is the only component allowed to make the big,
+system-level calls: is the Jetson allowed to be powered on right now, does a
+reading justify cutting power to something, does the whole i.MX board need to
+shut itself down. Everything below in this document -- the state machine, the
+gates on Jetson power and remote commands, the debounce logic, the fatal-event
+handling -- exists to answer one of two questions as reliably as possible:
+**"is the system currently healthy enough to do the thing an operator or
+another component is asking for," and "if it isn't, what's the smallest
+correct protective action to take?"**
+
+### Aggregating thermal readings
+
 FPManager receives complete `ThermalReading` values from the thermal managers.
 It evaluates the `tempState` field, while retaining the complete reading so a
 fault report can identify the sensor (`sensorId`, `location`, and timestamp)
@@ -37,6 +63,8 @@ Jetson readings and writes `JETSON_VALID_READING_COUNT=0`. This prevents a
 pre-shutdown Jetson `FAULT` reading from being reused when the operator later
 re-enters HPC Mode; a new Jetson fault requires a new reading after power-on.
 
+### WARN: observability without action
+
 FPManager also tracks `ThermalStates.WARN` for each fault domain purely for
 operator awareness -- unlike `FAULT`, entering or exiting `WARN` triggers no
 protective action at all. i.MX and peripheral each have their own one-shot
@@ -57,6 +85,17 @@ observability layer: it never sets `FP_STATE`, never asserts a protection
 output, and is completely independent of the `FPStateMachine` and the
 SAFE/HPC/FAULT/EMERGENCY mode -- it keeps tracking regardless of what mode
 FPManager itself is in.
+
+### Gating Jetson power to HPC Mode
+
+Why should FPManager, and not `JetsonManager`, be the one to decide whether
+the Jetson is allowed to power on? Because "is it safe to run the Jetson
+right now" is exactly the kind of system-level question FPManager exists to
+answer -- `JetsonManager` only knows how to *drive the GPIO pin and talk to
+the Jetson*, it has no visibility into i.MX or peripheral thermal health. So
+every `REQUEST_JETSON_POWER_STATE` command `JetsonManager` receives is
+authorized through FPManager *first*, synchronously, before any hardware
+action happens (`jetsonPowerAuthorizeIn` -- see Port Descriptions).
 
 The Jetson is not permitted to be powered on by command in Safe Mode. A Jetson
 power-on request is accepted only in HPC Mode. `DISABLE_HPC_MODE` requests
@@ -99,6 +138,16 @@ genuine off->on ON request is authorized, cleared by any real report in
 here and carries no safety weight of its own; JetsonManager's own
 boot-confirmation tracking is what actually guarantees the OFF request is
 sequenced correctly. See FP-021.
+
+### Gating remote commands to the Jetson
+
+Beyond the two power-related commands above, the ground station can also send
+commands *straight through* to components running on the Jetson itself (e.g.
+a command targeting `JetsonThermalManager`'s own parameters), bypassing
+`JetsonManager` entirely. This path exists for good reasons -- not everything
+needs to go through a power-control component -- but it means FPManager has
+to gate it too, for the same reason it gates Jetson power: nothing else in
+that path knows whether the Jetson (or its hub link) is currently reachable.
 
 Remote Jetson deployment commands are also gated on the i.MX before they reach
 the hub transport. There are two independent remote command sources in the
@@ -150,6 +199,18 @@ hardened on the JetsonManager side (JM-016) to require the hub's real
 transport-level connectivity, not just an application-level self-report that
 can race ahead of an actual reboot -- FPManager needed no changes for that
 follow-up fix, since it already trusts whatever JetsonManager publishes.
+
+### Catching FATAL events from anywhere in the system
+
+Everything so far has been about FPManager reacting to things it directly
+measures (thermal readings) or is directly asked to authorize (power/command
+requests). But software can fail in ways no thermal sensor would ever catch --
+an internal consistency check (`FW_ASSERT`) failing somewhere entirely
+unrelated to temperature, for instance. F Prime calls this a FATAL event, and
+FPManager wants to be told about *every one*, from *any* component in the
+system, so it can at least log what failed and put the system into a known,
+recoverable state -- rather than the process just silently dying with no
+record of why.
 
 `$fatal` is an emergency override. CdhCore's `EventManager.FatalAnnounce` and
 `Svc.FatalHandler.FatalReceive` are both scalar (non-array) ports, and
@@ -293,6 +354,15 @@ component FATAL) never calls this: see "Fault Debounce" above and the
 Design Summary's `fatalIn_handler` discussion for why that path only
 restarts the flight-software process. Confirmed working on hardware.
 
+### Fault domain separation: why a Jetson fault doesn't shut down the whole board
+
+Not every fault deserves the same response, and treating them all the same
+would be both wrong and operationally painful -- powering off the entire
+spacecraft's flight computer over an overheating Jetson (which can simply be
+turned back off) would be a wildly disproportionate reaction. So FPManager
+keeps three fault domains genuinely separate, each with a blast radius that
+matches how serious that specific failure actually is:
+
 i.MX, peripheral, and Jetson thermal faults are handled as separate fault
 domains. An i.MX `ThermalStates.FAULT` is a system-level fatal condition:
 FPManager reports the offending `ThermalReading`, writes `FP_STATE=EMERGENCY`,
@@ -385,9 +455,6 @@ flowchart LR
     fault -->|healthy| safe
     fault -->|"$fatal"| shutdown
     fault -->|component_fatal| rebootAction
-
-    shutdown --> emergency
-    rebootAction --> reboot
 ```
 
 `emergencyShutdown` and `emergencyReboot` are both terminal: neither has an
@@ -437,8 +504,8 @@ flowchart TB
     GDS -->|"REQUEST_JETSON_POWER_STATE"| JM
     GDS -->|"remote Jetson command"| SPLIT
     GDS -->|"CS_RUN sequence"| SEQSPLIT
-    SPLIT -->|"RemoteCmd[0] -> remoteJetsonCmdIn[0]"| FPM
-    SEQSPLIT -->|"RemoteCmd[0] -> remoteJetsonCmdIn[1]"| FPM
+    SPLIT -->|"remoteJetsonCmdIn index 0"| FPM
+    SEQSPLIT -->|"remoteJetsonCmdIn index 1"| FPM
     FPM -->|"forward only if Jetson ON"| HUB
     FPM -->|"BUSY if Jetson OFF"| SPLIT
     FPM -->|"BUSY if Jetson OFF"| SEQSPLIT
@@ -631,7 +698,7 @@ sequenceDiagram
     actor GDS as GDS
 
     FPM->>FPM: hpcModeHealthCheck
-    FPM->>FPM: imxFaultConfirmed, peripheralFaultConfirmed, findConfirmedJetsonFault\n(evaluated together; all thresholds are debounce-gated)
+    FPM->>FPM: imxFaultConfirmed, peripheralFaultConfirmed, findConfirmedJetsonFault<br/>(evaluated together -- all thresholds are debounce-gated)
     alt i.MX FAULT confirmed (any combination with peripheral/Jetson)
         FPM->>GDS: FAULT_DETECTED with IMX ThermalReading
         FPM->>GDS: FP_STATE EMERGENCY, EMERGENCY_SHUTDOWN
@@ -642,7 +709,7 @@ sequenceDiagram
         FPM->>FH: fatalOut
     else peripheral FAULT confirmed (i.MX not confirmed)
         opt Jetson also confirmed faulted
-            FPM->>JM: jetsonPowerRequestOut OFF (direct call,\nbypasses jetson_fault signal/jetsonFaultRecovery state)
+            FPM->>JM: jetsonPowerRequestOut OFF (direct call,<br/>bypasses jetson_fault signal/jetsonFaultRecovery state)
         end
         FPM->>GDS: FAULT_DETECTED with peripheral ThermalReading
         FPM->>GDS: FP_STATE FAULT
@@ -682,10 +749,10 @@ sequenceDiagram
     Relay->>FPM: fatalOut to fatalIn
     FPM->>GDS: COMPONENT_FAILURE_DETECTED(raw event id)
     FPM->>FPM: component_fatal signal -> REBOOT one-shot action
-    FPM->>GDS: FP_STATE EMERGENCY_REBOOT\n(unless EMERGENCY already latched -- never downgraded)
+    FPM->>GDS: FP_STATE EMERGENCY_REBOOT<br/>(unless EMERGENCY already latched -- never downgraded)
     FPM->>FH: fatalOut
     FH->>FH: abort or exit FSW process
-    Note over FPM,FH: No platform poweroff, no Jetson/peripheral cuts. systemd\n(Restart=on-failure) respawns just the flight-software process,\nwhich reconstructs FPManager fresh in init.
+    Note over FPM,FH: No platform poweroff, no Jetson/peripheral cuts. systemd<br/>(Restart=on-failure) respawns just the flight-software process,<br/>which reconstructs FPManager fresh in init.
 ```
 
 ```mermaid
@@ -702,14 +769,14 @@ sequenceDiagram
     FPM->>GDS: FAULT_DETECTED with IMX ThermalReading
     FPM->>GDS: FP_STATE EMERGENCY
     FPM->>GDS: EMERGENCY_SHUTDOWN
-    FPM->>HW: trigger platform poweroff (direct call, unconditional,\nbefore the state machine or fatalOut below)
+    FPM->>HW: trigger platform poweroff (direct call, unconditional,<br/>before the state machine or fatalOut below)
     FPM->>FPM: $fatal signal -> SHUTDOWN one-shot action
     FPM->>JM: jetsonPowerRequestOut OFF
     FPM->>PBM: peripheralPowerOff
     FPM->>FH: fatalOut
-    FH->>FH: abort or exit FSW process; systemd respawns the service
+    FH->>FH: abort or exit FSW process -- systemd respawns the service
     HW->>HW: reboot(RB_POWER_OFF), or systemd-run poweroff -f fallback
-    Note over FPM,HW: The platform poweroff attempt runs first and does not depend on\nthe Jetson/peripheral outputs, the state machine, or fatalOut succeeding.\nsystemd restarting the FSW process is expected and harmless once the\nboard itself is powering off.
+    Note over FPM,HW: The platform poweroff attempt runs first and does not depend on<br/>the Jetson/peripheral outputs, the state machine, or fatalOut succeeding.<br/>systemd restarting the FSW process is expected and harmless once the<br/>board itself is powering off.
 ```
 
 ### Operating Rules
@@ -869,27 +936,116 @@ sent into a disconnected hub transport. The
 authoritative port wiring is in `ImxDeployment/Top/topology.fpp`.
 
 ## Port Descriptions
+
+Every port here maps to one of the two questions FPManager exists to answer
+(see "Why FPManager exists" above): the *reading inputs* feed the "is the
+system healthy" question, and the *authorization/gate* ports feed the "is
+this action currently allowed" question. The *output* ports are how FPManager
+actually acts once it has an answer.
+
 | Name | Description |
 |---|---|
-| Thermal reading inputs | Full `ThermalReading` values from i.MX, MCP/local peripheral, and Jetson sources. Jetson input is multi-reading and aggregated by sensor ID. |
-| Jetson power authorization | Synchronous gate called by JetsonManager before executing `REQUEST_JETSON_POWER_STATE`. |
-| Remote Jetson command gate | Synchronous `[2]`-sized `Fw.Com` gate between GenericHub and both remote command sources: index 0 is `imx_cmdSplitter.RemoteCmd[0]` (GDS-direct), index 1 is `imx_seqCmdSplitter.RemoteCmd[0]` (`CmdSequencer`-originated). Rejects with `BUSY` while Jetson power state is `OFF` or the hub link is not currently trusted (`jetsonHubTrustedIn`, FP-022); forwards and relays responses otherwise. One handler implementation gates both indices identically by threading `portNum` through to the matching output. |
-| `jetsonHubTrustedIn` | JetsonManager's `isJetsonHubLinkTrusted()` verdict, republished every `schedIn` tick, feeding the remote Jetson command gate above. Defaults `true` at construction (harmless -- the Jetson-OFF check already blocks everything until the first real report). |
-| Internal power output | Synchronous OFF request to JetsonManager for recovery, HPC disable, and emergency protection; this uses the direct FP protection path. |
-| Peripheral emergency output | Synchronous, latched OFF request that holds the peripheral board power down. |
-| Rate-group tick | Drives initialization and periodic health checks. |
+| Thermal reading inputs | Full `ThermalReading` values from i.MX, MCP/local peripheral, and Jetson sources -- the raw material for "is the system healthy." Full readings (not just a pass/fail bit) are kept so a fault report can identify exactly which sensor, where, and when. Jetson input is multi-reading and aggregated by sensor ID, since the Jetson die has nine sensors and a fault on any one of them matters. |
+| Jetson power authorization | Synchronous gate called by `JetsonManager` before executing `REQUEST_JETSON_POWER_STATE` -- this is the "is this action currently allowed" question, answered *before* any GPIO or hub activity happens, not after. Synchronous and called first is deliberate: `JetsonManager` has no way to know on its own whether powering the Jetson on is safe right now, so it must ask and get an answer before touching hardware. |
+| Remote Jetson command gate | Synchronous `[2]`-sized `Fw.Com` gate between GenericHub and both remote command sources: index 0 is `imx_cmdSplitter.RemoteCmd[0]` (GDS-direct), index 1 is `imx_seqCmdSplitter.RemoteCmd[0]` (`CmdSequencer`-originated). Same "is this allowed" question as the port above, but for the *other* way commands reach the Jetson -- straight through, without going via `JetsonManager` at all (see "Gating remote commands to the Jetson"). Rejects with `BUSY` while Jetson power state is `OFF` or the hub link is not currently trusted (`jetsonHubTrustedIn`, FP-022); forwards and relays responses otherwise. One handler implementation gates both indices identically by threading `portNum` through to the matching output, so there's no risk of the two sources drifting out of sync. |
+| `jetsonHubTrustedIn` | JetsonManager's `isJetsonHubLinkTrusted()` verdict, republished every `schedIn` tick, feeding the remote Jetson command gate above. Exists because `m_jetsonPowerState` alone isn't enough to know it's safe to send something to the Jetson -- the Jetson can be confirmed `ON` and mid-reboot (applying a new power mode) at the same time, and only `JetsonManager` has visibility into that. Defaults `true` at construction (harmless -- the Jetson-OFF check already blocks everything until the first real report). |
+| Internal power output | Synchronous OFF request to `JetsonManager`, used whenever FPManager itself decides the Jetson needs to come down -- recovery, HPC disable, or emergency protection. Synchronous so the request is never left sitting in a queue during a genuine protection action. |
+| Peripheral emergency output | Synchronous, latched OFF request that holds the peripheral board power down. Latched (not re-sendable) because there's never a reason to assert this twice in the same fault episode. |
+| Rate-group tick | Drives initialization and every periodic health check -- this is the heartbeat that makes FPManager's health evaluation ongoing rather than one-shot; without it, nothing would ever notice a fault that develops *after* the last reading arrived. |
 
 ## Component States
-| Name | Description |
+
+Each state below represents a genuinely different *operating posture* for the
+whole system, not just an internal implementation detail -- `FP_STATE` is
+telemetry an operator watches to know what the spacecraft is currently
+allowed to do. The question worth asking for each one isn't just "what does
+it check," but "why couldn't this just be folded into the state next to it."
+
+**`init`** -- exists only because the very first health evaluation has to
+happen *somewhere*, and F Prime state machines are tick-driven: there's no
+such thing as "evaluate health before the first scheduler tick has even
+run." `init` is that one-tick gap between the process starting and the first
+real health check completing. Its only job is to transition to `safeMode` on
+the first tick (`initializeSafeMode`) -- it does not evaluate anything itself.
+
+**`safeMode`** -- the default, contained posture. i.MX and peripheral health
+are actively checked every tick, but the Jetson is never allowed to power on
+by command here, and (a subtlety worth calling out explicitly) *entering*
+`safeMode` is not the same as `safeMode` being *health-confirmed*
+(`m_safeModeHealthy`) -- see `ENABLE_HPC_MODE`'s gate below and "Gating
+Jetson power to HPC Mode" above. `safeMode` is where the system starts, where
+it returns to after `DISABLE_HPC_MODE`, and where Jetson-only fault recovery
+ends up.
+
+**`hpcMode`** -- why is this a separate *state* rather than just an internal
+flag that says "Jetson is allowed to be on"? Because entering it genuinely
+changes what FPManager checks: Jetson thermal readings only become
+actionable once the Jetson can actually be powered -- `hpcModeHealthCheck`
+adds a third fault domain (Jetson) to the two `safeModeHealthCheck` already
+watches (i.MX, peripheral). It's a different *operating mode* with a
+different health-check routine, not a variation on `safeMode`.
+
+**`disablingHpc`** -- this is the one state whose existence is easy to miss
+the point of, so it's worth explaining carefully. When an operator sends
+`DISABLE_HPC_MODE`, FPManager needs to do two things that happen on very
+different timescales: immediately re-gate the system (publish
+`FP_STATE=SAFE` right away, so a new HPC-entry or Jetson-ON attempt is
+rejected instantly), and wait for the Jetson to actually, physically finish
+shutting down (which can take real time -- a graceful OS shutdown, or a
+bounded fallback GPIO cut if that doesn't answer). Collapsing those two
+into one instantaneous action -- declaring the Jetson "off" and clearing its
+cached thermal readings the moment the command is accepted -- was the actual
+bug this state was added to fix (see the 2026-07-29 Change Log entry): the
+real, still-booting-down Jetson kept sending hub traffic against a system
+that had already told itself the Jetson was gone, which overflowed a queue
+and crashed the flight software. `disablingHpc` is the honest middle state
+for "re-gated, but not yet confirmed" -- it keeps checking i.MX/peripheral
+health every tick (a fault here must still escalate immediately, it can't
+wait for the Jetson), and only advances to `safeMode` once `JetsonManager`
+reports a real, confirmed OFF.
+
+**`jetsonFaultRecovery`** -- exists to make Jetson-only fault handling a
+two-step confirm-then-act sequence instead of a single tick's decision. When
+`hpcModeHealthCheck` finds a confirmed Jetson fault (and nothing else wrong),
+it doesn't cut power immediately from inside that same tick -- it signals
+`jetson_fault` and lets this dedicated state's own action
+(`confirmJetsonFaultAndPowerOff`) re-verify the fault is still present before
+acting, then powers the Jetson off, reports the cause, and returns to
+`safeMode`.
+
+**`faultMode`** -- the non-fatal "something is wrong but the system stays
+alive" state, currently reached from a confirmed peripheral fault. Unlike
+`emergencyShutdown`, nothing here is a one-shot latch: `faultMode` actively
+rechecks i.MX, Jetson, *and* peripheral health on every tick, can still
+escalate to `emergencyShutdown` if a confirmed i.MX fault shows up while
+faulted, and recovers back to `safeMode` on its own once the peripheral
+reading is valid and non-`FAULT` *and* no Jetson fault is cached -- no
+operator action required.
+
+**`emergencyShutdown`** and **`emergencyReboot`** -- both terminal (no `tick`
+handler at all, so once entered, nothing further happens inside FPManager
+itself), but for two deliberately different severities. `emergencyShutdown`
+is reserved exclusively for a *confirmed i.MX thermal fault* -- the one
+condition serious enough to cut real platform power and require an operator
+to physically power the board back on. `emergencyReboot` is for a generic
+software FATAL (`FW_ASSERT`, etc.) anywhere in the system -- serious enough
+to want a clean restart and a logged record of what failed, but not serious
+enough to justify cutting power to anything. Keeping these as two separate
+terminal states (rather than one "something bad happened" state) is what
+lets FPManager guarantee `component_fatal` can never *downgrade* an
+already-latched real power emergency into a mere restart -- see "Catching
+FATAL events from anywhere in the system" above.
+
+| Name | One-line summary |
 |---|---|
-| `init` | Startup state. The first tick initializes Safe Mode. |
-| `safeMode` | Jetson power-on is gated; i.MX and peripheral health are checked. |
-| `hpcMode` | HPC enabled; i.MX, peripheral, and aggregate Jetson thermal health are checked. Jetson ON commands are authorized only here. |
-| `disablingHpc` | Entered from `hpcMode` on `DISABLE_HPC_MODE`. `FP_STATE` already reads `SAFE` (new HPC entry/Jetson ON are re-gated immediately), but Safe Mode is not yet health-confirmed: i.MX/peripheral health is still checked every tick, and the state waits for JetsonManager to report a real confirmed Jetson OFF (graceful ack or its own bounded GPIO-cut fallback) before entering `safeMode` for real. |
-| `jetsonFaultRecovery` | Confirms and reports a Jetson fault, powers off Jetson, then returns to Safe Mode. |
-| `faultMode` | Reports and latches non-system-fatal protection faults, currently including peripheral thermal FAULT; rechecks i.MX, Jetson, and peripheral health on each tick and recovers only after a valid non-FAULT peripheral reading and no cached Jetson FAULT. |
-| `emergencyShutdown` | Terminal state for a confirmed i.MX thermal `$fatal`; performs the one-shot platform/Jetson/peripheral shutdown before fatal handling is forwarded. Never downgraded by a later `component_fatal`. |
-| `emergencyReboot` | Terminal state for a generic `component_fatal`; latches `FP_STATE=EMERGENCY_REBOOT` (no hardware output, no power cut) before fatal handling is forwarded. The FSW process is expected to restart via systemd shortly after entry. |
+| `init` | Startup gap before the first health check can run. |
+| `safeMode` | Default posture; Jetson power-on gated; i.MX/peripheral checked. |
+| `hpcMode` | Jetson power-on authorized; i.MX/peripheral/Jetson all checked. |
+| `disablingHpc` | Re-gated immediately, waiting for a real confirmed Jetson OFF. |
+| `jetsonFaultRecovery` | Re-confirms a Jetson-only fault before cutting power. |
+| `faultMode` | Non-fatal latch (peripheral fault); auto-recovers when clear. |
+| `emergencyShutdown` | Terminal; real platform poweroff (confirmed i.MX fault only). |
+| `emergencyReboot` | Terminal; process restart only (generic component FATAL). |
 
 ## Parameters
 | Name | Description |
@@ -897,6 +1053,11 @@ authoritative port wiring is in `ImxDeployment/Top/topology.fpp`.
 | `FAULT_DEBOUNCE_COUNT` | Number of consecutive `ThermalStates.FAULT` readings a single thermal source must report before FPManager treats that source's fault as actionable (default 3, max 1000). Tracked independently per source: i.MX CPU die, MCP i.MX/OBC sensor, peripheral sensor, and each of the nine Jetson zones. Values above the maximum are rejected via `FAULT_DEBOUNCE_COUNT_REJECTED`; the previous value stays in effect. See "Fault Debounce" in the Design Summary. |
 
 ## Commands
+
+The first two commands are the operator-facing controls for the `safeMode`
+<-> `hpcMode` transition described in Component States above; the third is
+the direct Jetson power path.
+
 | Name | Description |
 |---|---|
 | HPC mode enable | Requests transition from Safe Mode to HPC Mode. The request is accepted only after Safe Mode health checks pass. |
@@ -904,6 +1065,13 @@ authoritative port wiring is in `ImxDeployment/Top/topology.fpp`.
 | Jetson power request | Requests Jetson power changes through JetsonManager. ON is gated to HPC Mode; OFF is accepted unless Emergency Shutdown is latched. |
 
 ## Events
+
+Every event below exists to answer a question an operator watching GDS would
+otherwise have to guess at: *what* failed, *why* was my command rejected,
+*did* the system actually do what I expect. None of these are debug noise --
+each one maps to a specific decision point described in the Design Summary
+above.
+
 | Name | Description |
 |---|---|
 | Fault detected | Reports the failing subsystem and, for thermal faults, the complete source reading. Only ever emitted for a *confirmed* (debounce-gated) FAULT. |
@@ -921,6 +1089,13 @@ authoritative port wiring is in `ImxDeployment/Top/topology.fpp`.
 | HPC mode disable: Jetson booting | Activity event emitted by `DISABLE_HPC_MODE` when the Jetson is still booting -- the command is not rejected; JetsonManager will send the OFF request automatically once boot is confirmed. |
 
 ## Telemetry
+
+`FP_STATE` is the single most important value in this whole component from
+an operator's point of view -- it's the direct answer to "what is the system
+currently allowed to do," republished continuously (not just on change) so a
+GDS session that connects late still sees the truth immediately rather than
+waiting for the next transition.
+
 | Name | Description |
 |---|---|
 | `FP_STATE` | Current FPManager state enum (`INIT`, `SAFE`, `HPC`, `FAULT`, `EMERGENCY`, or `EMERGENCY_REBOOT`). Written on state transitions and steady Safe/HPC health-check ticks. |

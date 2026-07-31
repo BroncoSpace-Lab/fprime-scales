@@ -157,7 +157,7 @@ flowchart TB
     UART -->|"uartCmdIn"| M
     M -->|"uartCmdResponseOut"| UART
 
-    M &lt;-->|"signals and actions"| SM
+    M <-->|"signals and actions"| SM
 
     M -->|"cmdOut (authorized commands only)"| SPLIT
     SPLIT -->|"forwardSeqCmdStatus[0]"| M
@@ -182,8 +182,8 @@ sequenceDiagram
 
     loop every tick, grace still active
         Poll->>M: run tick: isOpened() = false
-        SM->>M: monitor_tcp_down_grace (elapsed < 10s)
-        Note over M: Authority remains TCP; TCP commands still forwarded
+        SM->>M: monitor_tcp_down_grace (elapsed under 10s)
+        Note over M: Authority remains TCP -- TCP commands still forwarded
     end
 
     alt TCP recovers before grace expires
@@ -191,10 +191,10 @@ sequenceDiagram
         M->>SM: tcp_gds_up
         M->>Operator: TcpRecoveredDuringGrace event
         Note over M: Authority remains TCP
-    else grace expires (>= 10s) with TCP still down
+    else grace expires (10s or more) with TCP still down
         SM->>M: switch_to_uart
         M->>Operator: CommandAuthoritySwitchedToUart event
-        Note over M: Authority = UART; TCP commands now rejected BUSY
+        Note over M: Authority = UART -- TCP commands now rejected BUSY
     end
 
     Poll->>M: run tick: isOpened() = true (TCP recovered under UART authority)
@@ -204,18 +204,18 @@ sequenceDiagram
 
     loop every tick, stability timer active
         Poll->>M: run tick: isOpened() = true
-        SM->>M: monitor_tcp_stable_timer (elapsed <= 2s)
+        SM->>M: monitor_tcp_stable_timer (elapsed 2s or under)
     end
 
-    SM->>M: mark_tcp_ready (elapsed > 2s)
+    SM->>M: mark_tcp_ready (elapsed over 2s)
     M->>Operator: TcpGdsStable event, TcpReadyForAuthority=ON
-    Note over M: UART still has authority; only SWITCH_TO_TCP is accepted from TCP
+    Note over M: UART still has authority -- only SWITCH_TO_TCP is accepted from TCP
 
     Operator->>M: SWITCH_TO_TCP (via TCP or UART)
     M->>SM: tcp_auth_set
     SM->>M: switch_to_tcp
     M->>Operator: CommandAuthoritySwitchedToTcp event, CmdResponse OK
-    Note over M: Authority = TCP again; UART commands now rejected BUSY
+    Note over M: Authority = TCP again -- UART commands now rejected BUSY
 ```
 
 ### Command Gating and Response Routing
