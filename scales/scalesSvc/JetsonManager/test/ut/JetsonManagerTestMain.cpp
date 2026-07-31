@@ -131,6 +131,30 @@ TEST(JetsonManager, CurrentJetsonPwrStateIgnoredWithoutPendingCommand) {
     tester.currentJetsonPwrStateIgnoredWithoutPendingCommand();
 }
 
+TEST(JetsonManager, LocalModeChangeStartedArmsHubTrustGuardThenClearsOnNextReport) {
+    RecordProperty("requirement", "JM-014,JM-015");
+    scalesSvc::JetsonManagerTester tester;
+    tester.localModeChangeStartedArmsHubTrustGuardThenClearsOnNextReport();
+}
+
+TEST(JetsonManager, LocalModeChangeStartedDoesNotClobberPendingRequestPowerMode) {
+    RecordProperty("requirement", "JM-014");
+    scalesSvc::JetsonManagerTester tester;
+    tester.localModeChangeStartedDoesNotClobberPendingRequestPowerMode();
+}
+
+TEST(JetsonManager, LocalModeChangeStartedDefersJetsonOffLikeHubDrivenModeChangePending) {
+    RecordProperty("requirement", "JM-014");
+    scalesSvc::JetsonManagerTester tester;
+    tester.localModeChangeStartedDefersJetsonOffLikeHubDrivenModeChangePending();
+}
+
+TEST(JetsonManager, SchedInRepublishesHubTrustStatusEveryTick) {
+    RecordProperty("requirement", "JM-015");
+    scalesSvc::JetsonManagerTester tester;
+    tester.schedInRepublishesHubTrustStatusEveryTick();
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

@@ -635,6 +635,42 @@ void FPManagerTester::forwardsRemoteJetsonCommandWhenJetsonOn() {
   ASSERT_EVENTS_REMOTE_JETSON_COMMAND_REJECTED_SIZE(0);
 }
 
+void FPManagerTester::rejectsRemoteJetsonCommandWhenHubLinkNotTrusted() {
+  this->initializeSafeMode();
+  this->invoke_to_jetsonPowerStateIn(0, JetsonPowerStateID::ON);
+  this->invoke_to_jetsonHubTrustedIn(0, false);
+  this->drainStateMachine();
+
+  const FwOpcodeType opcode = 0x10001311;
+  Fw::ComBuffer cmd = this->commandBuffer(opcode);
+  this->invoke_to_remoteJetsonCmdIn(0, cmd, 80);
+
+  ASSERT_from_remoteJetsonCmdOut_SIZE(0);
+  ASSERT_from_remoteJetsonCmdResponseOut_SIZE(1);
+  ASSERT_from_remoteJetsonCmdResponseOut(0, opcode, 80, Fw::CmdResponse::BUSY);
+  ASSERT_EVENTS_REMOTE_JETSON_COMMAND_REJECTED_SIZE(1);
+  ASSERT_EVENTS_REMOTE_JETSON_COMMAND_REJECTED(
+      0, opcode, "Jetson hub link not currently trusted (reboot in flight)");
+}
+
+void FPManagerTester::remoteJetsonCommandGatingTracksHubTrustToggling() {
+  this->initializeSafeMode();
+  this->invoke_to_jetsonPowerStateIn(0, JetsonPowerStateID::ON);
+  this->drainStateMachine();
+
+  this->invoke_to_jetsonHubTrustedIn(0, false);
+  this->drainStateMachine();
+  const FwOpcodeType opcode = 0x10001311;
+  Fw::ComBuffer cmd = this->commandBuffer(opcode);
+  this->invoke_to_remoteJetsonCmdIn(0, cmd, 82);
+  ASSERT_from_remoteJetsonCmdOut_SIZE(0);
+
+  this->invoke_to_jetsonHubTrustedIn(0, true);
+  this->drainStateMachine();
+  this->invoke_to_remoteJetsonCmdIn(0, cmd, 83);
+  ASSERT_from_remoteJetsonCmdOut_SIZE(1);
+}
+
 void FPManagerTester::rejectsSequencerRemoteJetsonCommandWhenJetsonOff() {
   this->initializeSafeMode();
 

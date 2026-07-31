@@ -63,6 +63,7 @@ class FPManager final : public FPManagerComponentBase {
         FwIndexType portNum, const JetsonPowerStateID& stateReq) override;
     void jetsonPowerStateIn_handler(FwIndexType portNum,
                                     const JetsonPowerStateID& stateNow) override;
+    void jetsonHubTrustedIn_handler(FwIndexType portNum, bool trusted) override;
 
     void ENABLE_HPC_MODE_cmdHandler(FwOpcodeType opCode, U32 cmdSeq) override;
     void DISABLE_HPC_MODE_cmdHandler(FwOpcodeType opCode, U32 cmdSeq) override;
@@ -170,6 +171,15 @@ class FPManager final : public FPManagerComponentBase {
     //! for deferring/firing the Jetson OFF request; this flag being stale in
     //! some edge case has no effect on correctness.
     bool m_jetsonBootOutstanding;
+
+    //! Whether JetsonManager currently trusts the hub link enough to call a
+    //! hub-routed output port (isJetsonHubLinkTrusted()). Defaults true --
+    //! the existing m_jetsonPowerState != ON gate (defaulting OFF) already
+    //! blocks everything until the Jetson's first real report regardless,
+    //! so this default only matters for the post-boot reboot-window case,
+    //! where "nothing wrong yet" is the correct starting assumption. See
+    //! FP-022.
+    bool m_jetsonHubTrusted;
 };
 
 }  // namespace scalesSvc

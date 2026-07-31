@@ -24,6 +24,7 @@ namespace scalesSvc {
       m_pendingCmdSeq(0),
       m_requestedMode(PowerModeID::MAX),
       m_timeoutTicks(0),
+      m_modeChangeCmdRespond(false),
       m_hasPendingPowerCmd(false),
       m_pendingPowerOpCode(0),
       m_pendingPowerCmdSeq(0),
@@ -127,22 +128,66 @@ namespace scalesSvc {
     this->log_ACTIVITY_LO_POWER_MODE_RECEIVED(modeNow);
     this->tlmWrite_JetsonPowerMode(modeNow);
 
-    // If we are waiting for the Jetson to confirm a mode change, check whether
-    // the reported mode matches what we requested. If so, complete the deferred
-    // REQUEST_POWER_MODE command with OK. This fires once after the Jetson
-    // reboots and its schedIn reports the current mode back through the hub.
-    if (m_hasPendingCmd && modeNow.e == m_requestedMode.e) {
-      this->cmdResponse_out(m_pendingOpCode, m_pendingCmdSeq, Fw::CmdResponse::OK);
-      m_hasPendingCmd = false;
-      m_timeoutTicks = 0;
-      if (m_deferredOffPending) {
-        // The mode change just confirmed and m_hasPendingCmd is now clear,
-        // so the hub-trust condition may be satisfiable again -- re-evaluate
-        // and fire the deferred OFF now, mirroring
-        // currentJetsonPwrState_handler's boot-confirmation auto-fire.
-        this->beginJetsonOffSequence();
-      }
+    if (!m_hasPendingCmd) {
+      return;
     }
+
+    if (m_modeChangeCmdRespond) {
+      // A real REQUEST_POWER_MODE command is outstanding -- check whether
+      // the reported mode matches what we requested. If so, complete the
+      // deferred command with OK. This fires once after the Jetson reboots
+      // and its schedIn reports the current mode back through the hub.
+      if (modeNow.e != m_requestedMode.e) {
+        return; // Reported state doesn't match requested state, keep waiting (or eventually timeout)
+      }
+      this->cmdResponse_out(m_pendingOpCode, m_pendingCmdSeq, Fw::CmdResponse::OK);
+    }
+    // else: m_hasPendingCmd was armed externally (localModeChangeStarted_handler,
+    // a LOCAL SET_POWER_MODE run directly on the Jetson) -- there is no
+    // requested mode to match and no opcode/cmdSeq to respond to. ANY
+    // report proves the reboot that started it has completed and the hub
+    // link can be trusted again.
+
+    m_hasPendingCmd = false;
+    m_timeoutTicks = 0;
+    if (m_deferredOffPending) {
+      // The mode change just confirmed (or the externally-triggered guard
+      // just cleared) and m_hasPendingCmd is now clear, so the hub-trust
+      // condition may be satisfiable again -- re-evaluate and fire the
+      // deferred OFF now, mirroring currentJetsonPwrState_handler's
+      // boot-confirmation auto-fire.
+      this->beginJetsonOffSequence();
+    }
+  }
+
+  void JetsonManager ::
+    localModeChangeStarted_handler(
+        FwIndexType portNum,
+        const scalesSvc::PowerModeID& mode
+    )
+  {
+    // A mode-change guard is already in flight -- either a real hub-driven
+    // REQUEST_POWER_MODE (m_modeChangeCmdRespond == true; its
+    // m_pendingOpCode/m_pendingCmdSeq/m_timeoutTicks bookkeeping must not be
+    // clobbered, or that command's caller would never get a response) or an
+    // earlier local notification (duplicate/race). Either way the guard is
+    // already correctly armed; this call is a harmless no-op.
+    if (m_hasPendingCmd) {
+      return;
+    }
+
+    // JetsonPowerModeManager's SET_POWER_MODE_cmdHandler is about to run
+    // nvpmodel locally (bypassing JetsonManager/FPManager entirely -- see
+    // JPSM-013/JM-014). Arm the same hub-link-distrust guard
+    // REQUEST_POWER_MODE_cmdHandler arms for a hub-driven mode change, so
+    // isJetsonHubLinkTrusted() correctly reports false until the reboot
+    // completes, and reqPwrMode_out()/reqJetsonPwrState_out() aren't risked
+    // against the down hub link. No opcode/cmdSeq to respond to --
+    // externally triggered.
+    m_hasPendingCmd = true;
+    m_modeChangeCmdRespond = false;
+    m_timeoutTicks = 0;
+    this->log_ACTIVITY_HI_LOCAL_MODE_CHANGE_STARTED_RECEIVED(mode);
   }
 
   void JetsonManager ::
@@ -151,6 +196,14 @@ namespace scalesSvc {
         U32 context
     )
   {
+    // Report the current hub-link-trust status every tick (not just on
+    // change) so a GDS session that connects late still sees an accurate
+    // value -- mirrors FPManager's own FAULT_DEBOUNCE_COUNT republish
+    // pattern (FPManager.cpp run_handler). i.MX-internal only. See JM-015.
+    if (this->isConnected_fpJetsonHubTrustedOut_OutputPort(0)) {
+      this->fpJetsonHubTrustedOut_out(0, this->isJetsonHubLinkTrusted());
+    }
+
     // Bound how long a commanded ON can leave a deferred OFF waiting: if the
     // Jetson never reports in (hardware fault, GPIO miswire, etc.), give up
     // after CMD_TIMEOUT_TICKS rather than waiting forever.
@@ -180,7 +233,9 @@ namespace scalesSvc {
     if (m_hasPendingCmd) {
       m_timeoutTicks++;
       if (m_timeoutTicks >= CMD_TIMEOUT_TICKS) {
-        this->cmdResponse_out(m_pendingOpCode, m_pendingCmdSeq, Fw::CmdResponse::EXECUTION_ERROR);
+        if (m_modeChangeCmdRespond) {
+          this->cmdResponse_out(m_pendingOpCode, m_pendingCmdSeq, Fw::CmdResponse::EXECUTION_ERROR);
+        }
         m_hasPendingCmd = false;
         m_timeoutTicks = 0;
         if (m_deferredOffPending) {
@@ -301,6 +356,7 @@ namespace scalesSvc {
     m_pendingCmdSeq = cmdSeq;
     m_requestedMode = mode;
     m_hasPendingCmd = true;
+    m_modeChangeCmdRespond = true;
     m_timeoutTicks = 0;
 
     // Send the mode change request to the Jetson via the hub port.

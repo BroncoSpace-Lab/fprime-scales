@@ -349,6 +349,30 @@ void JetsonPowerModeManagerTester ::setPowerModeCmdTreatsSigtermAsSuccess() {
     ASSERT_EQ(this->cmdResponseHistory->at(0).response, Fw::CmdResponse::OK);
 }
 
+void JetsonPowerModeManagerTester ::setPowerModeCmdNotifiesLocalModeChangeStarted() {
+    g_mockPowerMode = static_cast<int>(scalesSvc::PowerModeID::MIN);
+    this->sendCmd_SET_POWER_MODE(0, 13, scalesSvc::PowerModeID::MAX);
+    this->component.doDispatch();
+    ASSERT_from_localModeChangeStarted_SIZE(1);
+    ASSERT_from_localModeChangeStarted(0, scalesSvc::PowerModeID::MAX);
+    ASSERT_CMD_RESPONSE_SIZE(1);
+    ASSERT_EQ(this->cmdResponseHistory->at(0).response, Fw::CmdResponse::OK);
+}
+
+void JetsonPowerModeManagerTester ::setPowerModeCmdSkipsLocalModeChangeStartedWhenAlreadyInMode() {
+    g_mockPowerMode = static_cast<int>(scalesSvc::PowerModeID::MAX);
+    this->sendCmd_SET_POWER_MODE(0, 14, scalesSvc::PowerModeID::MAX);
+    this->component.doDispatch();
+    ASSERT_from_localModeChangeStarted_SIZE(0);
+}
+
+void JetsonPowerModeManagerTester ::powerModeReceiveDoesNotNotifyLocalModeChangeStarted() {
+    g_mockPowerMode = static_cast<int>(scalesSvc::PowerModeID::MIN);
+    this->invoke_to_powerModeReceive(0, scalesSvc::PowerModeID::BALANCED);
+    this->component.doDispatch();
+    ASSERT_from_localModeChangeStarted_SIZE(0);
+}
+
 void JetsonPowerModeManagerTester ::setPowerModeCmdIgnoredWhileRebootPending() {
     g_mockPowerMode = static_cast<int>(scalesSvc::PowerModeID::MIN);
 

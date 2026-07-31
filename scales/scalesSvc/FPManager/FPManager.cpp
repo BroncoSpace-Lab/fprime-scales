@@ -47,7 +47,8 @@ FPManager::FPManager(const char* const compName)
       m_activeFaultDebounceCount(FAULT_DEBOUNCE_DEFAULT),
       m_justBooted(true),
       m_paramValid(Fw::ParamValid::VALID),
-      m_jetsonBootOutstanding(false) {}
+      m_jetsonBootOutstanding(false),
+      m_jetsonHubTrusted(true) {}
 
 FPManager::~FPManager() {}
 
@@ -170,6 +171,21 @@ void FPManager::remoteJetsonCmdIn_handler(FwIndexType portNum,
             portNum, opcode, context, Fw::CmdResponse::BUSY);
         return;
     }
+    if (!this->m_jetsonHubTrusted) {
+        // The Jetson is confirmed ON, but JetsonManager reports the hub
+        // link cannot currently be trusted -- a power-mode-change reboot
+        // (hub- or locally-triggered, see FP-022/JM-014) is in flight, and
+        // m_jetsonPowerState stays ON throughout that window since the
+        // Jetson never loses GPIO power. Forwarding this command now would
+        // reach imx_hubComStub while the hub link is actually down and trip
+        // its never-connected FW_ASSERT (the same crash class JM-006/JM-011
+        // exist to prevent for JetsonManager's own hub calls).
+        this->log_WARNING_HI_REMOTE_JETSON_COMMAND_REJECTED(
+            opcode, Fw::String("Jetson hub link not currently trusted (reboot in flight)"));
+        this->remoteJetsonCmdResponseOut_out(
+            portNum, opcode, context, Fw::CmdResponse::BUSY);
+        return;
+    }
 
     this->remoteJetsonCmdOut_out(portNum, data, context);
 }
@@ -192,6 +208,10 @@ void FPManager::jetsonPowerStateIn_handler(FwIndexType portNum,
     if (stateNow == JetsonPowerStateID::OFF) {
         this->invalidateJetsonReadings();
     }
+}
+
+void FPManager::jetsonHubTrustedIn_handler(FwIndexType portNum, bool trusted) {
+    this->m_jetsonHubTrusted = trusted;
 }
 
 Fw::Success FPManager::jetsonPowerAuthorizeIn_handler(

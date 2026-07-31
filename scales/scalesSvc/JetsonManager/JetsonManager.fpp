@@ -8,6 +8,12 @@ module scalesSvc {
         @ Port for receiving current power mode from JetsonPowerModeManager
         async input port currentPwrMode: PowerModeSend
 
+        @ Notification from JetsonPowerModeManager that a LOCAL (non-hub)
+        @ SET_POWER_MODE command is about to reboot the Jetson -- arms the
+        @ same hub-link-distrust guard as a hub-driven REQUEST_POWER_MODE.
+        @ See JM-014.
+        async input port localModeChangeStarted: PowerModeReceive
+
         @ Port for receiving current Jetson power state from JetsonPowerModeManager
         async input port currentJetsonPwrState: JetsonPowerStateSend
 
@@ -19,6 +25,13 @@ module scalesSvc {
 
         @ Current Jetson power state report to FPManager.
         output port fpJetsonPowerStateOut: JetsonPowerStateSend
+
+        @ Current hub-link-trust status report to FPManager, republished
+        @ every schedIn tick (see isJetsonHubLinkTrusted()) so a GDS session
+        @ that connects late still sees an accurate value -- mirrors
+        @ FPManager's own FAULT_DEBOUNCE_COUNT telemetry republish pattern
+        @ (FPManager.cpp run_handler). i.MX-internal only. See JM-015.
+        output port fpJetsonHubTrustedOut: JetsonHubTrustStatus
 
         @ Port that receives the rate group tick
         sync input port schedIn: Svc.Sched
@@ -119,6 +132,15 @@ module scalesSvc {
         @ GPIO cut)
         event JETSON_DEFERRED_OFF_RESUMED_AFTER_MODE_TIMEOUT severity warning high id 11 \
             format "JetsonManager timed out waiting for the Jetson's power-mode confirmation; resuming the deferred OFF request"
+
+        @ Event indicating JetsonManager received a local-mode-change-started
+        @ notification from JetsonPowerModeManager (a SET_POWER_MODE command
+        @ was issued directly against the Jetson, bypassing
+        @ JetsonManager/FPManager entirely) and armed the same hub-link-
+        @ distrust guard it uses for a hub-driven REQUEST_POWER_MODE
+        event LOCAL_MODE_CHANGE_STARTED_RECEIVED(
+            mode: PowerModeID @< The power mode nvpmodel is applying locally
+        ) severity activity high id 12 format "JetsonManager received local mode-change-started notification for mode {}; hub link not trusted until the reboot completes"
 
         ###############################################################################
         #                                 Telemetry                                   #

@@ -68,6 +68,13 @@ module scalesSvc {
         @ Current Jetson power state used by health checks.
         async input port jetsonPowerStateIn: JetsonPowerStateSend
 
+        @ Current Jetson hub-link-trust status from JetsonManager -- false
+        @ whenever reqPwrMode_out()/reqJetsonPwrState_out() would refuse to
+        @ call the hub (Jetson unconfirmed, still booting, or a mode-change
+        @ reboot -- hub- or locally-triggered -- is in flight). See
+        @ JetsonManager::isJetsonHubLinkTrusted() and FP-022.
+        async input port jetsonHubTrustedIn: JetsonHubTrustStatus
+
         ##############################################################################
         #### Operator commands #######################################################
         ##############################################################################

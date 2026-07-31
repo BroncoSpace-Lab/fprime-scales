@@ -58,6 +58,15 @@ namespace scalesSvc {
           const scalesSvc::PowerModeID& modeNow
       ) override;
 
+      //! Handler implementation for localModeChangeStarted
+      //!
+      //! Notification from JetsonPowerModeManager that a LOCAL (non-hub)
+      //! SET_POWER_MODE command is about to reboot the Jetson.
+      void localModeChangeStarted_handler(
+          FwIndexType portNum, //!< The port number
+          const scalesSvc::PowerModeID& mode
+      ) override;
+
       //! Handler implementation for schedIn
       //!
       //! Port that receives the rate group tick
@@ -132,6 +141,13 @@ namespace scalesSvc {
       U32 m_pendingCmdSeq;          //!< Sequence number of the in-flight command
       PowerModeID m_requestedMode;  //!< Mode we asked the Jetson to switch to
       U32 m_timeoutTicks;           //!< Ticks elapsed since the request was sent
+      //! True when m_hasPendingCmd was armed by a real REQUEST_POWER_MODE
+      //! command (m_pendingOpCode/m_pendingCmdSeq owe a response) as opposed
+      //! to localModeChangeStarted_handler (externally-triggered by a local
+      //! SET_POWER_MODE run directly on the Jetson -- no opcode/cmdSeq to
+      //! respond to). Mirrors m_pendingPowerCmdRespond's role in the
+      //! power-state (ON/OFF) block below.
+      bool m_modeChangeCmdRespond;
       Fw::ParamValid m_paramIsValid = Fw::ParamValid::VALID;
 
       //! How many schedIn ticks to wait before timing out (120 ticks ≈ 2 min at 1 Hz)
@@ -182,6 +198,14 @@ namespace scalesSvc {
       // OS/hub link is temporarily down while it reboots to apply the new
       // mode). beginJetsonOffSequence() defers on this too, reusing
       // m_deferredOffPending; see isJetsonHubLinkTrusted() and JM-011.
+      //
+      // m_hasPendingCmd can be armed two ways: a real REQUEST_POWER_MODE
+      // command (m_modeChangeCmdRespond=true, owes a cmdResponse_out), or a
+      // localModeChangeStarted notification from JetsonPowerModeManager
+      // reporting a LOCAL SET_POWER_MODE run directly on the Jetson
+      // (m_modeChangeCmdRespond=false -- externally triggered, nothing to
+      // respond to). Either way isJetsonHubLinkTrusted() correctly reports
+      // false until cleared. See JM-014.
       // ----------------------------------------------------------------------
 
       bool m_awaitingBootConfirmation; //!< True after a genuine off->on ON command until a real report arrives or the boot window times out

@@ -119,6 +119,24 @@ TEST(Nominal, SetPowerModeCmdIgnoredWhileRebootPending) {
     tester.setPowerModeCmdIgnoredWhileRebootPending();
 }
 
+TEST(Nominal, SetPowerModeCmdNotifiesLocalModeChangeStarted) {
+    RecordProperty("requirement", "JPSM-013");
+    scalesSvc::JetsonPowerModeManagerTester tester;
+    tester.setPowerModeCmdNotifiesLocalModeChangeStarted();
+}
+
+TEST(Nominal, SetPowerModeCmdSkipsLocalModeChangeStartedWhenAlreadyInMode) {
+    RecordProperty("requirement", "JPSM-013");
+    scalesSvc::JetsonPowerModeManagerTester tester;
+    tester.setPowerModeCmdSkipsLocalModeChangeStartedWhenAlreadyInMode();
+}
+
+TEST(Nominal, PowerModeReceiveDoesNotNotifyLocalModeChangeStarted) {
+    RecordProperty("requirement", "JPSM-013");
+    scalesSvc::JetsonPowerModeManagerTester tester;
+    tester.powerModeReceiveDoesNotNotifyLocalModeChangeStarted();
+}
+
 TEST(Nominal, GetPowerModeCmdReturnsCurrentMode) {
     RecordProperty("requirement", "JPSM-001");
     scalesSvc::JetsonPowerModeManagerTester tester;

@@ -290,6 +290,13 @@ SelfDisruptingCommandOutcome classifySelfDisruptingCommandStatus(int status) {
     if(mode.e != static_cast<PowerModeID::T>(modeNow))
     { //if the jetson's mode does not match the requested mode
       this->log_ACTIVITY_HI_JETSON_POWER_MODE_REBOOT_STARTED(mode);
+      // Unconditionally notify JetsonManager over the hub that a LOCAL
+      // (non-hub) mode-change reboot is starting -- unlike a hub-driven
+      // REQUEST_POWER_MODE, JetsonManager has no other way to learn about
+      // this and arm its hub-link-distrust guard before a subsequent
+      // remote command risks imx_hubComStub's never-connected FW_ASSERT
+      // mid-reboot (JPSM-013/JM-014).
+      this->localModeChangeStarted_out(0, mode);
       m_modeReported = false;
       m_rebootPending = true;
       int ret = this->m_shellRunner(("echo y | sudo -n /usr/sbin/nvpmodel -m " + std::to_string(static_cast<U8>(mode.e))).c_str());

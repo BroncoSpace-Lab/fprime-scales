@@ -602,6 +602,109 @@ void JetsonManagerTester ::currentJetsonPwrStateIgnoredWithoutPendingCommand() {
     ASSERT_CMD_RESPONSE_SIZE(0);
 }
 
+void JetsonManagerTester ::localModeChangeStartedArmsHubTrustGuardThenClearsOnNextReport() {
+    // A LOCAL SET_POWER_MODE run directly on the Jetson (bypassing
+    // JetsonManager/FPManager entirely) gives JetsonManager zero visibility
+    // by default -- localModeChangeStarted closes that gap by letting
+    // JetsonPowerModeManager notify it directly, over the hub, right before
+    // the reboot it's about to trigger.
+    this->invoke_to_currentJetsonPwrState(0, scalesSvc::JetsonPowerStateID::ON);
+    this->component.doDispatch();
+    this->clearHistory();
+
+    this->invoke_to_localModeChangeStarted(0, scalesSvc::PowerModeID::BALANCED);
+    this->component.doDispatch();
+    ASSERT_CMD_RESPONSE_SIZE(0);  // no opcode/cmdSeq to respond to
+    ASSERT_EVENTS_LOCAL_MODE_CHANGE_STARTED_RECEIVED_SIZE(1);
+
+    // A REQUEST_POWER_MODE now must be rejected BUSY (m_hasPendingCmd armed).
+    this->sendCmd_REQUEST_POWER_MODE(0, 1, scalesSvc::PowerModeID::MAX);
+    this->component.doDispatch();
+    ASSERT_CMD_RESPONSE_SIZE(1);
+    ASSERT_EQ(this->cmdResponseHistory->at(0).response, Fw::CmdResponse::BUSY);
+
+    this->invoke_to_schedIn(0, 0);
+    ASSERT_from_fpJetsonHubTrustedOut_SIZE(1);
+    ASSERT_from_fpJetsonHubTrustedOut(0, false);
+
+    // ANY currentPwrMode report clears the externally-triggered guard --
+    // there is no requested mode to match against.
+    this->invoke_to_currentPwrMode(0, scalesSvc::PowerModeID::MIN);
+    this->component.doDispatch();
+    ASSERT_CMD_RESPONSE_SIZE(1);  // unchanged -- no response owed
+
+    this->invoke_to_schedIn(0, 0);
+    ASSERT_from_fpJetsonHubTrustedOut_SIZE(2);
+    ASSERT_from_fpJetsonHubTrustedOut(1, true);
+}
+
+void JetsonManagerTester ::localModeChangeStartedDoesNotClobberPendingRequestPowerMode() {
+    // Regression test: a racing/duplicate local notification must never
+    // clobber a real, already-in-flight REQUEST_POWER_MODE's response
+    // bookkeeping -- otherwise its GDS/CmdSequencer caller would never get
+    // a response, and schedIn's timeout wouldn't fire one either (both are
+    // now gated on m_modeChangeCmdRespond).
+    this->invoke_to_currentJetsonPwrState(0, scalesSvc::JetsonPowerStateID::ON);
+    this->component.doDispatch();
+    this->clearHistory();
+
+    this->sendCmd_REQUEST_POWER_MODE(0, 1, scalesSvc::PowerModeID::BALANCED);
+    this->component.doDispatch();
+    ASSERT_from_reqPwrMode_SIZE(1);
+    ASSERT_CMD_RESPONSE_SIZE(0);
+
+    this->invoke_to_localModeChangeStarted(0, scalesSvc::PowerModeID::EXTRA);
+    this->component.doDispatch();
+    ASSERT_CMD_RESPONSE_SIZE(0);
+
+    this->invoke_to_currentPwrMode(0, scalesSvc::PowerModeID::MIN);  // mismatched
+    this->component.doDispatch();
+    ASSERT_CMD_RESPONSE_SIZE(0);  // still open -- proves exact-match logic survived
+
+    this->invoke_to_currentPwrMode(0, scalesSvc::PowerModeID::BALANCED);  // matching
+    this->component.doDispatch();
+    ASSERT_CMD_RESPONSE_SIZE(1);
+    ASSERT_EQ(this->cmdResponseHistory->at(0).response, Fw::CmdResponse::OK);
+}
+
+void JetsonManagerTester ::localModeChangeStartedDefersJetsonOffLikeHubDrivenModeChangePending() {
+    this->component.loadParameters();
+    m_authorizeResult = Fw::Success::SUCCESS;
+
+    this->invoke_to_currentJetsonPwrState(0, scalesSvc::JetsonPowerStateID::ON);
+    this->component.doDispatch();
+    this->clearHistory();
+
+    this->invoke_to_localModeChangeStarted(0, scalesSvc::PowerModeID::BALANCED);
+    this->component.doDispatch();
+
+    this->sendCmd_REQUEST_JETSON_POWER_STATE(0, 1, scalesSvc::JetsonPowerStateID::OFF);
+    this->component.doDispatch();
+    ASSERT_from_reqJetsonPwrState_SIZE(0);
+    ASSERT_from_gpioSet_SIZE(0);
+    ASSERT_EVENTS_JETSON_OFF_DEFERRED_MODE_CHANGE_PENDING_SIZE(1);
+    ASSERT_CMD_RESPONSE_SIZE(0);
+
+    this->invoke_to_currentPwrMode(0, scalesSvc::PowerModeID::BALANCED);
+    this->component.doDispatch();
+    ASSERT_from_reqJetsonPwrState_SIZE(1);
+    ASSERT_from_reqJetsonPwrState(0, scalesSvc::JetsonPowerStateID::OFF);
+}
+
+void JetsonManagerTester ::schedInRepublishesHubTrustStatusEveryTick() {
+    this->invoke_to_currentJetsonPwrState(0, scalesSvc::JetsonPowerStateID::ON);
+    this->component.doDispatch();
+    this->clearHistory();
+
+    this->invoke_to_schedIn(0, 0);
+    this->invoke_to_schedIn(0, 0);
+    this->invoke_to_schedIn(0, 0);
+    ASSERT_from_fpJetsonHubTrustedOut_SIZE(3);
+    ASSERT_from_fpJetsonHubTrustedOut(0, true);
+    ASSERT_from_fpJetsonHubTrustedOut(1, true);
+    ASSERT_from_fpJetsonHubTrustedOut(2, true);
+}
+
 // connectPorts()/initComponents() are auto-generated into
 // JetsonManagerTesterHelpers.cpp by UT_AUTO_HELPERS (see CMakeLists.txt) --
 // defining them again here would conflict at link time.

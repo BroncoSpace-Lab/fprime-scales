@@ -51,6 +51,8 @@ class FPManagerTester final : public FPManagerGTestBase {
     void faultDebounceCountParameterGatesAndPublishes();
     void rejectsRemoteJetsonCommandWhenJetsonOff();
     void forwardsRemoteJetsonCommandWhenJetsonOn();
+    void rejectsRemoteJetsonCommandWhenHubLinkNotTrusted();
+    void remoteJetsonCommandGatingTracksHubTrustToggling();
     void rejectsSequencerRemoteJetsonCommandWhenJetsonOff();
     void forwardsSequencerRemoteJetsonCommandWhenJetsonOn();
     void imxWarnStateEntersAndExitsWithoutShutdown();

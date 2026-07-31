@@ -13,7 +13,12 @@ namespace scalesSvc {
 
 class JetsonManagerTester final : public JetsonManagerGTestBase {
   public:
-    static const FwSizeType MAX_HISTORY_SIZE = 20;
+    // 150, not 20: several existing tests (e.g. requestPowerModeTimeout) loop
+    // invoke_to_schedIn up to 120 times without an intervening clearHistory(),
+    // and fpJetsonHubTrustedOut now fires unconditionally on every schedIn
+    // tick (JM-015) -- a too-small history buffer here isn't a graceful test
+    // failure, it's a hard FW_ASSERT abort that takes down the whole UT binary.
+    static const FwSizeType MAX_HISTORY_SIZE = 150;
     static const FwEnumStoreType TEST_INSTANCE_ID = 0;
     static const FwSizeType TEST_INSTANCE_QUEUE_DEPTH = 20;
 
@@ -41,6 +46,10 @@ class JetsonManagerTester final : public JetsonManagerGTestBase {
     void fpJetsonPowerRequestInIgnoresOnAndActsOnOff();
     void fpJetsonPowerRequestInDefersOffWhileBootingThenAutoFires();
     void currentJetsonPwrStateIgnoredWithoutPendingCommand();
+    void localModeChangeStartedArmsHubTrustGuardThenClearsOnNextReport();
+    void localModeChangeStartedDoesNotClobberPendingRequestPowerMode();
+    void localModeChangeStartedDefersJetsonOffLikeHubDrivenModeChangePending();
+    void schedInRepublishesHubTrustStatusEveryTick();
 
     // Overrides for the synchronous fpJetsonPowerAuthorize output port so
     // tests can control FPManager's authorization result without a real

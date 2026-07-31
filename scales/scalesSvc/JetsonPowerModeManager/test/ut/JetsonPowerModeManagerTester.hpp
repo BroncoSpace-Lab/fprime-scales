@@ -45,6 +45,9 @@ class JetsonPowerModeManagerTester final : public JetsonPowerModeManagerGTestBas
     void setJetsonPowerStateCmdOffShutsDownGracefully();
     void setJetsonPowerStateCmdOffReportsExecutionErrorOnFailure();
     void setJetsonPowerStateCmdOffTreatsSigtermAsSuccess();
+    void setPowerModeCmdNotifiesLocalModeChangeStarted();
+    void setPowerModeCmdSkipsLocalModeChangeStartedWhenAlreadyInMode();
+    void powerModeReceiveDoesNotNotifyLocalModeChangeStarted();
 
   private:
     void connectPorts();

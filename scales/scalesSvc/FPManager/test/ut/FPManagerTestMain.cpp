@@ -216,6 +216,18 @@ TEST(FPManager, ForwardsRemoteJetsonCommandWhenJetsonOn) {
   tester.forwardsRemoteJetsonCommandWhenJetsonOn();
 }
 
+TEST(FPManager, RejectsRemoteJetsonCommandWhenHubLinkNotTrusted) {
+  RecordProperty("requirement", "FP-022");
+  scalesSvc::FPManagerTester tester;
+  tester.rejectsRemoteJetsonCommandWhenHubLinkNotTrusted();
+}
+
+TEST(FPManager, RemoteJetsonCommandGatingTracksHubTrustToggling) {
+  RecordProperty("requirement", "FP-022");
+  scalesSvc::FPManagerTester tester;
+  tester.remoteJetsonCommandGatingTracksHubTrustToggling();
+}
+
 TEST(FPManager, RejectsSequencerRemoteJetsonCommandWhenJetsonOff) {
   RecordProperty("requirement", "FP-013,FP-015");
   scalesSvc::FPManagerTester tester;
