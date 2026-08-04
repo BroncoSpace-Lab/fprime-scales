@@ -12,6 +12,9 @@ module scalesSvc {
         @ Input port for sending data each tick
         async input port run: Svc.Sched
 
+        @ Output port for sending power readings to DataProducer
+        output port inaPowerReadOut: InaPowerReadings
+
         # ----------------------------------------------------------------------
         # Telemetry
         # ----------------------------------------------------------------------
@@ -32,6 +35,12 @@ module scalesSvc {
         @ Event for failed INA260 read
         event I2cReadFailed(register_address: U8, status: I32) severity warning high \
             format "INA260 I2C read failed for register 0x{} with status {}"
+
+        event FAIL_TO_READ_PWR_AT(
+            location: string @< The location of the sensor that failed to read
+        ) \
+            severity warning high \
+            format "Failed to read temperature from sensor at location: {}"
 
         event SensorReadComplete(current_mA: F32, voltage_mV: F32, power_mW: F32) severity activity high \
             format "INA260 read complete: current {} mA, voltage {} mV, power {} mW"

@@ -8,8 +8,6 @@
 #define scalesSvc_JetsonThermalManager_HPP
 
 #include "scales/scalesSvc/JetsonThermalManager/JetsonThermalManagerComponentAc.hpp"
-#include <fstream>
-#include <iostream>
 
 
 namespace scalesSvc {
@@ -17,6 +15,7 @@ namespace scalesSvc {
   class JetsonThermalManager :
     public JetsonThermalManagerComponentBase
   {
+    friend class JetsonThermalManagerTester;
 
     public:
 
@@ -31,6 +30,10 @@ namespace scalesSvc {
 
       //! Destroy JetsonThermalManager object
       ~JetsonThermalManager();
+
+      void setTempPathTemplate(const char* pathTemplate) {
+        this->m_tempPathTemplate = pathTemplate;
+      }
 
     private:
 
@@ -80,7 +83,7 @@ namespace scalesSvc {
       // Implementations for parameters update
       // ----------------------------------------------------------------------
       void parameterUpdated(FwPrmIdType id) override;  //! Handler implementation for parameter updates, used to update threshold values when parameters are updated
-      
+
       // ----------------------------------------------------------------------
       // Helper functions
       // ----------------------------------------------------------------------
@@ -88,7 +91,17 @@ namespace scalesSvc {
       bool readTemp(U8 index, F32& temp); // Helper function to read temp from a given device address
 
       scalesSvc::ThermalStates determineTempState(F32 tempCelsius); //!< Function to determine the temperature state (IDLE, WARNING, FAULT) based on the temperature in Celsius
-    
+
+      //! Returns true if the six bounds are in a sane ascending order:
+      //! faultLow <= warnLow <= idleLow <= idleHigh <= warnHigh <= faultHigh
+      bool thresholdsAreOrdered(const scalesSvc::TempBounds& bounds) const;
+
+      //! Gate for a bounds update: adopts `candidate` as the active bounds
+      //! (shared across all nine zones, and republishes telemetry) only if
+      //! it passes thresholdsAreOrdered(); otherwise emits
+      //! THRESHOLDS_MISCONFIGURED and leaves the previous bounds in effect.
+      void applyBounds(const scalesSvc::TempBounds& candidate);
+
     private:
 
       // Private instance variables/specific members
@@ -97,14 +110,15 @@ namespace scalesSvc {
       bool m_successfulRead; // Whether the most recent read was successful, used to determine whether to transition to EVALUATE or FAIL state
       Fw::ParamValid m_paramIsValid = Fw::ParamValid::VALID;
       U32  m_startTime = 0;
+      const char* m_tempPathTemplate = "/sys/class/thermal/thermal_zone%u/temp";
 
-      /* Telemetry values for temperature thresholds */
-      F32 IDLE_LOW_THR;
-      F32 IDLE_HIGH_THR;
-      F32 WARN_LOW_THR;
-      F32 WARN_HIGH_THR;
-      F32 FAULT_LOW_THR;
-      F32 FAULT_HIGH_THR;
+      //! Bounds currently in effect, shared across all nine zones. Only ever
+      //! updated with bounds that pass thresholdsAreOrdered() -- a rejected
+      //! PRM_SET leaves this untouched. Initialized to the compiled-in safe
+      //! default so a rejected boot-time read (e.g. a bad value saved to
+      //! non-volatile storage previously) still leaves the component with a
+      //! sane configuration.
+      scalesSvc::TempBounds m_activeBounds{-40.0F, -20.0F, 10.0F, 60.0F, 80.0F, 100.0F};
   };
 
 }

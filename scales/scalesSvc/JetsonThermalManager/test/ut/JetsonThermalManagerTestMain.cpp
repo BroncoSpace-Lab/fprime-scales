@@ -7,8 +7,21 @@
 #include "JetsonThermalManagerTester.hpp"
 
 TEST(Nominal, JetsonThermalManagerUnitTester) {
+  RecordProperty("requirement", "JTM-001,JTM-002,JTM-004");
   scalesSvc::JetsonThermalManagerTester tester;
   tester.JetsonThermalManagerUnitTester();
+}
+
+TEST(Nominal, boundsUpdateGating) {
+  RecordProperty("requirement", "JTM-003");
+  scalesSvc::JetsonThermalManagerTester tester;
+  tester.boundsUpdateGating();
+}
+
+TEST(Nominal, parameterUpdatedCoverage) {
+  RecordProperty("requirement", "JTM-003");
+  scalesSvc::JetsonThermalManagerTester tester;
+  tester.parameterUpdatedCoverage();
 }
 
 int main(int argc, char** argv) {

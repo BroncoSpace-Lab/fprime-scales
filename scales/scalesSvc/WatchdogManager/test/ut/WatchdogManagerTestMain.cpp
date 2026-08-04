@@ -7,6 +7,7 @@
 #include "WatchdogManagerTester.hpp"
 
 TEST(Nominal, WatchdogTester) {
+  RecordProperty("requirement", "WTD-001,WTD-002");
   scalesSvc::WatchdogManagerTester tester;
   tester.WatchdogTester();
 }

@@ -5,19 +5,38 @@
 // ======================================================================
 
 #include "scales/scalesSvc/JetsonThermalManager/JetsonThermalManager.hpp"
+#include <Fw/Types/StringUtils.hpp>
+#include <Os/File.hpp>
+#include <cstdio>
 #include <unordered_map> // Required header for hashmap
 #include <string>
 
+namespace {
+  constexpr FwSizeType TEMP_FILE_BUFFER_SIZE = 32;
+}
+
+enum tempLocation{
+  CPU = 0,
+  GPU = 1,
+  CV0 = 2, 
+  CV1 = 3,
+  CV2 = 4,
+  SOC0 = 5,
+  SOC1 = 6,
+  SOC2 = 7,
+  TJ = 8
+};
+
 std::unordered_map<U8, std::string> indexToZone = {
-    {0, "CPU"},
-    {1, "GPU"},
-    {2, "CV0"},
-    {3, "CV1"},
-    {4, "CV2"},
-    {5, "SOC0"},
-    {6, "SOC1"},
-    {7, "SOC2"},
-    {8, "TJ"}
+    {CPU, "CPU"},
+    {GPU, "GPU"},
+    {CV0, "CV0"},
+    {CV1, "CV1"},
+    {CV2, "CV2"},
+    {SOC0, "SOC0"},
+    {SOC1, "SOC1"},
+    {SOC2, "SOC2"},
+    {TJ, "TJ"}
 };
 
 namespace scalesSvc {
@@ -26,7 +45,7 @@ namespace scalesSvc {
   // Component construction and destruction
   // ----------------------------------------------------------------------
 
-  JetsonThermalManager :: JetsonThermalManager(const char* const compName) : 
+  JetsonThermalManager :: JetsonThermalManager(const char* const compName) :
     JetsonThermalManagerComponentBase(compName),
     m_justBooted(true),
     m_successfulRead(true)
@@ -60,24 +79,22 @@ namespace scalesSvc {
       printf("Device just booted. Setting up parameters...\n");
       m_justBooted = false;
       m_startTime = this->getTime().getSeconds();
-      // Default threshold values, can be updated by sending commands
-      this->IDLE_LOW_THR = this->paramGet_JETSON_IDLE_LOW(m_paramIsValid); 
-      this->IDLE_HIGH_THR = this->paramGet_JETSON_IDLE_HIGH(m_paramIsValid);
-      this->WARN_LOW_THR = this->paramGet_JETSON_WARN_LOW(m_paramIsValid);
-      this->WARN_HIGH_THR = this->paramGet_JETSON_WARN_HIGH(m_paramIsValid);
-      this->FAULT_LOW_THR = this->paramGet_JETSON_FAULT_LOW(m_paramIsValid);
-      this->FAULT_HIGH_THR = this->paramGet_JETSON_FAULT_HIGH(m_paramIsValid);
+      // Gate the saved/default bounds through the same validity check as a
+      // live PRM_SET, and publish the resulting active bounds.
+      this->applyBounds(this->paramGet_JETSON_BOUNDS(m_paramIsValid));
     } else {
         for (int i = 0; i < 9; i++){
           F32 temp;
           if (this->readTemp(i, temp)) {
             this->m_jetsonThermalReadings[i].set_temperature(temp);
+            this->m_jetsonThermalReadings[i].set_tempState(this->determineTempState(temp));
           }
           else {
-            this->m_jetsonThermalReadings[i].set_temperature(0.0f);
+            this->m_jetsonThermalReadings[i].set_temperature(0.0F);
+            this->m_jetsonThermalReadings[i].set_tempState(scalesSvc::ThermalStates::NOT_USED);
             // this->m_successfulRead = false;
           }
-          this->m_jetsonThermalReadings[i].set_sensorId(i); 
+          this->m_jetsonThermalReadings[i].set_sensorId(i);
           this->m_jetsonThermalReadings[i].set_timestamp(this->getTime().getSeconds()-m_startTime);
           this->m_jetsonThermalReadings[i].set_location(Fw::String(indexToZone[i].c_str()));
 
@@ -94,42 +111,64 @@ namespace scalesSvc {
 
   void JetsonThermalManager :: scalesSvc_ThermalStateMachine_action_doEvaluate(SmId smId, scalesSvc_ThermalStateMachine::Signal signal)
   {
-    printf("Evaluating temperature readings against thresholds and updating telemetry...\n");
+    // printf("Evaluating temperature readings against thresholds and updating telemetry...\n");
     for (int i = 0; i < 9; i++){
-        scalesSvc::ThermalStates tempState = this->determineTempState(this->m_jetsonThermalReadings[i].get_temperature());
-        this->m_jetsonThermalReadings[i].set_tempState(tempState); // Set the temp state
-        
+        if (this->m_jetsonThermalReadings[i].get_tempState() != scalesSvc::ThermalStates::NOT_USED) {
+          scalesSvc::ThermalStates tempState = this->determineTempState(this->m_jetsonThermalReadings[i].get_temperature());
+          this->m_jetsonThermalReadings[i].set_tempState(tempState); // Set the temp state
+        }
+
         switch(i){
-          case 0:
-            this->tlmWrite_jetson_cpu_temp_read(this->m_jetsonThermalReadings[i]);
+          case CPU:
+            this->tlmWrite_jetson_cpu_temp_read(this->m_jetsonThermalReadings[CPU]);
             break;
-          case 1:
-            this->tlmWrite_jetson_gpu_temp_read(this->m_jetsonThermalReadings[i]);
+          case GPU:
+            this->tlmWrite_jetson_gpu_temp_read(this->m_jetsonThermalReadings[GPU]);
             break;
-          case 2:
-            this->tlmWrite_jetson_cv0_temp_read(this->m_jetsonThermalReadings[i]);
+          case CV0:
+            this->tlmWrite_jetson_cv0_temp_read(this->m_jetsonThermalReadings[CV0]);
             break;
-          case 3:
-            this->tlmWrite_jetson_cv1_temp_read(this->m_jetsonThermalReadings[i]);
+          case CV1:
+            this->tlmWrite_jetson_cv1_temp_read(this->m_jetsonThermalReadings[CV1]);
             break;
-          case 4:
-            this->tlmWrite_jetson_cv2_temp_read(this->m_jetsonThermalReadings[i]);
+          case CV2:
+            this->tlmWrite_jetson_cv2_temp_read(this->m_jetsonThermalReadings[CV2]);
             break;
-          case 5:
-            this->tlmWrite_jetson_soc0_temp_read(this->m_jetsonThermalReadings[i]);
+          case SOC0:
+            this->tlmWrite_jetson_soc0_temp_read(this->m_jetsonThermalReadings[SOC0]);
             break;
-          case 6:
-            this->tlmWrite_jetson_soc1_temp_read(this->m_jetsonThermalReadings[i]);
+          case SOC1:
+            this->tlmWrite_jetson_soc1_temp_read(this->m_jetsonThermalReadings[SOC1]);
             break;
-          case 7:
-            this->tlmWrite_jetson_soc2_temp_read(this->m_jetsonThermalReadings[i]);
+          case SOC2:
+            this->tlmWrite_jetson_soc2_temp_read(this->m_jetsonThermalReadings[SOC2]);
             break;
-          case 8:
-            this->tlmWrite_jetson_tj_temp_read(this->m_jetsonThermalReadings[i]);
+          case TJ:
+            this->tlmWrite_jetson_tj_temp_read(this->m_jetsonThermalReadings[TJ]);
             break;
         }
+        this->jetsonThermalReadingOut_out(0, this->m_jetsonThermalReadings[i]);
     }
 
+    // Republish the active bounds every cycle (not just on boot/change) so a
+    // GDS session that connects late still sees them on the next tick
+    // instead of waiting for another PRM_SET. One write per cycle, since the
+    // bounds are shared across all nine zones.
+    this->tlmWrite_JETSON_BOUNDS(this->m_activeBounds);
+
+    // Send readings to DataProducer
+    this->jetsonThermalReadOut_out(0,
+                                   m_jetsonThermalReadings[CPU],
+                                   m_jetsonThermalReadings[GPU],
+                                   m_jetsonThermalReadings[CV0],
+                                   m_jetsonThermalReadings[CV1],
+                                   m_jetsonThermalReadings[CV1],
+                                   m_jetsonThermalReadings[SOC0],
+                                   m_jetsonThermalReadings[SOC1],
+                                   m_jetsonThermalReadings[SOC2],
+                                   m_jetsonThermalReadings[TJ]
+                                  );
+                                  
     this->jetson_thermalStateMachine_sendSignal_success(); // Transition back to initial state to read temp again on next tick
   }
 
@@ -142,64 +181,100 @@ namespace scalesSvc {
   }
 
   void JetsonThermalManager :: parameterUpdated(FwPrmIdType id) {
-    // Update threshold values based on parameter updates
-    printf("Parameter with ID 0x%X has been updated. Updating threshold values...\n", id);
-
     switch (id) {
-      case PARAMID_JETSON_IDLE_LOW:
-        this->IDLE_LOW_THR = this->paramGet_JETSON_IDLE_LOW(m_paramIsValid);
-        break;
-      case PARAMID_JETSON_IDLE_HIGH:
-        this->IDLE_HIGH_THR = this->paramGet_JETSON_IDLE_HIGH(m_paramIsValid);
-        break;
-      case PARAMID_JETSON_WARN_LOW:
-        this->WARN_LOW_THR = this->paramGet_JETSON_WARN_LOW(m_paramIsValid);
-        break;
-      case PARAMID_JETSON_WARN_HIGH:
-        this->WARN_HIGH_THR = this->paramGet_JETSON_WARN_HIGH(m_paramIsValid);
-        break;
-      case PARAMID_JETSON_FAULT_LOW:
-        this->FAULT_LOW_THR = this->paramGet_JETSON_FAULT_LOW(m_paramIsValid);
-        break;
-      case PARAMID_JETSON_FAULT_HIGH:
-        this->FAULT_HIGH_THR = this->paramGet_JETSON_FAULT_HIGH(m_paramIsValid);
+      case PARAMID_JETSON_BOUNDS:
+        this->applyBounds(this->paramGet_JETSON_BOUNDS(m_paramIsValid));
         break;
       default:
-        // Handle unexpected parameter ID
-        printf("Warning: Received update for unrecognized parameter ID 0x%X. No threshold values were updated.\n", id);
         break;
     }
   }
 
   bool JetsonThermalManager :: readTemp(U8 index, F32& temp) {
-    float tempMilliC = 0.0f;
-    char path[128];
-    std::snprintf(path, sizeof(path), "/sys/class/thermal/thermal_zone%u/temp", index);
-    std::ifstream tempFile(path);
+    CHAR path[128];
+    std::snprintf(path, sizeof(path), this->m_tempPathTemplate, static_cast<unsigned int>(index));
 
-    if (!tempFile.is_open()) {
+    Os::File tempFile;
+    Os::File::Status fileStatus = tempFile.open(path, Os::File::Mode::OPEN_READ);
+    if (fileStatus != Os::File::Status::OP_OK) {
       printf("Could not open thermal file: %s at zone: %s\n", path, indexToZone[index].c_str());
-      temp = 0.0f; // Set temp to 0 if we fail to read so that the system defaults to IDLE state for that sensor
+      temp = 0.0F; // The caller marks failed reads as NOT_USED so this fallback is not treated as a real temperature
       return false;
     }
 
-    if (!(tempFile >> tempMilliC)) {
-      printf("Could not read thermal file: %s at zone: %s\n", path,indexToZone[index].c_str());
-      temp = 0.0f; // Set temp to 0 if we fail to read so that the system defaults to IDLE state for that sensor
+    CHAR tempBuffer[TEMP_FILE_BUFFER_SIZE] = {};
+    FwSizeType readSize = sizeof(tempBuffer) - 1;
+    fileStatus = tempFile.read(reinterpret_cast<U8*>(tempBuffer), readSize, Os::File::WaitType::NO_WAIT);
+    tempFile.close();
+    if ((fileStatus != Os::File::Status::OP_OK) || (readSize == 0)) {
+      printf("Could not read thermal file: %s at zone: %s\n", path, indexToZone[index].c_str());
+      temp = 0.0F; // The caller marks failed reads as NOT_USED so this fallback is not treated as a real temperature
+      return false;
+    }
+    tempBuffer[readSize] = '\0';
+
+    I32 tempMilliC = 0;
+    CHAR* parseEnd = nullptr;
+    Fw::StringUtils::StringToNumberStatus parseStatus =
+        Fw::StringUtils::string_to_number(tempBuffer, sizeof(tempBuffer), tempMilliC, &parseEnd, 10);
+    if ((parseStatus != Fw::StringUtils::StringToNumberStatus::SUCCESSFUL_CONVERSION) || (parseEnd == nullptr)) {
+      printf("Could not parse thermal file: %s at zone: %s\n", path, indexToZone[index].c_str());
+      temp = 0.0F; // The caller marks failed reads as NOT_USED so this fallback is not treated as a real temperature
+      return false;
+    }
+    while ((*parseEnd == ' ') || (*parseEnd == '\t') || (*parseEnd == '\r') || (*parseEnd == '\n')) {
+      parseEnd++;
+    }
+    if (*parseEnd != '\0') {
+      printf("Could not parse thermal file: %s at zone: %s\n", path, indexToZone[index].c_str());
+      temp = 0.0F; // The caller marks failed reads as NOT_USED so this fallback is not treated as a real temperature
       return false;
     }
 
-    temp = tempMilliC / 1000.0f;
+    temp = static_cast<F32>(tempMilliC) / 1000.0F;
     return true;
   }
 
   scalesSvc::ThermalStates JetsonThermalManager :: determineTempState(F32 tempCelsius) {
-    if (this->IDLE_LOW_THR <= tempCelsius && tempCelsius <= this->IDLE_HIGH_THR){
-      return scalesSvc::ThermalStates::IDLE;
-    } else if ((this->WARN_LOW_THR <= tempCelsius && tempCelsius < this->IDLE_LOW_THR) || (this->IDLE_HIGH_THR < tempCelsius && tempCelsius <= this->WARN_HIGH_THR)){
-      return scalesSvc::ThermalStates::WARN;
-    } else {
+    const F32 faultLow = this->m_activeBounds.get_faultLow();
+    const F32 warnLow = this->m_activeBounds.get_warnLow();
+    const F32 idleLow = this->m_activeBounds.get_idleLow();
+    const F32 idleHigh = this->m_activeBounds.get_idleHigh();
+    const F32 warnHigh = this->m_activeBounds.get_warnHigh();
+    const F32 faultHigh = this->m_activeBounds.get_faultHigh();
+
+    if (tempCelsius < faultLow || faultHigh <= tempCelsius ||
+        (faultLow <= tempCelsius && tempCelsius < warnLow) ||
+        (warnHigh < tempCelsius && tempCelsius < faultHigh)) {
       return scalesSvc::ThermalStates::FAULT;
+    } else if ((warnLow <= tempCelsius && tempCelsius < idleLow) ||
+               (idleHigh < tempCelsius && tempCelsius <= warnHigh)) {
+      return scalesSvc::ThermalStates::WARN;
+    } else if (idleLow <= tempCelsius && tempCelsius <= idleHigh){
+      return scalesSvc::ThermalStates::IDLE;
+    } else {
+      // Treat gaps caused by invalid or overlapping parameters as unsafe.
+      return scalesSvc::ThermalStates::FAULT;
+    }
+  }
+
+  bool JetsonThermalManager :: thresholdsAreOrdered(const scalesSvc::TempBounds& bounds) const {
+    return bounds.get_faultLow() <= bounds.get_warnLow() &&
+           bounds.get_warnLow() <= bounds.get_idleLow() &&
+           bounds.get_idleLow() <= bounds.get_idleHigh() &&
+           bounds.get_idleHigh() <= bounds.get_warnHigh() &&
+           bounds.get_warnHigh() <= bounds.get_faultHigh();
+  }
+
+  void JetsonThermalManager :: applyBounds(const scalesSvc::TempBounds& candidate) {
+    if (this->thresholdsAreOrdered(candidate)) {
+      this->m_activeBounds = candidate;
+      this->tlmWrite_JETSON_BOUNDS(this->m_activeBounds);
+    } else {
+      this->log_WARNING_HI_THRESHOLDS_MISCONFIGURED(
+          Fw::String("JETSON"), candidate.get_faultLow(), candidate.get_warnLow(),
+          candidate.get_idleLow(), candidate.get_idleHigh(),
+          candidate.get_warnHigh(), candidate.get_faultHigh());
     }
   }
 }

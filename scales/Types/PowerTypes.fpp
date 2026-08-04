@@ -5,6 +5,7 @@ module scalesSvc{
     current: F32 @< Current reading in amps
     power: F32 @< Power consumption in watts
     sourceId: U8 @< ID of the power source/sensor
+    location: string size 32 @< Description of sensor location
     timestamp: U32 @< Timestamp of reading
   }
 

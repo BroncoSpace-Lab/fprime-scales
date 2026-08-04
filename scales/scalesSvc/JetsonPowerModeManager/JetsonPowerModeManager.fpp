@@ -20,6 +20,17 @@ module scalesSvc {
     @ Port for sending Jetson power state acknowledgments to IMX PowerManager
     output port jetsonPowerStateSend: JetsonPowerStateSend
 
+    @ Notifies JetsonManager, over the hub, that a LOCAL (non-hub)
+    @ SET_POWER_MODE command is about to reboot the Jetson to apply a new
+    @ mode -- lets JetsonManager arm the same hub-link-distrust guard it
+    @ already arms for a hub-driven REQUEST_POWER_MODE
+    @ (isJetsonHubLinkTrusted()). Deliberately reuses PowerModeReceive
+    @ rather than a new type; only SET_POWER_MODE_cmdHandler calls this --
+    @ powerModeReceive_handler (the hub-driven path) does not need to, since
+    @ JetsonManager's own REQUEST_POWER_MODE_cmdHandler already self-arms
+    @ m_hasPendingCmd before reqPwrMode_out() is even sent. See JPSM-013.
+    output port localModeChangeStarted: PowerModeReceive
+
     @ Port that receives the rate group tick
     sync input port schedIn: Svc.Sched
     
@@ -112,7 +123,21 @@ module scalesSvc {
       requested: JetsonPowerStateID @< The requested Jetson power state (on/off)
       reason: string size 64 @< Reason for failure
     ) severity warning high id 5 format "Jetson power state change request {} failed: {}"
-    
+
+    @ Event indicating the Jetson is about to reboot to apply a new power
+    @ mode, logged before the nvpmodel shell command runs so it reaches GDS
+    @ even if this process is torn down moments later by the reboot itself
+    event JETSON_POWER_MODE_REBOOT_STARTED(
+      requested: PowerModeID @< The power mode nvpmodel is about to apply
+    ) severity activity high id 6 format "Jetson rebooting to apply power mode {} (nvpmodel -m)"
+
+    @ Event indicating a power-mode change request (hub-driven or local) was
+    @ ignored because a previous mode-change-triggered reboot is already in
+    @ flight on this same process instance
+    event POWER_MODE_REQUEST_IGNORED_REBOOT_PENDING(
+      requested: PowerModeID @< The mode that was requested while a reboot was already pending
+    ) severity warning high id 7 format "Ignored power mode request {}: a mode-change reboot is already in flight"
+
     ###############################################################################
     #                                 Telemetry                                   #
     ###############################################################################

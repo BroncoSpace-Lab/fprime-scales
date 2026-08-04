@@ -6,16 +6,28 @@
 
 #include "scales/scalesSvc/McpManager/McpManager.hpp"
 #include <unordered_map> // Required header for hashmap
-#include <string>
 
-F32 convertRawTemp(U8 *rawData); // Forward decleration 
+F32 convertRawTemp(U8 *rawData); // Forward decleration
 
-std::unordered_map<U8, std::string> indexToLocation = {
-    {0, "OBC"},
-    {1, "PERIPHERAL"},
-    {2, "JETSON"}
+enum tempLocation{
+  OBC = 0,
+  PERIF = 1,
+  JETSON = 2
 };
 
+std::unordered_map<U8, std::string> indexToLocation = {
+    {OBC, "OBC"},
+    {PERIF, "PERIPHERAL"},
+    {JETSON, "JETSON"}
+};
+
+namespace {
+  //! Compiled-in safe fallback, matching the FPP parameter defaults. Used as
+  //! the initial active bounds for every sensor so that even a rejected
+  //! boot-time PRM_SET (e.g. a bad value saved to non-volatile storage in a
+  //! previous session) still leaves the sensor with a sane configuration.
+  const scalesSvc::TempBounds SAFE_DEFAULT_BOUNDS(-40.0F, -20.0F, 10.0F, 60.0F, 80.0F, 100.0F);
+}
 
 namespace scalesSvc {
 
@@ -24,13 +36,15 @@ namespace scalesSvc {
   // ----------------------------------------------------------------------
 
   McpManager :: McpManager(const char* const compName) :
-    McpManagerComponentBase(compName), 
+    McpManagerComponentBase(compName),
     m_successfulRead(true), // Initialize successful read flag to true as default
-    m_justBooted(true)
+    m_successfulReads{true, true, true}, // Initialize successful reads array to true for all sensors
+    m_justBooted(true),
+    m_activeBounds{SAFE_DEFAULT_BOUNDS, SAFE_DEFAULT_BOUNDS, SAFE_DEFAULT_BOUNDS}
   {
-    deviceAddrs[0] = IMX_TEMP_ADDR;
-    deviceAddrs[1] = PERIPHERAL_TEMP_ADDR;
-    deviceAddrs[2] = JETSON_TEMP_ADDR;
+    deviceAddrs[OBC] = IMX_TEMP_ADDR;
+    deviceAddrs[PERIF] = PERIPHERAL_TEMP_ADDR;
+    deviceAddrs[JETSON] = JETSON_TEMP_ADDR;
   }
 
   McpManager :: ~McpManager() {
@@ -42,15 +56,8 @@ namespace scalesSvc {
   // ----------------------------------------------------------------------
 
   void McpManager :: run_handler(FwIndexType portNum, U32 context)
-  { 
-    // Log temperature threshold values to telemetry on each run, in case they were updated by a command
-    // this->tlmWrite_MCP_IDLE_LOW(this->IDLE_LOW_THR);
-    // this->tlmWrite_MCP_IDLE_HIGH(this->IDLE_HIGH_THR);
-    // this->tlmWrite_MCP_WARN_LOW(this->WARN_LOW_THR);
-    // this->tlmWrite_MCP_WARN_HIGH(this->WARN_HIGH_THR);
-    // this->tlmWrite_MCP_FAULT_LOW(this->FAULT_LOW_THR);
-    // this->tlmWrite_MCP_FAULT_HIGH(this->FAULT_HIGH_THR);
-    this->mcp_thermalStateMachine_sendSignal_tick(); // Trigger state machine tick 
+  {
+    this->mcp_thermalStateMachine_sendSignal_tick(); // Trigger state machine tick
   }
 
   // ----------------------------------------------------------------------
@@ -65,44 +72,31 @@ namespace scalesSvc {
       m_justBooted = false;
       m_startTime = this->getTime().getSeconds(); // Record the start time at boot to track uptime in telemetry
       printf("Device just booted. Setting up parameters...\n");
-      // Default threshold values, can be updated by sending commands
-      this->IDLE_LOW_THR = this->paramGet_MCP_IDLE_LOW(m_paramIsValid); 
-      this->IDLE_HIGH_THR = this->paramGet_MCP_IDLE_HIGH(m_paramIsValid);
-      this->WARN_LOW_THR = this->paramGet_MCP_WARN_LOW(m_paramIsValid);
-      this->WARN_HIGH_THR = this->paramGet_MCP_WARN_HIGH(m_paramIsValid);
-      this->FAULT_LOW_THR = this->paramGet_MCP_FAULT_LOW(m_paramIsValid);
-      this->FAULT_HIGH_THR = this->paramGet_MCP_FAULT_HIGH(m_paramIsValid);
+      // Gate each sensor's saved/default bounds through the same validity
+      // check as a live PRM_SET, and publish the resulting active bounds.
+      this->applyBounds("IMX", OBC, this->paramGet_MCP_IMX_BOUNDS(m_paramIsValid));
+      this->applyBounds("PERIPHERAL", PERIF, this->paramGet_MCP_PERIPHERAL_BOUNDS(m_paramIsValid));
+      this->applyBounds("JETSON", JETSON, this->paramGet_MCP_JETSON_BOUNDS(m_paramIsValid));
     } else {
-        // printf("Reading temperature data from sensors...\n");
         // Read temp data from sensors and log to telemetry
-        for (int i = 0; i < 3; i++){
-          // this->m_thermalReadings[i].settemperature(this->readTemp(deviceAddrs[i])); 
+        for (int i = 0; i < NUM_SENSORS; i++){
 
           F32 tempCelsius;
-          if (this->readTemp(deviceAddrs[i], tempCelsius)){
+          if (this->readTemp(deviceAddrs[i], indexToLocation[i], tempCelsius)){
             this->m_thermalReadings[i].set_temperature(tempCelsius);
           } else {
-            this->m_thermalReadings[i].set_temperature(0.0f); // Set temp to 0 if the read failed, which will be evaluated as IDLE in determineTempState, and log the failure in the next state
-            m_successfulRead = false; // Set successful read flag to false if any read failed, which will be used to determine state machine transition in the next states
+            this->m_thermalReadings[i].set_temperature(0.0f); // Set temp to 0.0f if the read failed
+            this->m_thermalReadings[i].set_tempState(scalesSvc::ThermalStates::FAULT); // Set temp state to FAULT if the read failed
+            m_successfulReads[i] = false; // Set successful read flag to false if the read failed
           }
 
           this->m_thermalReadings[i].set_sensorId(i + 1);
           this->m_thermalReadings[i].set_timestamp(this->getTime().getSeconds()- m_startTime); // Log uptime in seconds as the timestamp for telemetry
           this->m_thermalReadings[i].set_location(Fw::String(indexToLocation[i].c_str()));
         }
+        m_successfulRead = m_successfulReads[OBC] && m_successfulReads[PERIF] && m_successfulReads[JETSON]; // Update the overall successful read flag based on individual sensor reads
 
-        // // Logs to each sensor's respective telemetry channel
-        // this->tlmWrite_IMX_TEMP(m_thermalReadings[0]);
-        // this->tlmWrite_PERIPHERAL_TEMP(m_thermalReadings[1]);
-        // this->tlmWrite_JETSON_TEMP(m_thermalReadings[2]);
-        
-        if (m_successfulRead) {
-          // Transition to next state to evaluate the readings
-          this->mcp_thermalStateMachine_sendSignal_success();
-        } else {
-          // If any read failed, transition to read failure state to log the failure event
-          this->mcp_thermalStateMachine_sendSignal_fail();
-        }
+        this->mcp_thermalStateMachine_sendSignal_success(); // Transition to next state to evaluate the readings
     }
   }
 
@@ -110,31 +104,53 @@ namespace scalesSvc {
   void McpManager :: scalesSvc_ThermalStateMachine_action_doEvaluate(SmId smId, scalesSvc_ThermalStateMachine::Signal signal)
   {
     // printf("Evaluating thermal readings against thresholds...\n");
-    for (int i = 0; i < 3; i++){
-      scalesSvc::ThermalStates tempState = this->determineTempState(this->m_thermalReadings[i].get_temperature());
-      this->m_thermalReadings[i].set_tempState(tempState); // Set the temp state in the reading struct to log to telemetry
+    for (int i = 0; i < NUM_SENSORS; i++){
+
+      if(m_successfulReads[i]){ // Only evaluate if this sensor readding was successful, otherwise the temp state is already set to FAULT
+        scalesSvc::ThermalStates tempState = this->determineTempState(this->m_thermalReadings[i].get_temperature(), i);
+        this->m_thermalReadings[i].set_tempState(tempState); // Set the temp state in the reading struct to log to telemetry
+      }
+
       switch(i){
-        case 0:
-          this->tlmWrite_IMX_TEMP(m_thermalReadings[0]);
+        case OBC:
+          this->tlmWrite_IMX_TEMP(m_thermalReadings[OBC]);
           break;
-        case 1:
-          this->tlmWrite_PERIPHERAL_TEMP(m_thermalReadings[1]);
+        case PERIF:
+          this->tlmWrite_PERIPHERAL_TEMP(m_thermalReadings[PERIF]);
           break;
-        case 2:
-          this->tlmWrite_JETSON_TEMP(m_thermalReadings[2]);
+        case JETSON:
+          this->tlmWrite_JETSON_TEMP(m_thermalReadings[JETSON]);
           break;
-        default:
+          default:
           printf("Warning: Unrecognized sensor index %d. No telemetry was logged for this sensor.\n", i);
           break;
-        }
       }
-    this->mcp_thermalStateMachine_sendSignal_success(); // Transition back to initial state to read temp again on next tick
+      // Republish this sensor's active bounds every cycle (not just on
+      // boot/change) so a GDS session that connects late still sees them
+      // on the next tick instead of waiting for another PRM_SET.
+      this->writeBoundsTelemetry(i);
+      this->thermalReadingOut_out(0, this->m_thermalReadings[i]);
+    }
+
+    // Send thermal readings to DataProducer
+    this->mcpThermalReadOut_out(0, m_thermalReadings[OBC], m_thermalReadings[PERIF], m_thermalReadings[JETSON]);
+
+    if(m_successfulRead){
+      this->mcp_thermalStateMachine_sendSignal_success(); // Transition back to initial state to read temp again on next tick
+    } else{
+      this->mcp_thermalStateMachine_sendSignal_fail(); // Transition to read failure state to log the failure event
+    }
+
   }
 
   void McpManager :: scalesSvc_ThermalStateMachine_action_doReadFail(SmId smId, scalesSvc_ThermalStateMachine::Signal signal)
   {
     printf("Failed to read from sensor. Logging failure event...\n");
+    this->log_WARNING_HI_FAIL_TO_READ_TEMP(); // Log event for read failure
     m_successfulRead = true; // Reset successful read flag to true to try reading again on next tick
+    for (int i = 0; i < NUM_SENSORS; i++){
+      m_successfulReads[i] = true; // Reset successful reads array to true for all sensors to try reading again on next tick
+    }
     this->mcp_thermalStateMachine_sendSignal_success(); // Transition back to initial state to try reading again on next tick
   }
 
@@ -144,30 +160,37 @@ namespace scalesSvc {
   // ----------------------------------------------------------------------
 
   void McpManager :: parameterUpdated(FwPrmIdType id){
-    // Update threshold values based on parameter updates
-    printf("Parameter with ID 0x%X has been updated. Updating threshold values...\n", id);
+    printf("Parameter with ID 0x%X has been updated. Re-validating bounds...\n", id);
+
     switch(id){
-      case PARAMID_MCP_IDLE_LOW:
-        this->IDLE_LOW_THR = this->paramGet_MCP_IDLE_LOW(m_paramIsValid);
+      case PARAMID_MCP_IMX_BOUNDS:
+        this->applyBounds("IMX", OBC, this->paramGet_MCP_IMX_BOUNDS(m_paramIsValid));
         break;
-      case PARAMID_MCP_IDLE_HIGH:
-        this->IDLE_HIGH_THR = this->paramGet_MCP_IDLE_HIGH(m_paramIsValid);
+      case PARAMID_MCP_PERIPHERAL_BOUNDS:
+        this->applyBounds("PERIPHERAL", PERIF, this->paramGet_MCP_PERIPHERAL_BOUNDS(m_paramIsValid));
         break;
-      case PARAMID_MCP_WARN_LOW:
-        this->WARN_LOW_THR = this->paramGet_MCP_WARN_LOW(m_paramIsValid);
-        break;
-      case PARAMID_MCP_WARN_HIGH:
-        this->WARN_HIGH_THR = this->paramGet_MCP_WARN_HIGH(m_paramIsValid);
-        break;
-      case PARAMID_MCP_FAULT_LOW:
-        this->FAULT_LOW_THR = this->paramGet_MCP_FAULT_LOW(m_paramIsValid);
-        break;
-      case PARAMID_MCP_FAULT_HIGH:
-        this->FAULT_HIGH_THR = this->paramGet_MCP_FAULT_HIGH(m_paramIsValid);
+      case PARAMID_MCP_JETSON_BOUNDS:
+        this->applyBounds("JETSON", JETSON, this->paramGet_MCP_JETSON_BOUNDS(m_paramIsValid));
         break;
       default:
         // Handle unexpected parameter ID
-        printf("Warning: Received update for unrecognized parameter ID 0x%X. No threshold values were updated.\n", id);
+        printf("Warning: Received update for unrecognized parameter ID 0x%X. No bounds were updated.\n", id);
+        break;
+    }
+  }
+
+  void McpManager :: writeBoundsTelemetry(FwIndexType sensorIndex) {
+    switch (sensorIndex) {
+      case OBC:
+        this->tlmWrite_MCP_IMX_BOUNDS(this->m_activeBounds[OBC]);
+        break;
+      case PERIF:
+        this->tlmWrite_MCP_PERIPHERAL_BOUNDS(this->m_activeBounds[PERIF]);
+        break;
+      case JETSON:
+        this->tlmWrite_MCP_JETSON_BOUNDS(this->m_activeBounds[JETSON]);
+        break;
+      default:
         break;
     }
   }
@@ -176,7 +199,7 @@ namespace scalesSvc {
   // Helper functions
   // ----------------------------------------------------------------------
 
-  bool McpManager ::readTemp(U8 deviceAddr, F32& temperature)
+  bool McpManager ::readTemp(U8 deviceAddr, std::string& location, F32& temperature)
   {
     U8 regAddr = TEMP_REG_ADDR;
     U8 rawData[2]; // MCP9808 temperature read back data is 2 bytes
@@ -190,19 +213,54 @@ namespace scalesSvc {
       temperature = convertRawTemp(rawData); // Convert raw data to Celsius and return
       return true;
     }
-    
-    printf("Error reading from I2C device at address 0x%X\n", deviceAddr);
+
+    printf("Error reading from I2C device at location: %s\n", location.c_str());
+    this->log_WARNING_HI_FAIL_TO_READ_TEMP_AT(Fw::String(location.c_str())); // Log event for read failure
     temperature = 0.0f;
-    return false; // Return false if the device address is unrecognized 
+    return false; // Return false if the device address is unrecognized
   }
-  
-  scalesSvc::ThermalStates McpManager :: determineTempState(F32 tempCelsius){
-    if (this->IDLE_LOW_THR <= tempCelsius && tempCelsius <= this->IDLE_HIGH_THR){
-      return scalesSvc::ThermalStates::IDLE;
-    } else if ((this->WARN_LOW_THR <= tempCelsius && tempCelsius < this->IDLE_LOW_THR) || (this->IDLE_HIGH_THR < tempCelsius && tempCelsius <= this->WARN_HIGH_THR)){
-      return scalesSvc::ThermalStates::WARN;
-    } else {
+
+  scalesSvc::ThermalStates McpManager :: determineTempState(F32 tempCelsius, U8 sensorIndex){
+    const scalesSvc::TempBounds& bounds = this->m_activeBounds[sensorIndex];
+    const F32 faultLow = bounds.get_faultLow();
+    const F32 faultHigh = bounds.get_faultHigh();
+    const F32 warnLow = bounds.get_warnLow();
+    const F32 warnHigh = bounds.get_warnHigh();
+    const F32 idleLow = bounds.get_idleLow();
+    const F32 idleHigh = bounds.get_idleHigh();
+
+    if (tempCelsius < faultLow || faultHigh <= tempCelsius ||
+        (faultLow <= tempCelsius && tempCelsius < warnLow) ||
+        (warnHigh < tempCelsius && tempCelsius < faultHigh)) {
       return scalesSvc::ThermalStates::FAULT;
+    } else if ((warnLow <= tempCelsius && tempCelsius < idleLow) ||
+               (idleHigh < tempCelsius && tempCelsius <= warnHigh)) {
+      return scalesSvc::ThermalStates::WARN;
+    } else if (idleLow <= tempCelsius && tempCelsius <= idleHigh){
+      return scalesSvc::ThermalStates::IDLE;
+    } else {
+      // Treat gaps caused by invalid or overlapping parameters as unsafe.
+      return scalesSvc::ThermalStates::FAULT;
+    }
+  }
+
+  bool McpManager :: thresholdsAreOrdered(const scalesSvc::TempBounds& bounds) const {
+    return bounds.get_faultLow() <= bounds.get_warnLow() &&
+           bounds.get_warnLow() <= bounds.get_idleLow() &&
+           bounds.get_idleLow() <= bounds.get_idleHigh() &&
+           bounds.get_idleHigh() <= bounds.get_warnHigh() &&
+           bounds.get_warnHigh() <= bounds.get_faultHigh();
+  }
+
+  void McpManager :: applyBounds(const char* source, FwIndexType sensorIndex, const scalesSvc::TempBounds& candidate) {
+    if (this->thresholdsAreOrdered(candidate)) {
+      this->m_activeBounds[sensorIndex] = candidate;
+      this->writeBoundsTelemetry(sensorIndex);
+    } else {
+      this->log_WARNING_HI_THRESHOLDS_MISCONFIGURED(
+          Fw::String(source), candidate.get_faultLow(), candidate.get_warnLow(),
+          candidate.get_idleLow(), candidate.get_idleHigh(),
+          candidate.get_warnHigh(), candidate.get_faultHigh());
     }
   }
 
@@ -222,7 +280,7 @@ F32 convertRawTemp(U8 *rawData){
     rawData[0] = rawData[0] & 0x0F; // Clear sign bit
 
     tempCelsius = 256 - ((rawData[0] * 16.0) + (rawData[1] / 16.0)); // Calculate negative temperature according to datasheet
-    return tempCelsius;
+    return -tempCelsius;
 
   } else {
     tempCelsius = ((rawData[0] * 16.0) + (rawData[1] / 16.0)); // Calculate positive temperature according to datasheet

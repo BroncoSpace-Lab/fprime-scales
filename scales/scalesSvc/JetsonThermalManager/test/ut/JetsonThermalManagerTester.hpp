@@ -23,7 +23,7 @@ namespace scalesSvc {
       // ----------------------------------------------------------------------
 
       // Maximum size of histories storing events, telemetry, and port outputs
-      static const FwSizeType MAX_HISTORY_SIZE = 10;
+      static const FwSizeType MAX_HISTORY_SIZE = 30;
 
       // Instance ID supplied to the component instance under test
       static const FwEnumStoreType TEST_INSTANCE_ID = 0;
@@ -52,11 +52,43 @@ namespace scalesSvc {
       //! To do
       void JetsonThermalManagerUnitTester();
 
+      //! A bounds update is only adopted (and its telemetry republished) if
+      //! it passes thresholdsAreOrdered(); otherwise the component keeps its
+      //! last-known-good bounds and THRESHOLDS_MISCONFIGURED fires -- every
+      //! time a bad update is attempted, not just the first.
+      void boundsUpdateGating();
+
+      //! Exercises parameterUpdated() directly (boundsUpdateGating() calls
+      //! applyBounds() directly, bypassing this) for both the real parameter
+      //! ID and an unrecognized one (default case).
+      void parameterUpdatedCoverage();
+
     private:
 
       // ----------------------------------------------------------------------
       // Helper functions
       // ----------------------------------------------------------------------
+
+      //! Write a sysfs-style millidegree Celsius value through the OSAL
+      void writeTemperatureFile(U8 index, F32 tempC);
+
+      //! Remove a fake temperature file so the read path sees an unavailable zone
+      void removeTemperatureFile(U8 index);
+
+      //! Run a tick through the component and dispatch queued work
+      void runTickAction();
+
+      //! Read the configured temperature files and evaluate the result
+      void readAndEvaluateTemperatures();
+
+      //! Assert the latest thermal telemetry reading for one Jetson thermal zone
+      void assertLatestReading(
+          U8 index,
+          FwSizeType expectedHistorySize,
+          F32 tempC,
+          const char* expectedLocation,
+          scalesSvc::ThermalStates expectedState
+      );
 
       //! Connect ports
       void connectPorts();
@@ -72,6 +104,8 @@ namespace scalesSvc {
 
       //! The component under test
       JetsonThermalManager component;
+
+      CHAR m_tempPathTemplate[128];
 
   };
 

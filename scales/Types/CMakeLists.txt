@@ -1,8 +1,11 @@
 set(SOURCE_FILES
   "${CMAKE_CURRENT_LIST_DIR}/DataTransferRequest.fpp"
+  "${CMAKE_CURRENT_LIST_DIR}/CommandAuthority.fpp"
+  "${CMAKE_CURRENT_LIST_DIR}/FPManagerState.fpp"
   "${CMAKE_CURRENT_LIST_DIR}/PowerTypes.fpp"
   "${CMAKE_CURRENT_LIST_DIR}/SystemState.fpp"
   "${CMAKE_CURRENT_LIST_DIR}/SystemStateData.fpp"
+  "${CMAKE_CURRENT_LIST_DIR}/TempBounds.fpp"
   "${CMAKE_CURRENT_LIST_DIR}/ThermalReading.fpp"
   "${CMAKE_CURRENT_LIST_DIR}/WatchdogStates.fpp"
 )

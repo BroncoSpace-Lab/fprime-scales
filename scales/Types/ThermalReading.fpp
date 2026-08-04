@@ -4,6 +4,7 @@ module scalesSvc{
     IDLE = 1 @< System in IDLE mode
     WARN = 2 @< System in WARN mode
     FAULT = 3 @< System in FAULT mode
+    NOT_USED = 0 @< Sensor is unavailable or should not be considered
   }
 
   struct ThermalReading {
