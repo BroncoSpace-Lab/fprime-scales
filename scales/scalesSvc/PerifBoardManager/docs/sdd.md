@@ -30,7 +30,7 @@ This component must maintain a high state indefinitely on boot, and must provide
 
 ### Typical Usage
 
-Upon execution of the ImxDeployment on the imx8x, the GPIO state is always held high. If the user chooses to reset the Peripheral Board for whatever reason, they can excecute an OFF command, which prints an event notifying, updates the telemetry, then turns the gpio off for a set interval of time, and then turns it back on, 
+Upon execution of the ImxDeployment on the imx8x, the GPIO state is always held high. If the user chooses to reset the Peripheral Board for whatever reason, they can execute an OFF command, which prints an event notifying, updates the telemetry, then turns the gpio off for a set interval of time, and then turns it back on, 
 
 ## Port Descriptions
 

@@ -60,21 +60,21 @@ namespace scalesSvc {
       jetsonData.set_location(Fw::String("JETSON"));
       this->tlmWrite_INA260_Jetson(jetsonData);
     } else {
-      this->log_WARNING_HI_FAIL_TO_READ_TEMP_AT(Fw::String("JETSON"));
+      this->log_WARNING_HI_FAIL_TO_READ_PWR_AT(Fw::String("JETSON"));
     }
 
     if (this->readSensorOnce(obcData)) {
       obcData.set_location(Fw::String("OBC"));
       this->tlmWrite_INA260_OBC(obcData);
     } else {
-      this->log_WARNING_HI_FAIL_TO_READ_TEMP_AT(Fw::String("OBC"));
+      this->log_WARNING_HI_FAIL_TO_READ_PWR_AT(Fw::String("OBC"));
     }
 
     if (this->readSensorOnce(peripheralData)) {
       peripheralData.set_location(Fw::String("PERIPHERAL"));
       this->tlmWrite_INA260_Peripheral(peripheralData);
     } else {
-      this->log_WARNING_HI_FAIL_TO_READ_TEMP_AT(Fw::String("PERIPHERAL"));
+      this->log_WARNING_HI_FAIL_TO_READ_PWR_AT(Fw::String("PERIPHERAL"));
     }
 
     // Send to DataProducer
