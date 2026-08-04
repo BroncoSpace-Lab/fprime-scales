@@ -120,7 +120,7 @@ namespace scalesSvc {
     this->component.doDispatch();
 
     ASSERT_EVENTS_I2cReadFailed_SIZE(0);
-    ASSERT_EVENTS_FAIL_TO_READ_TEMP_AT_SIZE(0);
+    ASSERT_EVENTS_FAIL_TO_READ_PWR_AT_SIZE(0);
 
     ASSERT_TLM_INA260_Jetson_SIZE(1);
     this->assertPowerReading(this->tlmHistory_INA260_Jetson->at(0).arg,
@@ -216,8 +216,8 @@ namespace scalesSvc {
     ASSERT_EVENTS_I2cReadFailed(0,
         static_cast<U8>(InaManager::INA260_REG_VOLTAGE),
         static_cast<I32>(Drv::I2cStatus::I2C_READ_ERR));
-    ASSERT_EVENTS_FAIL_TO_READ_TEMP_AT_SIZE(1);
-    ASSERT_EVENTS_FAIL_TO_READ_TEMP_AT(0, "JETSON");
+    ASSERT_EVENTS_FAIL_TO_READ_PWR_AT_SIZE(1);
+    ASSERT_EVENTS_FAIL_TO_READ_PWR_AT(0, "JETSON");
 
     // Jetson gets no telemetry at all this tick; OBC and Peripheral are unaffected.
     ASSERT_TLM_INA260_Jetson_SIZE(0);
@@ -245,7 +245,7 @@ namespace scalesSvc {
     this->component.doDispatch();
 
     ASSERT_EVENTS_I2cReadFailed_SIZE(3);
-    ASSERT_EVENTS_FAIL_TO_READ_TEMP_AT_SIZE(3);
+    ASSERT_EVENTS_FAIL_TO_READ_PWR_AT_SIZE(3);
 
     ASSERT_TLM_INA260_Jetson_SIZE(0);
     ASSERT_TLM_INA260_OBC_SIZE(0);
@@ -282,8 +282,8 @@ namespace scalesSvc {
     ASSERT_EVENTS_I2cReadFailed(0,
         static_cast<U8>(InaManager::INA260_REG_POWER),
         static_cast<I32>(Drv::I2cStatus::I2C_READ_ERR));
-    ASSERT_EVENTS_FAIL_TO_READ_TEMP_AT_SIZE(1);
-    ASSERT_EVENTS_FAIL_TO_READ_TEMP_AT(0, "PERIPHERAL");
+    ASSERT_EVENTS_FAIL_TO_READ_PWR_AT_SIZE(1);
+    ASSERT_EVENTS_FAIL_TO_READ_PWR_AT(0, "PERIPHERAL");
 
     ASSERT_TLM_INA260_Peripheral_SIZE(0);
     ASSERT_TLM_INA260_Jetson_SIZE(1);

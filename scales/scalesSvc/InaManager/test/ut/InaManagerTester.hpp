@@ -67,7 +67,7 @@ namespace scalesSvc {
       //! Jetson's VOLTAGE register (the 2nd of 3 read per sensor) fails:
       //! confirms the POWER register is never attempted afterward, the
       //! failure is reported via both I2cReadFailed (with the failing
-      //! register/status) and FAIL_TO_READ_TEMP_AT, no telemetry is written
+      //! register/status) and FAIL_TO_READ_PWR_AT, no telemetry is written
       //! for that one sensor, the other two sensors are unaffected, and
       //! inaPowerReadOut still fires once (partial-failure isolation).
       void singleRegisterFailureStopsSubsequentReadsForThatSensor();
