@@ -83,7 +83,7 @@ void DataProducer ::cpuThermalReadIn_handler(FwIndexType portNum, const scalesSv
 
 void DataProducer ::jetsonThermalReadIn_handler(FwIndexType portNum,
                                                 const scalesSvc::ThermalReading& jetson_cpuThermalReading,
-                                                const scalesSvc::ThermalReading& jetson_gpuTheramlReading,
+                                                const scalesSvc::ThermalReading& jetson_gpuThermalReading,
                                                 const scalesSvc::ThermalReading& jetson_cv0ThermalReading,
                                                 const scalesSvc::ThermalReading& jetson_cv1ThermalReading,
                                                 const scalesSvc::ThermalReading& jetson_cv2ThermalReading,
@@ -94,7 +94,7 @@ void DataProducer ::jetsonThermalReadIn_handler(FwIndexType portNum,
                                                     
     if(this->m_jetsonTempContainerValid){
         if(!this->jetsonTempSerialize_Send( jetson_cpuThermalReading,
-                                            jetson_gpuTheramlReading,
+                                            jetson_gpuThermalReading,
                                             jetson_cv0ThermalReading,
                                             jetson_cv1ThermalReading,
                                             jetson_cv2ThermalReading,
@@ -274,7 +274,7 @@ bool DataProducer ::cpuSerialize_Send(const scalesSvc::ThermalReading& cpuTherma
 }
 
 bool DataProducer ::jetsonTempSerialize_Send(const scalesSvc::ThermalReading& jetson_cpuThermalReading,  
-                                  const scalesSvc::ThermalReading& jetson_gpuTheramlReading,   
+                                  const scalesSvc::ThermalReading& jetson_gpuThermalReading,   
                                   const scalesSvc::ThermalReading& jetson_cv0ThermalReading,
                                   const scalesSvc::ThermalReading& jetson_cv1ThermalReading,   
                                   const scalesSvc::ThermalReading& jetson_cv2ThermalReading,   
@@ -289,7 +289,7 @@ bool DataProducer ::jetsonTempSerialize_Send(const scalesSvc::ThermalReading& je
         return false;
     }
 
-    status = this->m_jetsonTempContainer.serializeRecord_Jetson_GpuTemperatureRecord(jetson_gpuTheramlReading);
+    status = this->m_jetsonTempContainer.serializeRecord_Jetson_GpuTemperatureRecord(jetson_gpuThermalReading);
     if (status != Fw::SerializeStatus::FW_SERIALIZE_OK) {
         printf("Error Serializing JETSON GPU TEMP READING RECORD\n");
         return false;
