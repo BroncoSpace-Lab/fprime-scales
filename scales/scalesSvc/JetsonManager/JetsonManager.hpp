@@ -15,6 +15,8 @@ namespace scalesSvc {
     public JetsonManagerComponentBase
   {
 
+    friend class JetsonManagerTester;
+
     public:
 
       // ----------------------------------------------------------------------
@@ -56,6 +58,24 @@ namespace scalesSvc {
           const scalesSvc::PowerModeID& modeNow
       ) override;
 
+      //! Handler implementation for localModeChangeStarted
+      //!
+      //! Notification from JetsonPowerModeManager that a LOCAL (non-hub)
+      //! SET_POWER_MODE command is about to reboot the Jetson.
+      void localModeChangeStarted_handler(
+          FwIndexType portNum, //!< The port number
+          const scalesSvc::PowerModeID& mode
+      ) override;
+
+      //! Handler implementation for hubComStatusIn
+      //!
+      //! Real transport-level status of the imx<->Jetson hub TCP link, fed
+      //! from imx_hubComStub.comStatusOut.
+      void hubComStatusIn_handler(
+          FwIndexType portNum, //!< The port number
+          Fw::Success& condition
+      ) override;
+
       //! Handler implementation for schedIn
       //!
       //! Port that receives the rate group tick
@@ -91,6 +111,32 @@ namespace scalesSvc {
           scalesSvc::JetsonPowerStateID jetsonState //!< Requested power state (on/off)
       ) override;
 
+      //! Shared graceful-vs-direct OFF sequence, used by
+      //! REQUEST_JETSON_POWER_STATE(OFF), fpJetsonPowerRequestIn(OFF), and the
+      //! deferred-OFF auto-fire/force-fire paths (currentJetsonPwrState_handler,
+      //! currentPwrMode_handler, schedIn_handler). Re-evaluates
+      //! m_jetsonPowerStateKnown/m_currentJetsonPowerState itself, so it is
+      //! correct no matter which of those callers triggers it.
+      void beginJetsonOffSequence();
+
+      //! True only when it is currently safe to call a hub-routed output
+      //! port (reqPwrMode_out/reqJetsonPwrState_out): the Jetson is
+      //! confirmed ON by a real report, no ON command is still awaiting its
+      //! first boot confirmation, no REQUEST_POWER_MODE-triggered reboot is
+      //! in flight, AND the real hub TCP link is currently connected
+      //! (m_hubLinkConnected). False for any other reason -- confirmed off,
+      //! never confirmed, booting, mid a pending mode-change reboot, or the
+      //! transport link itself known down -- since Svc::ComStub's
+      //! never-connected FW_ASSERT would trip otherwise (JM-006's crash
+      //! class, which reqPwrMode_out() is equally exposed to as
+      //! reqJetsonPwrState_out() -- see JM-011). The m_hubLinkConnected
+      //! clause exists because an nvpmodel-triggered reboot can leave the
+      //! Jetson's own process reporting a matching mode/state well BEFORE
+      //! the actual reboot severs the TCP link -- app-level self-reports
+      //! alone cannot prove the link is safe; only the transport layer's
+      //! own comStatus can (see JM-016).
+      bool isJetsonHubLinkTrusted() const;
+
       private:
 
        // ----------------------------------------------------------------------
@@ -110,6 +156,13 @@ namespace scalesSvc {
       U32 m_pendingCmdSeq;          //!< Sequence number of the in-flight command
       PowerModeID m_requestedMode;  //!< Mode we asked the Jetson to switch to
       U32 m_timeoutTicks;           //!< Ticks elapsed since the request was sent
+      //! True when m_hasPendingCmd was armed by a real REQUEST_POWER_MODE
+      //! command (m_pendingOpCode/m_pendingCmdSeq owe a response) as opposed
+      //! to localModeChangeStarted_handler (externally-triggered by a local
+      //! SET_POWER_MODE run directly on the Jetson -- no opcode/cmdSeq to
+      //! respond to). Mirrors m_pendingPowerCmdRespond's role in the
+      //! power-state (ON/OFF) block below.
+      bool m_modeChangeCmdRespond;
       Fw::ParamValid m_paramIsValid = Fw::ParamValid::VALID;
 
       //! How many schedIn ticks to wait before timing out (120 ticks ≈ 2 min at 1 Hz)
@@ -119,11 +172,69 @@ namespace scalesSvc {
       FwOpcodeType m_pendingPowerOpCode; //!< Opcode of the in-flight REQUEST_JETSON_POWER_STATE
       U32 m_pendingPowerCmdSeq; //!< Sequence number of the in-flight REQUEST_JETSON_POWER_STATE command
       scalesSvc::JetsonPowerStateID m_requestedPowerState; //!< Power state we asked the Jetson to switch to
-      scalesSvc::JetsonPowerStateID m_currentJetsonPowerState; //!< Last known Jetson power state
+      scalesSvc::JetsonPowerStateID m_currentJetsonPowerState; //!< Last known (or assumed) Jetson power state
+      //! True once m_currentJetsonPowerState reflects an actual confirmed
+      //! report from the Jetson or a GPIO action JetsonManager itself took --
+      //! i.e. not just the boot-time default. Until this is true, OFF
+      //! requests must not treat the Jetson as "already off": at i.MX boot
+      //! the Jetson may in fact be alive and running (e.g. i.MX rebooted
+      //! while the Jetson stayed up), and treating an unconfirmed state as
+      //! OFF would skip the graceful reqJetsonPwrState_out() shutdown request
+      //! and cut GPIO power to a live Linux system directly.
+      bool m_jetsonPowerStateKnown;
       U32 m_powerTimeoutTicks;  //!< Ticks elapsed since the power state change request was sent
       bool m_waitingToCutJetsonPower; //!< True if we've sent a shutdown command and are waiting to cut power after a delay
       U32 m_powerOffDelayTicks; //!< Ticks elapsed since sending the shutdown command, used to delay cutting power to allow for graceful shutdown
       bool m_pendingPowerCmdRespond; //!< Whether the pending power request has a command sequence to complete
+
+      // ----------------------------------------------------------------------
+      // Boot-confirmation guard
+      //
+      // ON completes synchronously (GPIO driven high, immediate OK response) --
+      // it does NOT mean the Jetson has actually finished booting.
+      // m_jetsonPowerStateKnown/m_currentJetsonPowerState are set ONLY by a
+      // real report received from the Jetson (see currentJetsonPwrState_handler)
+      // or by a GPIO action JetsonManager itself took -- never optimistically
+      // by the ON command path. m_awaitingBootConfirmation separately tracks
+      // "commanded ON, first report not seen yet".
+      //
+      // A commanded OFF that arrives while m_awaitingBootConfirmation is true
+      // is NOT rejected: it is deferred (m_deferredOffPending) and
+      // automatically fired -- via beginJetsonOffSequence(), which then takes
+      // the normal graceful hub-routed path -- the instant a real report
+      // arrives (currentJetsonPwrState_handler) or the boot window times out
+      // (schedIn_handler force-fires it via a direct GPIO cut, same fail-safe
+      // philosophy as the existing post-ack timeout fallback below).
+      //
+      // m_hasPendingCmd (a REQUEST_POWER_MODE-triggered reboot in flight) is
+      // the same kind of "hub link cannot be trusted right now" condition as
+      // m_awaitingBootConfirmation, even though m_currentJetsonPowerState
+      // stays ON throughout (the Jetson never lost GPIO power -- only its
+      // OS/hub link is temporarily down while it reboots to apply the new
+      // mode). beginJetsonOffSequence() defers on this too, reusing
+      // m_deferredOffPending; see isJetsonHubLinkTrusted() and JM-011.
+      //
+      // m_hasPendingCmd can be armed two ways: a real REQUEST_POWER_MODE
+      // command (m_modeChangeCmdRespond=true, owes a cmdResponse_out), or a
+      // localModeChangeStarted notification from JetsonPowerModeManager
+      // reporting a LOCAL SET_POWER_MODE run directly on the Jetson
+      // (m_modeChangeCmdRespond=false -- externally triggered, nothing to
+      // respond to). Either way isJetsonHubLinkTrusted() correctly reports
+      // false until cleared. See JM-014.
+      // ----------------------------------------------------------------------
+
+      bool m_awaitingBootConfirmation; //!< True after a genuine off->on ON command until a real report arrives or the boot window times out
+      U32 m_bootConfirmationTimeoutTicks; //!< Ticks elapsed since ON was commanded, bounds m_awaitingBootConfirmation
+      bool m_deferredOffPending; //!< True while an OFF request is being held pending a boot confirmation (see beginJetsonOffSequence())
+
+      //! True only while imx_hubComStub's real transport-level comStatus is
+      //! last known SUCCESS (drvConnected fired since the last failed
+      //! send). Defaults false at construction -- conservative, mirrors
+      //! m_jetsonPowerStateKnown's "unknown until a real report arrives"
+      //! pattern -- and is the only thing isJetsonHubLinkTrusted() relies
+      //! on that cannot be spoofed by a premature application-level
+      //! self-report racing ahead of an actual reboot. See JM-016.
+      bool m_hubLinkConnected;
 
   };
 

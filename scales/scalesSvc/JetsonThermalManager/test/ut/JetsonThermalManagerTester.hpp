@@ -58,6 +58,11 @@ namespace scalesSvc {
       //! time a bad update is attempted, not just the first.
       void boundsUpdateGating();
 
+      //! Exercises parameterUpdated() directly (boundsUpdateGating() calls
+      //! applyBounds() directly, bypassing this) for both the real parameter
+      //! ID and an unrecognized one (default case).
+      void parameterUpdatedCoverage();
+
     private:
 
       // ----------------------------------------------------------------------

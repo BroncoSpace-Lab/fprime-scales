@@ -20,6 +20,7 @@ class HubComAdapter final : public HubComAdapterComponentBase {
     void comReturnIn_handler(FwIndexType portNum, Fw::Buffer& buffer, const ComCfg::FrameContext& context) override;
     void comIn_handler(FwIndexType portNum, Fw::Buffer& buffer, const ComCfg::FrameContext& context) override;
     void bufferOutReturn_handler(FwIndexType portNum, Fw::Buffer& buffer) override;
+    void comStatusIn_handler(FwIndexType portNum, Fw::Success& condition) override;
 };
 
 }  // namespace scalesSvc

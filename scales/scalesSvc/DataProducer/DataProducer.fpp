@@ -49,7 +49,7 @@ module scalesSvc {
         product record PerifPowerRecord: PowerReading id 14
         product record JetsonPowerRecord: PowerReading id 15
 
-        @ Data prodcut container containing temperature records
+        @ Data Product container containing temperature records
         product container McpTemperatureContainer id 0 default priority 10
         product container CpuTemperatureContainer id 1 default priority 10
         product container InaPowerContainer id 3 default priority 10

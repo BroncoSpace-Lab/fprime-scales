@@ -39,60 +39,93 @@ FPManager::FPManager(const char* const compName)
       m_jetsonFaultSignalPending(false),
       m_imxWarnActive(false),
       m_peripheralWarnActive(false),
-      m_jetsonWarnActive(false) {}
+      m_jetsonWarnActive(false),
+      m_sourceFaultStreak{},
+      m_jetsonFaultStreak{},
+      m_imxLastSource(SRC_IMX_LOCAL),
+      m_peripheralLastSource(SRC_PERIF_MCP),
+      m_activeFaultDebounceCount(FAULT_DEBOUNCE_DEFAULT),
+      m_justBooted(true),
+      m_paramValid(Fw::ParamValid::VALID),
+      m_jetsonBootOutstanding(false),
+      m_jetsonHubTrusted(true) {}
 
 FPManager::~FPManager() {}
 
 void FPManager::run_handler(FwIndexType portNum, U32 context) {
+    this->loadDebounceParameterOnFirstTick();
+    // Republish the active threshold every tick (not just on boot/change) so
+    // a GDS session that connects late still sees it -- mirrors
+    // ImxThermalManager republishing IMX_CPU_BOUNDS in doEvaluate().
+    this->tlmWrite_FAULT_DEBOUNCE_COUNT(this->m_activeFaultDebounceCount);
     this->fpStateMachine_sendSignal_tick();
 }
 
 void FPManager::fatalIn_handler(FwIndexType portNum, FwEventIdType Id) {
-    // Emit and forward the fatal condition before cutting protected outputs.
-    this->m_mode = FPManagerState::EMERGENCY;
-    this->writeStateTelemetry();
-    this->log_WARNING_HI_EMERGENCY_SHUTDOWN();
-    // Trigger the platform poweroff directly and unconditionally, right
-    // after the events/telemetry above -- do not depend on the state
-    // machine's $fatal dispatch (or on any port called further down this
-    // path) to reach it. This process is a systemd service with
-    // Restart=on-failure: once FatalHandler aborts it, systemd just
-    // respawns the flight software unless the platform is already powering
-    // off, so the poweroff attempt cannot be conditioned on anything that
-    // might not run or might fail.
-    this->triggerPlatformPoweroff();
-    this->fpStateMachine_sendSignal_fatal();
+    // This is the generic "some other component logged a FATAL-severity
+    // event" path -- NOT a platform-power condition. It intentionally does
+    // NOT power off the i.MX or cut Jetson/peripheral power: that is
+    // reserved exclusively for a confirmed i.MX thermal FAULT (see
+    // triggerImxEmergencyShutdown). Log what failed (the only detail
+    // Svc.FatalEvent carries is this raw numeric ID; resolve it against the
+    // GDS event dictionary to identify the component), latch the distinct
+    // EMERGENCY_REBOOT state via the state machine, and forward to the real
+    // Svc.FatalHandler as always -- it aborts the process, and systemd
+    // (Restart=on-failure) already respawns just the flight-software
+    // process. No new reboot/poweroff mechanism is needed here.
+    this->log_WARNING_HI_COMPONENT_FAILURE_DETECTED(Id);
+    this->fpStateMachine_sendSignal_component_fatal();
     this->fatalOut_out(0, Id);
-    this->scalesSvc_FPStateMachine_action_SHUTDOWN(
-        FPManagerComponentBase::SmId::fpStateMachine,
-        scalesSvc_FPStateMachine::Signal::fatal);
 }
 
 void FPManager::imxThermalReadingIn_handler(FwIndexType portNum,
                                              const ThermalReading& reading) {
-    this->m_imxReading = reading;
-    this->m_imxReadingValid = reading.get_tempState() != ThermalStates::NOT_USED;
-    this->updateWarnTracking("IMX", this->readingIsWarn(reading), this->m_imxWarnActive, reading);
+    this->updateImxDomain(SRC_IMX_LOCAL, reading);
 }
 
 void FPManager::peripheralThermalReadingIn_handler(FwIndexType portNum,
                                                    const ThermalReading& reading) {
-    this->m_peripheralReading = reading;
-    this->m_peripheralReadingValid = reading.get_tempState() != ThermalStates::NOT_USED;
-    this->updateWarnTracking("PERIPHERAL", this->readingIsWarn(reading), this->m_peripheralWarnActive, reading);
+    this->updatePeripheralDomain(SRC_PERIF_LOCAL, reading);
 }
 
 void FPManager::mcpThermalReadingIn_handler(FwIndexType portNum,
                                             const ThermalReading& reading) {
     switch (reading.get_sensorId()) {
         case 1:
-            this->imxThermalReadingIn_handler(portNum, reading);
+            this->updateImxDomain(SRC_IMX_MCP, reading);
             break;
         case 2:
-            this->peripheralThermalReadingIn_handler(portNum, reading);
+            this->updatePeripheralDomain(SRC_PERIF_MCP, reading);
             break;
         default:
             break;
+    }
+}
+
+void FPManager::updateImxDomain(FaultSource src, const ThermalReading& reading) {
+    this->m_imxReading = reading;
+    this->m_imxReadingValid = reading.get_tempState() != ThermalStates::NOT_USED;
+    this->m_imxLastSource = src;
+    this->updateFaultStreak(this->m_sourceFaultStreak[src], reading);
+    this->updateWarnTracking("IMX", this->readingIsWarn(reading), this->m_imxWarnActive, reading);
+}
+
+void FPManager::updatePeripheralDomain(FaultSource src, const ThermalReading& reading) {
+    this->m_peripheralReading = reading;
+    this->m_peripheralReadingValid = reading.get_tempState() != ThermalStates::NOT_USED;
+    this->m_peripheralLastSource = src;
+    this->updateFaultStreak(this->m_sourceFaultStreak[src], reading);
+    this->updateWarnTracking("PERIPHERAL", this->readingIsWarn(reading), this->m_peripheralWarnActive, reading);
+}
+
+void FPManager::updateFaultStreak(U32& streak, const ThermalReading& reading) {
+    if (this->readingIsFault(reading)) {
+        if (streak < FAULT_DEBOUNCE_MAX) {
+            streak++;
+        }
+    } else {
+        // IDLE, WARN, and NOT_USED (unavailable) all break the streak.
+        streak = 0;
     }
 }
 
@@ -104,6 +137,7 @@ void FPManager::jetsonThermalReadingIn_handler(FwIndexType portNum,
     }
     this->m_jetsonReadings[sensorId] = reading;
     this->m_jetsonReadingValid[sensorId] = reading.get_tempState() != ThermalStates::NOT_USED;
+    this->updateFaultStreak(this->m_jetsonFaultStreak[sensorId], reading);
     U8 validCount = 0;
     for (FwIndexType i = 0; i < JETSON_SENSOR_COUNT; i++) {
         if (this->m_jetsonReadingValid[i]) {
@@ -119,7 +153,7 @@ void FPManager::jetsonThermalReadingIn_handler(FwIndexType portNum,
 
     if (this->m_mode == FPManagerState::HPC &&
         !this->m_jetsonFaultSignalPending &&
-        this->readingIsFault(reading)) {
+        this->jetsonSensorFaultConfirmed(sensorId)) {
         this->rememberFault("JETSON", reading);
         this->m_jetsonFaultSignalPending = true;
         this->fpStateMachine_sendSignal_jetson_fault();
@@ -133,6 +167,21 @@ void FPManager::remoteJetsonCmdIn_handler(FwIndexType portNum,
     if (this->m_jetsonPowerState != JetsonPowerStateID::ON) {
         this->log_WARNING_HI_REMOTE_JETSON_COMMAND_REJECTED(
             opcode, Fw::String("Jetson is not powered on"));
+        this->remoteJetsonCmdResponseOut_out(
+            portNum, opcode, context, Fw::CmdResponse::BUSY);
+        return;
+    }
+    if (!this->m_jetsonHubTrusted) {
+        // The Jetson is confirmed ON, but JetsonManager reports the hub
+        // link cannot currently be trusted -- a power-mode-change reboot
+        // (hub- or locally-triggered, see FP-022/JM-014) is in flight, and
+        // m_jetsonPowerState stays ON throughout that window since the
+        // Jetson never loses GPIO power. Forwarding this command now would
+        // reach imx_hubComStub while the hub link is actually down and trip
+        // its never-connected FW_ASSERT (the same crash class JM-006/JM-011
+        // exist to prevent for JetsonManager's own hub calls).
+        this->log_WARNING_HI_REMOTE_JETSON_COMMAND_REJECTED(
+            opcode, Fw::String("Jetson hub link not currently trusted (reboot in flight)"));
         this->remoteJetsonCmdResponseOut_out(
             portNum, opcode, context, Fw::CmdResponse::BUSY);
         return;
@@ -151,10 +200,18 @@ void FPManager::remoteJetsonCmdResponseIn_handler(
 
 void FPManager::jetsonPowerStateIn_handler(FwIndexType portNum,
                                            const JetsonPowerStateID& stateNow) {
+    // Any real report -- ON or OFF -- proves JetsonManager has heard back
+    // from the Jetson, so the (cosmetic-only) boot-outstanding mirror is
+    // satisfied. See the m_jetsonBootOutstanding comment in FPManager.hpp.
+    this->m_jetsonBootOutstanding = false;
     this->m_jetsonPowerState = stateNow;
     if (stateNow == JetsonPowerStateID::OFF) {
         this->invalidateJetsonReadings();
     }
+}
+
+void FPManager::jetsonHubTrustedIn_handler(FwIndexType portNum, bool trusted) {
+    this->m_jetsonHubTrusted = trusted;
 }
 
 Fw::Success FPManager::jetsonPowerAuthorizeIn_handler(
@@ -174,6 +231,14 @@ Fw::Success FPManager::jetsonPowerAuthorizeIn_handler(
         this->log_WARNING_HI_JETSON_POWER_REQUEST_REJECTED(
             stateReq, Fw::String("Emergency Shutdown is latched"));
         return Fw::Success::FAILURE;
+    }
+
+    if (stateReq.e == JetsonPowerStateID::ON) {
+        // Mirrors JetsonManager's own "only arm on a genuine off->on
+        // transition" nuance (see JetsonManager.hpp's boot-confirmation
+        // guard comment) -- a redundant ON authorization to an
+        // already-confirmed-on Jetson must not re-arm this.
+        this->m_jetsonBootOutstanding = (this->m_jetsonPowerState != JetsonPowerStateID::ON);
     }
 
     return Fw::Success::SUCCESS;
@@ -200,6 +265,20 @@ void FPManager::DISABLE_HPC_MODE_cmdHandler(FwOpcodeType opCode, U32 cmdSeq) {
         return;
     }
 
+    // Informational only -- picks the right operator-facing wording for
+    // what's about to happen. Does not change what happens: beginDisableHpcMode
+    // (below) unconditionally requests Jetson OFF regardless of this, and
+    // JetsonManager's own m_awaitingBootConfirmation/m_deferredOffPending is
+    // the actual source of truth for deferring/firing that request -- this
+    // must never reject or block while booting.
+    if (this->m_jetsonBootOutstanding) {
+        this->log_ACTIVITY_HI_HPC_MODE_DISABLE_JETSON_BOOTING();
+    } else if (this->m_jetsonPowerState == JetsonPowerStateID::ON) {
+        this->log_ACTIVITY_HI_HPC_MODE_DISABLE_JETSON_OFF_REQUESTED();
+    } else {
+        this->log_ACTIVITY_HI_HPC_MODE_DISABLE_JETSON_ALREADY_OFF();
+    }
+
     this->fpStateMachine_sendSignal_hpcMode_dis();
     this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
 }
@@ -219,9 +298,9 @@ void FPManager::scalesSvc_FPStateMachine_action_safeModeHealthCheck(
     SmId smId, scalesSvc_FPStateMachine::Signal signal) {
     this->m_mode = FPManagerState::SAFE;
     ThermalReading faultReading;
-    if (this->m_imxReadingValid && this->readingIsFault(this->m_imxReading)) {
+    if (this->imxFaultConfirmed()) {
         this->triggerImxEmergencyShutdown(this->m_imxReading);
-    } else if (this->m_peripheralReadingValid && this->readingIsFault(this->m_peripheralReading)) {
+    } else if (this->peripheralFaultConfirmed()) {
         this->triggerPeripheralEmergencyShutdown(this->m_peripheralReading);
     } else {
         this->m_safeModeHealthy = true;
@@ -234,10 +313,9 @@ void FPManager::scalesSvc_FPStateMachine_action_hpcModeHealthCheck(
     SmId smId, scalesSvc_FPStateMachine::Signal signal) {
     this->m_mode = FPManagerState::HPC;
     ThermalReading faultReading;
-    const bool imxFault = this->m_imxReadingValid && readingIsFault(this->m_imxReading);
-    const bool peripheralFault =
-        this->m_peripheralReadingValid && readingIsFault(this->m_peripheralReading);
-    const bool jetsonFault = this->findJetsonFault(faultReading);
+    const bool imxFault = this->imxFaultConfirmed();
+    const bool peripheralFault = this->peripheralFaultConfirmed();
+    const bool jetsonFault = this->findConfirmedJetsonFault(faultReading);
 
     if (imxFault) {
         this->triggerImxEmergencyShutdown(this->m_imxReading);
@@ -264,22 +342,37 @@ void FPManager::scalesSvc_FPStateMachine_action_enableHpcMode(
     this->writeStateTelemetry();
 }
 
-void FPManager::scalesSvc_FPStateMachine_action_disableHpcMode(
+void FPManager::scalesSvc_FPStateMachine_action_beginDisableHpcMode(
     SmId smId, scalesSvc_FPStateMachine::Signal signal) {
-    if (this->m_jetsonPowerState == JetsonPowerStateID::ON) {
-        this->jetsonPowerRequestOut_out(0, JetsonPowerStateID::OFF);
-    }
-    this->m_jetsonPowerState = JetsonPowerStateID::OFF;
-    this->invalidateJetsonReadings();
+    this->jetsonPowerRequestOut_out(0, JetsonPowerStateID::OFF);
     this->m_mode = FPManagerState::SAFE;
     this->m_safeModeHealthy = false;
     this->writeStateTelemetry();
+    // m_jetsonPowerState/invalidateJetsonReadings() are deliberately left to
+    // jetsonPowerStateIn_handler, driven by JetsonManager's real confirmation
+    // (graceful ack or its own bounded GPIO-cut fallback), not declared here
+    // -- see disableHpcModeHealthCheck.
+}
+
+void FPManager::scalesSvc_FPStateMachine_action_disableHpcModeHealthCheck(
+    SmId smId, scalesSvc_FPStateMachine::Signal signal) {
+    if (this->imxFaultConfirmed()) {
+        this->triggerImxEmergencyShutdown(this->m_imxReading);
+        return;
+    }
+    if (this->peripheralFaultConfirmed()) {
+        this->triggerPeripheralEmergencyShutdown(this->m_peripheralReading);
+        return;
+    }
+    if (this->m_jetsonPowerState == JetsonPowerStateID::OFF) {
+        this->fpStateMachine_sendSignal_success();
+    }
 }
 
 void FPManager::scalesSvc_FPStateMachine_action_confirmJetsonFaultAndPowerOff(
     SmId smId, scalesSvc_FPStateMachine::Signal signal) {
     ThermalReading faultReading;
-    if (!this->findJetsonFault(faultReading)) {
+    if (!this->findConfirmedJetsonFault(faultReading)) {
         this->m_jetsonFaultSignalPending = false;
         this->fpStateMachine_sendSignal_failure();
         return;
@@ -307,12 +400,12 @@ void FPManager::scalesSvc_FPStateMachine_action_reportFault(
 
 void FPManager::scalesSvc_FPStateMachine_action_faultModeHealthCheck(
     SmId smId, scalesSvc_FPStateMachine::Signal signal) {
-    if (this->m_imxReadingValid && this->readingIsFault(this->m_imxReading)) {
+    if (this->imxFaultConfirmed()) {
         this->triggerImxEmergencyShutdown(this->m_imxReading);
         return;
     }
     ThermalReading jetsonFaultReading;
-    if (this->findJetsonFault(jetsonFaultReading)) {
+    if (this->findConfirmedJetsonFault(jetsonFaultReading)) {
         this->rememberFault("JETSON", jetsonFaultReading);
         this->reportReadingFault();
         this->jetsonPowerRequestOut_out(0, JetsonPowerStateID::OFF);
@@ -322,6 +415,10 @@ void FPManager::scalesSvc_FPStateMachine_action_faultModeHealthCheck(
         this->writeStateTelemetry();
         return;
     }
+    // Recovery gate -- deliberately NOT debounced. This must make FPManager
+    // slower to act (above), never slower to stay safe: a single raw FAULT
+    // reading (or an unavailable reading) keeps FPManager latched in FAULT
+    // mode even if that source hasn't yet accumulated a full debounce streak.
     if (!this->m_peripheralReadingValid || this->readingIsFault(this->m_peripheralReading)) {
         return;
     }
@@ -355,13 +452,45 @@ void FPManager::scalesSvc_FPStateMachine_action_SHUTDOWN(
     this->triggerPlatformPoweroff();
 }
 
+void FPManager::scalesSvc_FPStateMachine_action_REBOOT(
+    SmId smId, scalesSvc_FPStateMachine::Signal signal) {
+    // No hardware outputs, no platform poweroff, no Jetson/peripheral cuts --
+    // this path restarts the flight-software process only (via the real
+    // Svc.FatalHandler + systemd Restart=on-failure, triggered separately by
+    // fatalIn_handler's fatalOut_out() forward).
+    if (this->m_mode == FPManagerState::EMERGENCY) {
+        // A real platform shutdown is already latched; never downgrade it.
+        return;
+    }
+    if (this->m_mode != FPManagerState::EMERGENCY_REBOOT) {
+        this->m_mode = FPManagerState::EMERGENCY_REBOOT;
+        this->writeStateTelemetry();
+    }
+}
+
 bool FPManager::readingIsFault(const ThermalReading& reading) const {
     return reading.get_tempState() == ThermalStates::FAULT;
 }
 
-bool FPManager::findJetsonFault(ThermalReading& faultReading) const {
+bool FPManager::imxFaultConfirmed() const {
+    return this->m_imxReadingValid && this->readingIsFault(this->m_imxReading) &&
+           this->m_sourceFaultStreak[this->m_imxLastSource] >= this->m_activeFaultDebounceCount;
+}
+
+bool FPManager::peripheralFaultConfirmed() const {
+    return this->m_peripheralReadingValid && this->readingIsFault(this->m_peripheralReading) &&
+           this->m_sourceFaultStreak[this->m_peripheralLastSource] >= this->m_activeFaultDebounceCount;
+}
+
+bool FPManager::jetsonSensorFaultConfirmed(U8 sensorId) const {
+    return sensorId < JETSON_SENSOR_COUNT && this->m_jetsonReadingValid[sensorId] &&
+           this->readingIsFault(this->m_jetsonReadings[sensorId]) &&
+           this->m_jetsonFaultStreak[sensorId] >= this->m_activeFaultDebounceCount;
+}
+
+bool FPManager::findConfirmedJetsonFault(ThermalReading& faultReading) const {
     for (FwIndexType i = 0; i < JETSON_SENSOR_COUNT; i++) {
-        if (this->m_jetsonReadingValid[i] && this->readingIsFault(this->m_jetsonReadings[i])) {
+        if (this->jetsonSensorFaultConfirmed(static_cast<U8>(i))) {
             faultReading = this->m_jetsonReadings[i];
             return true;
         }
@@ -411,6 +540,9 @@ FwOpcodeType FPManager::extractOpcode(Fw::ComBuffer& data) const {
 void FPManager::invalidateJetsonReadings() {
     for (FwIndexType i = 0; i < JETSON_SENSOR_COUNT; i++) {
         this->m_jetsonReadingValid[i] = false;
+        // Otherwise a stale pre-power-off streak could trip immediately on
+        // the very first reading after HPC re-entry.
+        this->m_jetsonFaultStreak[i] = 0;
     }
     this->m_jetsonFaultSignalPending = false;
     this->tlmWrite_JETSON_VALID_READING_COUNT(0);
@@ -512,6 +644,37 @@ void FPManager::writeStateTelemetry() {
         this->m_lastPublishedState = this->m_mode;
     }
     this->tlmWrite_FP_STATE(this->m_mode);
+}
+
+void FPManager::parameterUpdated(FwPrmIdType id) {
+    switch (id) {
+        case PARAMID_FAULT_DEBOUNCE_COUNT:
+            this->applyFaultDebounceCount(this->paramGet_FAULT_DEBOUNCE_COUNT(this->m_paramValid));
+            break;
+        default:
+            break;
+    }
+}
+
+void FPManager::applyFaultDebounceCount(U32 candidate) {
+    if (candidate <= FAULT_DEBOUNCE_MAX) {
+        this->m_activeFaultDebounceCount = candidate;
+        this->tlmWrite_FAULT_DEBOUNCE_COUNT(this->m_activeFaultDebounceCount);
+    } else {
+        this->log_WARNING_HI_FAULT_DEBOUNCE_COUNT_REJECTED(
+            candidate, FAULT_DEBOUNCE_MAX, this->m_activeFaultDebounceCount);
+    }
+}
+
+void FPManager::loadDebounceParameterOnFirstTick() {
+    if (!this->m_justBooted) {
+        return;
+    }
+    this->m_justBooted = false;
+    // Gate the saved/default value through the same validity check as a live
+    // PRM_SET, so a bad value previously saved to non-volatile storage cannot
+    // take effect at boot.
+    this->applyFaultDebounceCount(this->paramGet_FAULT_DEBOUNCE_COUNT(this->m_paramValid));
 }
 
 }  // namespace scalesSvc

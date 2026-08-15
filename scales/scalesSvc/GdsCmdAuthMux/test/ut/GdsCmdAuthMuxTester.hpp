@@ -50,6 +50,8 @@ class GdsCmdAuthMuxTester final : public GdsCmdAuthMuxGTestBase {
     void commandGatingAndResponseRouting();
     void recoveryAndManualReturnToTcp();
     void malformedCommandsAndFailureRecovery();
+    void uartAuthoritySteadyStateTick();
+    void tcpStatusPollerDrivesAuthority();
 
   private:
     // ----------------------------------------------------------------------

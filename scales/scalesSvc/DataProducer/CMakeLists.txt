@@ -24,13 +24,11 @@ register_fprime_library(
 )
 
 ### Unit Tests ###
-# register_fprime_ut(
-#     AUTOCODER_INPUTS
-#         "${CMAKE_CURRENT_LIST_DIR}/DataProducer.fpp"
-#     SOURCES
-#         "${CMAKE_CURRENT_LIST_DIR}/test/ut/DataProducerTestMain.cpp"
-#         "${CMAKE_CURRENT_LIST_DIR}/test/ut/DataProducerTester.cpp"
-#     DEPENDS
-#         STest # For rules-based testing
-#     UT_AUTO_HELPERS
-# )
+register_fprime_ut(
+    AUTOCODER_INPUTS
+        "${CMAKE_CURRENT_LIST_DIR}/DataProducer.fpp"
+    SOURCES
+        "${CMAKE_CURRENT_LIST_DIR}/test/ut/DataProducerTestMain.cpp"
+        "${CMAKE_CURRENT_LIST_DIR}/test/ut/DataProducerTester.cpp"
+    UT_AUTO_HELPERS
+)

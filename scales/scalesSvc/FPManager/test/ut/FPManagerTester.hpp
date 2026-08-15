@@ -19,6 +19,11 @@ class FPManagerTester final : public FPManagerGTestBase {
     void emitsStateTransitionEventsOnlyOnChange();
     void entersHpcModeAndAcceptsJetsonOn();
     void disablesHpcModeAndGatesJetsonOn();
+    void disableHpcModeWaitsForJetsonOffConfirmation();
+    void disableHpcModeWithJetsonNeverToggledEmitsAlreadyOffEvent();
+    void disableHpcModeWhileJetsonBootingDefersAndEmitsBootingEvent();
+    void disableHpcModeAfterBootConfirmedEmitsOffRequestedEvent();
+    void imxFaultDuringDisableHpcWaitStillTriggersEmergencyShutdown();
     void imxFaultTriggersEmergencyShutdown();
     void peripheralFaultPowersOffPeripheralOnly();
     void peripheralFaultRecoversToSafeMode();
@@ -27,10 +32,27 @@ class FPManagerTester final : public FPManagerGTestBase {
     void jetsonFaultReadingTriggersRecoveryInHpc();
     void jetsonFaultRecoveryClearsCachedReadingsBeforeHpcReentry();
     void attributesJetsonFaultAndReturnsSafe();
-    void fatalShutdownForwardsAndLatches();
+    void componentFatalRestartsFswWithoutPlatformShutdown();
     void emergencyShutdownProtectedOutputsAreLatchedAcrossRepeatedFatals();
+    void repeatedComponentFatalsDoNotReassertOrRestate();
+    void componentFatalDoesNotDowngradeLatchedEmergencyState();
+    void imxFaultRequiresConsecutiveReadingsBeforeShutdown();
+    void imxFaultStreakResetsOnNonFaultReading();
+    void imxFaultStreakResetsOnUnavailableReading();
+    void imxStreaksAreTrackedPerSource();
+    void peripheralFaultRequiresConsecutiveReadings();
+    void peripheralStreaksAreTrackedPerSource();
+    void faultDebounceParameterUpdatedDispatchesCorrectly();
+    void jetsonZoneStreaksAreIndependent();
+    void jetsonImmediateFastPathHonorsDebounce();
+    void jetsonPowerOffClearsFaultStreaks();
+    void warnTrackingIsNotDebounced();
+    void peripheralRecoveryIsNotDebounced();
+    void faultDebounceCountParameterGatesAndPublishes();
     void rejectsRemoteJetsonCommandWhenJetsonOff();
     void forwardsRemoteJetsonCommandWhenJetsonOn();
+    void rejectsRemoteJetsonCommandWhenHubLinkNotTrusted();
+    void remoteJetsonCommandGatingTracksHubTrustToggling();
     void rejectsSequencerRemoteJetsonCommandWhenJetsonOff();
     void forwardsSequencerRemoteJetsonCommandWhenJetsonOn();
     void imxWarnStateEntersAndExitsWithoutShutdown();
@@ -47,6 +69,7 @@ class FPManagerTester final : public FPManagerGTestBase {
     Fw::ComBuffer commandBuffer(FwOpcodeType opcode);
     void initializeSafeMode();
     void enterHpcMode();
+    void setFaultDebounce(U32 n);
 
     FPManager component;
 };

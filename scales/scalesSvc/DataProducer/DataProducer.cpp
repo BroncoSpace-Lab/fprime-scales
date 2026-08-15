@@ -79,7 +79,7 @@ void DataProducer ::cpuThermalReadIn_handler(FwIndexType portNum, const scalesSv
 
 void DataProducer ::jetsonThermalReadIn_handler(FwIndexType portNum,
                                                 const scalesSvc::ThermalReading& jetson_cpuThermalReading,
-                                                const scalesSvc::ThermalReading& jetson_gpuTheramlReading,
+                                                const scalesSvc::ThermalReading& jetson_gpuThermalReading,
                                                 const scalesSvc::ThermalReading& jetson_cv0ThermalReading,
                                                 const scalesSvc::ThermalReading& jetson_cv1ThermalReading,
                                                 const scalesSvc::ThermalReading& jetson_cv2ThermalReading,
@@ -90,7 +90,7 @@ void DataProducer ::jetsonThermalReadIn_handler(FwIndexType portNum,
                                                     
     if(this->m_jetsonTempContainerValid && this->m_dpCollectMode){
         if(!this->jetsonTempSerialize_Send( jetson_cpuThermalReading,
-                                            jetson_gpuTheramlReading,
+                                            jetson_gpuThermalReading,
                                             jetson_cv0ThermalReading,
                                             jetson_cv1ThermalReading,
                                             jetson_cv2ThermalReading,
@@ -180,7 +180,7 @@ bool DataProducer ::initJetsonTempContainer(){
                                                        JETSON_TEMP_ZONE_RECORDS *
                                                        (scalesSvc::ThermalReading::SERIALIZED_SIZE + sizeof(FwDpIdType)); 
     
-    if(this-dpGet_JetsonTemperatureZoneContainer(JETSON_TEMP_ZONE_CONTAINER_SIZE, this->m_jetsonTempContainer)){
+    if(this->dpGet_JetsonTemperatureZoneContainer(JETSON_TEMP_ZONE_CONTAINER_SIZE, this->m_jetsonTempContainer) == Fw::Success::SUCCESS){
         this->m_jetsonTempContainerValid = true;
         this->m_jetsonTempContainer.setTimeTag(this->getTime());
         printf("Initialized Jetson Temp Zone container successfully\n");
@@ -270,7 +270,7 @@ bool DataProducer ::cpuSerialize_Send(const scalesSvc::ThermalReading& cpuTherma
 }
 
 bool DataProducer ::jetsonTempSerialize_Send(const scalesSvc::ThermalReading& jetson_cpuThermalReading,  
-                                  const scalesSvc::ThermalReading& jetson_gpuTheramlReading,   
+                                  const scalesSvc::ThermalReading& jetson_gpuThermalReading,   
                                   const scalesSvc::ThermalReading& jetson_cv0ThermalReading,
                                   const scalesSvc::ThermalReading& jetson_cv1ThermalReading,   
                                   const scalesSvc::ThermalReading& jetson_cv2ThermalReading,   
@@ -285,7 +285,7 @@ bool DataProducer ::jetsonTempSerialize_Send(const scalesSvc::ThermalReading& je
         return false;
     }
 
-    status = this->m_jetsonTempContainer.serializeRecord_Jetson_GpuTemperatureRecord(jetson_gpuTheramlReading);
+    status = this->m_jetsonTempContainer.serializeRecord_Jetson_GpuTemperatureRecord(jetson_gpuThermalReading);
     if (status != Fw::SerializeStatus::FW_SERIALIZE_OK) {
         printf("Error Serializing JETSON GPU TEMP READING RECORD\n");
         return false;

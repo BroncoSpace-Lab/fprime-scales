@@ -8,6 +8,16 @@
 
 #include "Fw/Cmd/CmdPacket.hpp"
 
+namespace {
+// configureTcpStatusPoller() takes a plain function pointer (no captures
+// allowed), so the test poller's return value is controlled through a file-
+// scope flag instead of a lambda capture.
+bool g_testPollerConnected = true;
+bool testTcpStatusPoller() {
+    return g_testPollerConnected;
+}
+}  // namespace
+
 namespace scalesSvc {
 
 // ----------------------------------------------------------------------
@@ -225,6 +235,53 @@ void GdsCmdAuthMuxTester ::malformedCommandsAndFailureRecovery() {
     this->invoke_to_run(0, 12);
     this->dispatchAll();
     ASSERT_TLM_TcpReadyForAuthority(this->tlmHistory_TcpReadyForAuthority->size() - 1, Fw::On::OFF);
+}
+
+void GdsCmdAuthMuxTester ::uartAuthoritySteadyStateTick() {
+    this->startWithTcp(false);
+    this->setTime(10);
+    this->invoke_to_run(0, 10);
+    this->dispatchAll();
+    ASSERT_EVENTS_CommandAuthoritySwitchedToUart_SIZE(1);
+
+    // A further tick with TCP still down and no new status sample is the
+    // uart_gds_cmd_authority steady-state tick (uart_run) -- distinct from
+    // switch_to_uart, which only runs once on entry. No other test reaches
+    // this action.
+    this->setTime(11);
+    this->invoke_to_run(0, 11);
+    this->dispatchAll();
+    ASSERT_EVENTS_CommandAuthoritySwitchedToUart_SIZE(1);
+    ASSERT_TLM_CommandAuthority(this->tlmHistory_CommandAuthority->size() - 1, scalesSvc::CommandAuthority::UART);
+}
+
+void GdsCmdAuthMuxTester ::tcpStatusPollerDrivesAuthority() {
+    // No test so far has actually registered the deployment-style polling
+    // hook -- every other test drives tcpGdsStatus directly. This confirms
+    // run_handler's `if (m_tcpStatusPoller != nullptr)` branch and the
+    // poller call itself both work as wired in production.
+    g_testPollerConnected = true;
+    this->component.configureTcpStatusPoller(&testTcpStatusPoller);
+
+    this->setTime(0);
+    this->invoke_to_run(0, 0);
+    this->dispatchAll();
+    ASSERT_TLM_CommandAuthority(this->tlmHistory_CommandAuthority->size() - 1, scalesSvc::CommandAuthority::TCP);
+
+    // This tick's poller sample starts the down-grace timer (via
+    // tcp_gds_down); the switch to UART itself only happens once a later
+    // tick's monitor_tcp_down_grace sees the grace interval elapsed.
+    g_testPollerConnected = false;
+    this->setTime(10);
+    this->invoke_to_run(0, 10);
+    this->dispatchAll();
+    ASSERT_EVENTS_CommandAuthoritySwitchedToUart_SIZE(0);
+
+    this->setTime(21);
+    this->invoke_to_run(0, 21);
+    this->dispatchAll();
+    ASSERT_EVENTS_CommandAuthoritySwitchedToUart_SIZE(1);
+    ASSERT_TLM_CommandAuthority(this->tlmHistory_CommandAuthority->size() - 1, scalesSvc::CommandAuthority::UART);
 }
 
 }  // namespace scalesSvc

@@ -26,4 +26,10 @@ module scalesSvc{
 
     @ Latched emergency power-off request for protected peripheral hardware.
     port EmergencyPowerOff
+
+    @ Fire-and-forget report of whether it is currently safe to send
+    @ Jetson-bound traffic over the hub link (see
+    @ JetsonManager::isJetsonHubLinkTrusted()). Internal to the i.MX
+    @ deployment only -- this port never crosses the Jetson hub link itself.
+    port JetsonHubTrustStatus(trusted: bool)
 }

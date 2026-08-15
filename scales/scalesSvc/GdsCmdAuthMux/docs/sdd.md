@@ -157,7 +157,7 @@ flowchart TB
     UART -->|"uartCmdIn"| M
     M -->|"uartCmdResponseOut"| UART
 
-    M &lt;-->|"signals and actions"| SM
+    M <-->|"signals and actions"| SM
 
     M -->|"cmdOut (authorized commands only)"| SPLIT
     SPLIT -->|"forwardSeqCmdStatus[0]"| M
@@ -182,8 +182,8 @@ sequenceDiagram
 
     loop every tick, grace still active
         Poll->>M: run tick: isOpened() = false
-        SM->>M: monitor_tcp_down_grace (elapsed < 10s)
-        Note over M: Authority remains TCP; TCP commands still forwarded
+        SM->>M: monitor_tcp_down_grace (elapsed under 10s)
+        Note over M: Authority remains TCP -- TCP commands still forwarded
     end
 
     alt TCP recovers before grace expires
@@ -191,10 +191,10 @@ sequenceDiagram
         M->>SM: tcp_gds_up
         M->>Operator: TcpRecoveredDuringGrace event
         Note over M: Authority remains TCP
-    else grace expires (>= 10s) with TCP still down
+    else grace expires (10s or more) with TCP still down
         SM->>M: switch_to_uart
         M->>Operator: CommandAuthoritySwitchedToUart event
-        Note over M: Authority = UART; TCP commands now rejected BUSY
+        Note over M: Authority = UART -- TCP commands now rejected BUSY
     end
 
     Poll->>M: run tick: isOpened() = true (TCP recovered under UART authority)
@@ -204,18 +204,18 @@ sequenceDiagram
 
     loop every tick, stability timer active
         Poll->>M: run tick: isOpened() = true
-        SM->>M: monitor_tcp_stable_timer (elapsed <= 2s)
+        SM->>M: monitor_tcp_stable_timer (elapsed 2s or under)
     end
 
-    SM->>M: mark_tcp_ready (elapsed > 2s)
+    SM->>M: mark_tcp_ready (elapsed over 2s)
     M->>Operator: TcpGdsStable event, TcpReadyForAuthority=ON
-    Note over M: UART still has authority; only SWITCH_TO_TCP is accepted from TCP
+    Note over M: UART still has authority -- only SWITCH_TO_TCP is accepted from TCP
 
     Operator->>M: SWITCH_TO_TCP (via TCP or UART)
     M->>SM: tcp_auth_set
     SM->>M: switch_to_tcp
     M->>Operator: CommandAuthoritySwitchedToTcp event, CmdResponse OK
-    Note over M: Authority = TCP again; UART commands now rejected BUSY
+    Note over M: Authority = TCP again -- UART commands now rejected BUSY
 ```
 
 ### Command Gating and Response Routing
@@ -379,7 +379,17 @@ is in `ImxDeployment/Top/topology.fpp` (`ComFprime_CdhCore`, `UartGdsUplink`,
 | `UartCommandsRejected` | Running count of UART commands rejected for lacking authority. |
 
 ## Unit Tests
-| Name | Description | Output | Coverage |
+
+Measured via `fprime-util check --coverage`: **95.4% line (186/195), 100%
+function (31/31), 63.0% branch (97/154)**. The remaining gaps are ASan/UBSan
+instrumentation edges around construction (the same non-actionable pattern
+documented in WatchdogManager/McpManager/ImxThermalManager/
+JetsonThermalManager/FPManager). Each test is tagged with
+`RecordProperty("requirement", "<REQ-IDs>")`, so running the test binary
+with `--gtest_output=xml:<path>` produces a JUnit-style XML report whose
+`<testcase>` elements carry that mapping as a machine-checkable artifact.
+
+| Name | Description | Output | Verifies |
 |---|---|---|---|
 | `StartupWithTcpUp` | Verifies default startup behavior with TCP already connected. | Authority `TCP`, `TcpReadyForAuthority` OFF, no switch events | GCA-001 |
 | `StartupWithTcpDownAndGracePeriod` | TCP down from t=0; checks authority at t=9s (unchanged) and t=10s (switched). | Authority stays `TCP` through t=9s; switches to `UART` with `CommandAuthoritySwitchedToUart` at the grace boundary | GCA-002 |
@@ -387,12 +397,14 @@ is in `ImxDeployment/Top/topology.fpp` (`ComFprime_CdhCore`, `UartGdsUplink`,
 | `CommandGatingAndResponseRouting` | Sends TCP and UART commands under both authority states and verifies response routing. | Correct forward/reject per authority; responses routed to the original sender; rejection counters correct | GCA-004, GCA-005 |
 | `RecoveryAndManualReturnToTcp` | Full grace-expiry -> UART authority -> TCP recovers -> stability wait -> `TcpGdsStable` -> gated `SWITCH_TO_TCP`-only window -> operator switches back. | Correct event sequence; only `SWITCH_TO_TCP` accepted from TCP during the ready window; `CommandAuthoritySwitchedToTcp` and `CmdResponse::OK` on success | GCA-006, GCA-007, GCA-008 |
 | `MalformedCommandsAndFailureRecovery` | Sends an empty/malformed `ComBuffer` from the inactive path; drives the `failure` signal directly. | Malformed command still rejected with `BUSY`; `failure` restores `TCP` authority and `TcpReadyForAuthority` OFF; a subsequent TCP up/down/up/down sequence never marks TCP ready outside the full stable window | GCA-009, GCA-010 |
+| `UartAuthoritySteadyStateTick` | Reaches `uart_gds_cmd_authority`, then ticks again with TCP still down and no new status sample. | Authority stays `UART`; `CommandAuthoritySwitchedToUart` does not re-fire -- exercises `uart_run`, the steady-state tick action, which every other test bypasses by always changing TCP status or authority before the next tick | GCA-002 |
+| `TcpStatusPollerDrivesAuthority` | Registers a real `configureTcpStatusPoller` callback (every other test drives `tcpGdsStatus` directly) and drives two `run` ticks purely by flipping the polled return value. | Authority starts `TCP`; after the poller reports down long enough for the grace interval to elapse, authority switches to `UART` -- confirms `run_handler`'s poller-invocation branch and the poller callback wiring itself both work | GCA-011 |
 
 ## Requirements
-| Name | Description | Validation |
+| Name | Description | Verified By |
 |---|---|---|
 | GCA-001 | TCP GDS shall have command authority by default at startup. | `StartupWithTcpUp` |
-| GCA-002 | If TCP GDS remains down for at least the down-grace interval, command authority shall switch to UART GDS. | `StartupWithTcpDownAndGracePeriod` |
+| GCA-002 | If TCP GDS remains down for at least the down-grace interval, command authority shall switch to UART GDS. | `StartupWithTcpDownAndGracePeriod`, `UartAuthoritySteadyStateTick` |
 | GCA-003 | If TCP GDS recovers within the down-grace interval, authority shall remain TCP and no switch-to-UART shall occur. | `TcpRecoveryDuringGracePeriod` |
 | GCA-004 | A command received from the GDS path that does not currently hold authority shall be rejected with `BUSY` and shall increment that path's rejected-command counter. | `CommandGatingAndResponseRouting` |
 | GCA-005 | Command responses shall be routed back to the GDS path that originally sent the command, tracked per `(opcode, cmdSeq)`, regardless of which path currently holds authority. | `CommandGatingAndResponseRouting` |
@@ -401,8 +413,10 @@ is in `ImxDeployment/Top/topology.fpp` (`ComFprime_CdhCore`, `UartGdsUplink`,
 | GCA-008 | `SWITCH_TO_TCP` shall switch authority back to TCP only when TCP is ready for a commanded return; otherwise it shall return `VALIDATION_ERROR` and leave authority unchanged. | `RecoveryAndManualReturnToTcp` |
 | GCA-009 | Malformed command buffers shall still be gated by current authority rather than bypassing rejection or crashing. | `MalformedCommandsAndFailureRecovery` |
 | GCA-010 | An internal failure signal shall force the mux back to a known-good state (TCP authority, `TcpReadyForAuthority` OFF) rather than remaining wedged in an error state. | `MalformedCommandsAndFailureRecovery` |
+| GCA-011 | The deployment-supplied `configureTcpStatusPoller` hook shall be sampled on every `run` tick and shall drive the same `tcp_gds_up`/`tcp_gds_down` signals as a direct `tcpGdsStatus` call, so production topologies that never invoke `tcpGdsStatus` directly still get correct failover/recovery behavior. | `TcpStatusPollerDrivesAuthority` |
 
 ## Change Log
 | Date | Description |
 |---|---|
 | 2026-07-27 | Replaced the requirements-template stub with the full implemented design: state machine, topology wiring, operating rules, events/telemetry, and the requirements/unit-test mapping for the six existing `GdsCmdAuthMuxTester` cases. No functional changes; this is a documentation-only pass. |
+| 2026-07-28 | SDD accuracy audit: found via `gcov -f` that `scalesSvc_GdsMuxStateMachine_action_uart_run` and `configureTcpStatusPoller` were both 0% covered -- no existing test reached a steady-state UART tick without also changing TCP status, and none registered the deployment-style polling hook (all drove `tcpGdsStatus` directly instead). Added `UartAuthoritySteadyStateTick` and `TcpStatusPollerDrivesAuthority` to close both gaps, and added requirement GCA-011 for the previously-undocumented poller-wiring contract. Renamed the Requirements table's `Validation` column to `Verified By` and the Unit Tests table's `Coverage` column to `Verifies` for consistency with the rest of the scalesSvc audit. Added measured coverage numbers (95.4% line, 100% function, 63.0% branch, up from 90.8%/93.5%/58.4%) and tagged all 8 tests with `RecordProperty("requirement", ...)`. | Luca Lanzillotta |
