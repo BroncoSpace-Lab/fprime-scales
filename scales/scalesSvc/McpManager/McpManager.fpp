@@ -1,6 +1,6 @@
 module scalesSvc {
     @ Device Manger to poll temperature data from on board MCP9808 temp sensors
-    active component McpManager {
+    queued component McpManager {
 
         @ Bind the ThermalStateMachine to McpManager
         state machine instance mcp_thermalStateMachine: ThermalStateMachine
@@ -20,6 +20,10 @@ module scalesSvc {
         
         @ Complete readings for the i.MX, peripheral, and Jetson-board sensors.
         output port thermalReadingOut: ThermalReadingPort
+
+        ###############################################################################
+        #                                 COMMANDS                                    #
+        ###############################################################################
 
         ###############################################################################
         #                    Telemetry + Parameters, grouped by subsystem             #

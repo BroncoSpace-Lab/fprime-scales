@@ -58,6 +58,7 @@ namespace scalesSvc {
   void McpManager :: run_handler(FwIndexType portNum, U32 context)
   {
     this->mcp_thermalStateMachine_sendSignal_tick(); // Trigger state machine tick
+    this->dispatchCurrentMessages(); // Dispatch any messages that may have been queued during the tick
   }
 
   // ----------------------------------------------------------------------
