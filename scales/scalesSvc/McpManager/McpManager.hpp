@@ -56,6 +56,8 @@ namespace scalesSvc {
       U8 deviceAddrs[3]; //!< Array of device addresses for iterating through sensors
 
       static constexpr U8 TEMP_REG_ADDR = 0x05; //!< Register address for temperature data
+      static constexpr U8 T_UPPER_REG_ADDDR = 0x02; //!< Register address for upper temperature threshold
+      static constexpr U8 T_LOWER_REG_ADDR = 0x03; //!< Register address for lower temperature threshold
 
       /* Implementation-specific members */
       scalesSvc::ThermalReading m_thermalReadings[NUM_SENSORS]; //!< The 3 thermal readings to be logged to telemetry
@@ -128,7 +130,23 @@ namespace scalesSvc {
       //! Publishes the currently active bounds for one sensor to its
       //! subsystem's telemetry channel.
       void writeBoundsTelemetry(FwIndexType sensorIndex);
+    
+    private:
+      // ----------------------------------------------------------------------
+      // Handler implementations for commands
+      // ----------------------------------------------------------------------
 
+      //! Handler implementation for command SET_TEMP_UPPER
+      void SET_TEMP_UPPER_cmdHandler(FwOpcodeType opCode,  //!< The opcode
+                                    U32 cmdSeq,           //!< The command sequence number
+                                    F32 temp              //!< The upper temperature threshold to set
+                                    ) override;
+
+      //! Handler implementation for command SET_TEMP_LOWER
+      void SET_TEMP_LOWER_cmdHandler(FwOpcodeType opCode,  //!< The opcode
+                                    U32 cmdSeq,           //!< The command sequence number
+                                    F32 temp              //!< The lower temperature threshold to set
+                                    ) override;
 
   };
 

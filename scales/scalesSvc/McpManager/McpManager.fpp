@@ -12,6 +12,9 @@ module scalesSvc {
         @ Output port allowing to connect to an I2c bus driver for writeRead operations to the mcp9808 temp sensors
         output port mcpWriteRead: Drv.I2cWriteRead
 
+        @ Output port allowing to connecto an I2c bus driver for write operations to the mcp9808 temp sensor
+        output port mcpWrite: Drv.I2c
+
         @ Async scheduler input port to poll temp data from the sensors
         async input port run: Svc.Sched
 
@@ -24,6 +27,14 @@ module scalesSvc {
         ###############################################################################
         #                                 COMMANDS                                    #
         ###############################################################################
+
+        async command SET_TEMP_UPPER(
+            temp: F32 @< The upper temperature threshold to set
+        ) opcode 0x10
+
+        async command SET_TEMP_LOWER(
+            temp: F32 @< The lower temperature threshold to set
+        ) opcode 0x12
 
         ###############################################################################
         #                    Telemetry + Parameters, grouped by subsystem             #

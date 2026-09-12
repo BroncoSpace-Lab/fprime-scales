@@ -197,6 +197,20 @@ namespace scalesSvc {
   }
 
   // ----------------------------------------------------------------------
+  // Handler implementations for commands
+  // ----------------------------------------------------------------------
+
+  void McpManager ::SET_TEMP_UPPER_cmdHandler(FwOpcodeType opCode, U32 cmdSeq, F32 temp) {
+      // TODO
+      this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
+  }
+
+  void McpManager ::SET_TEMP_LOWER_cmdHandler(FwOpcodeType opCode, U32 cmdSeq, F32 temp) {
+      // TODO
+      this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
+  }
+
+  // ----------------------------------------------------------------------
   // Helper functions
   // ----------------------------------------------------------------------
 
