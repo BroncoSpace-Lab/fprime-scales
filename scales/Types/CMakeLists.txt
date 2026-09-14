@@ -8,6 +8,7 @@ set(SOURCE_FILES
   "${CMAKE_CURRENT_LIST_DIR}/TempBounds.fpp"
   "${CMAKE_CURRENT_LIST_DIR}/ThermalReading.fpp"
   "${CMAKE_CURRENT_LIST_DIR}/WatchdogStates.fpp"
+  "${CMAKE_CURRENT_LIST_DIR}/InaTypes.fpp"
 )
 
 register_fprime_module()

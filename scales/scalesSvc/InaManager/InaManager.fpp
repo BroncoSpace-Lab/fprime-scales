@@ -1,6 +1,6 @@
 module scalesSvc {
     @ Manager for INA260 current, voltage, and power sensor.
-    active component InaManager {
+    queued component InaManager {
         
         # ----------------------------------------------------------------------
         # General ports
@@ -44,7 +44,15 @@ module scalesSvc {
 
         event SensorReadComplete(current_mA: F32, voltage_mV: F32, power_mW: F32) severity activity high \
             format "INA260 read complete: current {} mA, voltage {} mV, power {} mW"
-            
+        
+        # ----------------------------------------------------------------------
+        # Commands
+        # ----------------------------------------------------------------------
+        async command SET_AVERAGE_MODE(
+            subsystem: Subsytem @< The subsystem of the INA260 sensor
+            mode: AverageMode @< The average mode to set on the INA260 sensor
+        )
+
         # @ Example port: receiving calls from the rate group
         # sync input port run: Svc.Sched
 

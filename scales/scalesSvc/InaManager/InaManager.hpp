@@ -44,6 +44,7 @@ namespace scalesSvc {
           U32 context //!< The call order
       ) override;
 
+      static constexpr U32 INA260_REG_CONFIG = 0x00; // configuration register address
       static constexpr U32 INA260_REG_CURRENT = 0x01; // current register address
       static constexpr U32 INA260_REG_VOLTAGE = 0x02; // voltage register address
       static constexpr U32 INA260_REG_POWER = 0x03; // power register address
@@ -70,6 +71,18 @@ namespace scalesSvc {
       // Time helpers
       bool m_justBooted = true;
       U32 m_startTime = 0;
+    
+    private:
+      // ----------------------------------------------------------------------
+      // Handler implementations for commands
+      // ----------------------------------------------------------------------
+
+      //! Handler implementation for command SET_AVERAGE_MODE
+      void SET_AVERAGE_MODE_cmdHandler(FwOpcodeType opCode,         //!< The opcode
+                                      U32 cmdSeq,                  //!< The command sequence number
+                                      scalesSvc::Subsytem subsystem,  //!< The subsystem of the INA260 sensor
+                                      scalesSvc::AverageMode mode  //!< The average mode to set on the INA260 sensor
+                                      ) override;
 
   };
 

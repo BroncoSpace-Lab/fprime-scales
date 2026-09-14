@@ -79,6 +79,39 @@ namespace scalesSvc {
 
     // Send to DataProducer
     this->inaPowerReadOut_out(0, obcData, peripheralData, jetsonData);
+
+    FwSizeType numMsgs = this->m_queue.getMessagesAvailable();
+    for (FwSizeType i = 0; i < numMsgs; ++i) {
+        (void) this->doDispatch();
+    }
+  }
+
+  // ----------------------------------------------------------------------
+  // Handler implementations for commands
+  // ----------------------------------------------------------------------
+
+  void InaManager ::SET_AVERAGE_MODE_cmdHandler(FwOpcodeType opCode, 
+                                                U32 cmdSeq, 
+                                                scalesSvc::Subsytem subsystem,
+                                                scalesSvc::AverageMode mode) {
+      U32 DEVICE_ADDDRESS;
+      switch(static_cast<Subsytem::T>(subsystem.e)){
+        case Subsytem::JETSON:
+          DEVICE_ADDDRESS = INA260_I2C_ADDRESS_JETSON;
+          break;
+        case Subsytem::OBC:
+          DEVICE_ADDDRESS = INA260_I2C_ADDRESS_OBC;
+          break;
+        case Subsytem::PERIPHERAL:
+          DEVICE_ADDDRESS = INA260_I2C_ADDRESS_PERIPHERAL;
+          break;
+        default:
+          this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::VALIDATION_ERROR);
+          return;
+      }
+
+      
+      this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
   }
 
   // ----------------------------------------------------------------------
