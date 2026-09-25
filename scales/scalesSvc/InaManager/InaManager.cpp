@@ -92,23 +92,51 @@ namespace scalesSvc {
 
   void InaManager ::SET_AVERAGE_MODE_cmdHandler(FwOpcodeType opCode, 
                                                 U32 cmdSeq, 
-                                                scalesSvc::Subsytem subsystem,
-                                                scalesSvc::AverageMode mode) {
+                                                scalesSvc::InaSubsytem subsystem,
+                                                scalesSvc::InaAverageMode mode) {
       U32 DEVICE_ADDDRESS;
-      switch(static_cast<Subsytem::T>(subsystem.e)){
-        case Subsytem::JETSON:
+      switch(static_cast<InaSubsytem::T>(subsystem.e)){
+        case InaSubsytem::JETSON:
           DEVICE_ADDDRESS = INA260_I2C_ADDRESS_JETSON;
           break;
-        case Subsytem::OBC:
+        case InaSubsytem::OBC:
           DEVICE_ADDDRESS = INA260_I2C_ADDRESS_OBC;
           break;
-        case Subsytem::PERIPHERAL:
+        case InaSubsytem::PERIPHERAL:
           DEVICE_ADDDRESS = INA260_I2C_ADDRESS_PERIPHERAL;
           break;
         default:
           this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::VALIDATION_ERROR);
           return;
       }
+
+      // Read current value of the configuration register
+      U16 configValue;
+      if(this->readRegister16(DEVICE_ADDDRESS, INA260_REG_CONFIG, configValue) != Drv::I2cStatus::I2C_OK){
+        this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::EXECUTION_ERROR);
+      }
+      
+      switch(static_cast<InaAverageMode::T>(mode.e)){
+        case InaAverageMode::_1_:
+          configValue = configValue; 
+          break;
+        case InaAverageMode::_4_:
+          break;
+        case InaAverageMode::_16_:
+          break;
+        case InaAverageMode::_64_:
+          break;
+        case InaAverageMode::_256_:
+          break;
+        case InaAverageMode::_512_:
+          break;
+        case InaAverageMode::_1024_:
+          break;
+        default:
+          this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::VALIDATION_ERROR);
+          return;
+      }
+
 
       
       this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
@@ -142,6 +170,18 @@ namespace scalesSvc {
         (static_cast<U16>(readData[0]) << 8) |
          static_cast<U16>(readData[1])
       );
+
+    return status;
+  }
+
+  Drv::I2cStatus  InaManager ::writeRegister16(U32 sensorAddress, U8 registerAddress, U16 value){
+    U8 writeData[3] = {registerAddress, static_cast<U8>( (value >> 8) & 0xFF), static_cast<U8>(value & 0xFF)};
+    Fw::Buffer writeBuffer(writeData, sizeof(writeData));
+
+    Drv::I2cStatus status = this->busWrite_out(0, sensorAddress, writeBuffer);
+    if(status != Drv::I2cStatus::I2C_OK) {
+      this->log_WARNING_HI_I2cWriteFailed(registerAddress, static_cast<I32>(status.e));
+    }
 
     return status;
   }

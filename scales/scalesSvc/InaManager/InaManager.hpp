@@ -65,6 +65,9 @@ namespace scalesSvc {
       // Function to read the 16-bit value stored in a register at a specified address
       Drv::I2cStatus readRegister16(U32 sensorAddress, U8 registerAddress, U16& value);
 
+      // Function to write to a register at a specified address
+      Drv::I2cStatus writeRegister16(U32 sensorAddress, U8 registerAddress, U16 value);
+
       // Function that confirms data has been successfully read from each register
       bool readSensorOnce(PowerReading& sensordata);
 
@@ -80,8 +83,8 @@ namespace scalesSvc {
       //! Handler implementation for command SET_AVERAGE_MODE
       void SET_AVERAGE_MODE_cmdHandler(FwOpcodeType opCode,         //!< The opcode
                                       U32 cmdSeq,                  //!< The command sequence number
-                                      scalesSvc::Subsytem subsystem,  //!< The subsystem of the INA260 sensor
-                                      scalesSvc::AverageMode mode  //!< The average mode to set on the INA260 sensor
+                                      scalesSvc::InaSubsytem subsystem,  //!< The subsystem of the INA260 sensor
+                                      scalesSvc::InaAverageMode mode  //!< The average mode to set on the INA260 sensor
                                       ) override;
 
   };

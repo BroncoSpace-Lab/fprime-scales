@@ -9,6 +9,9 @@ module scalesSvc {
         @ Port for performing I2C write/read transactions with the INA260 sensor
         output port busWriteRead : Drv.I2cWriteRead
 
+        @ Port for performing I2C write transactions with the INA260 sensor
+        output port busWrite: Drv.I2c
+
         @ Input port for sending data each tick
         async input port run: Svc.Sched
 
@@ -36,6 +39,10 @@ module scalesSvc {
         event I2cReadFailed(register_address: U8, status: I32) severity warning high \
             format "INA260 I2C read failed for register 0x{} with status {}"
 
+        @ Event for failed INA260 write
+        event I2cWriteFailed(register_address: U8, status: I32) severity warning high \
+            format "INA260 I2C write failed for register 0x{} with status {}"
+            
         event FAIL_TO_READ_PWR_AT(
             location: string @< The location of the sensor that failed to read
         ) \
@@ -49,8 +56,8 @@ module scalesSvc {
         # Commands
         # ----------------------------------------------------------------------
         async command SET_AVERAGE_MODE(
-            subsystem: Subsytem @< The subsystem of the INA260 sensor
-            mode: AverageMode @< The average mode to set on the INA260 sensor
+            subsystem: InaSubsytem @< The subsystem of the INA260 sensor
+            mode: InaAverageMode @< The average mode to set on the INA260 sensor
         )
 
         # @ Example port: receiving calls from the rate group
