@@ -46,7 +46,7 @@ namespace scalesSvc {
       m_justBooted = false;
       m_startTime = getTime().getSeconds();
     }
-  
+    
     // Evaluate the current time by subtracting the start time from the current time
     U32 currentTime = getTime().getSeconds() - m_startTime; 
 
@@ -54,6 +54,12 @@ namespace scalesSvc {
     jetsonData.set_timestamp(currentTime);
     obcData.set_timestamp(currentTime);
     peripheralData.set_timestamp(currentTime);
+
+    // Dispatch current queued messages
+    FwSizeType numMsgs = this->m_queue.getMessagesAvailable();
+    for (FwSizeType i = 0; i < numMsgs; ++i) {
+        (void) this->doDispatch();
+    }
 
     // Write to the telemetry channel for each INA260 sensor
     if (this->readSensorOnce(jetsonData)) {
@@ -79,11 +85,6 @@ namespace scalesSvc {
 
     // Send to DataProducer
     this->inaPowerReadOut_out(0, obcData, peripheralData, jetsonData);
-
-    FwSizeType numMsgs = this->m_queue.getMessagesAvailable();
-    for (FwSizeType i = 0; i < numMsgs; ++i) {
-        (void) this->doDispatch();
-    }
   }
 
   // ----------------------------------------------------------------------

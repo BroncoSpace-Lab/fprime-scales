@@ -13,7 +13,7 @@ module scalesSvc {
         output port busWrite: Drv.I2c
 
         @ Input port for sending data each tick
-        async input port run: Svc.Sched
+        sync input port run: Svc.Sched
 
         @ Output port for sending power readings to DataProducer
         output port inaPowerReadOut: InaPowerReadings
