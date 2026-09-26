@@ -13,6 +13,7 @@ module scalesSvc{
         _4_ @< 4 sample average
         _16_ @< 16 sample average
         _64_ @< 64 sample average
+        _128_ @< 128 sample average
         _256_ @< 256 sample average
         _512_ @< 512 sample average
         _1024_ @< 1024 sample average

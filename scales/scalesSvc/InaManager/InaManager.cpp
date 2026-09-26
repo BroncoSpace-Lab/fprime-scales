@@ -94,16 +94,16 @@ namespace scalesSvc {
                                                 U32 cmdSeq, 
                                                 scalesSvc::InaSubsytem subsystem,
                                                 scalesSvc::InaAverageMode mode) {
-      U32 DEVICE_ADDDRESS;
+      U32 DEVICE_ADDRESS;
       switch(static_cast<InaSubsytem::T>(subsystem.e)){
         case InaSubsytem::JETSON:
-          DEVICE_ADDDRESS = INA260_I2C_ADDRESS_JETSON;
+          DEVICE_ADDRESS = INA260_I2C_ADDRESS_JETSON;
           break;
         case InaSubsytem::OBC:
-          DEVICE_ADDDRESS = INA260_I2C_ADDRESS_OBC;
+          DEVICE_ADDRESS = INA260_I2C_ADDRESS_OBC;
           break;
         case InaSubsytem::PERIPHERAL:
-          DEVICE_ADDDRESS = INA260_I2C_ADDRESS_PERIPHERAL;
+          DEVICE_ADDRESS = INA260_I2C_ADDRESS_PERIPHERAL;
           break;
         default:
           this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::VALIDATION_ERROR);
@@ -112,32 +112,49 @@ namespace scalesSvc {
 
       // Read current value of the configuration register
       U16 configValue;
-      if(this->readRegister16(DEVICE_ADDDRESS, INA260_REG_CONFIG, configValue) != Drv::I2cStatus::I2C_OK){
+      if(this->readRegister16(DEVICE_ADDRESS, INA260_REG_CONFIG, configValue) != Drv::I2cStatus::I2C_OK){
         this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::EXECUTION_ERROR);
+        return;
       }
       
+      // Clear averaging bits 11:9
+      configValue &= ~(0x0E00);
+
+      // Set averaging bits 11:9 to corresponding modes
       switch(static_cast<InaAverageMode::T>(mode.e)){
         case InaAverageMode::_1_:
-          configValue = configValue; 
+          configValue = configValue | 0x0000; 
           break;
         case InaAverageMode::_4_:
+          configValue = configValue | 0x0200;
           break;
         case InaAverageMode::_16_:
+          configValue = configValue | 0x0400;
           break;
         case InaAverageMode::_64_:
+          configValue = configValue | 0x0600;
+          break;
+        case InaAverageMode::_128_:
+          configValue = configValue | 0x0800;
           break;
         case InaAverageMode::_256_:
+          configValue = configValue | 0x0A00;
           break;
         case InaAverageMode::_512_:
+          configValue = configValue | 0x0C00;
           break;
         case InaAverageMode::_1024_:
+          configValue = configValue | 0x0E00;
           break;
         default:
           this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::VALIDATION_ERROR);
           return;
       }
 
-
+      if(this->writeRegister16(DEVICE_ADDRESS, INA260_REG_CONFIG, configValue) != Drv::I2cStatus::I2C_OK){
+        this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::EXECUTION_ERROR);
+        return;
+      }
       
       this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
   }
