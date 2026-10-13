@@ -5,9 +5,12 @@
 // ======================================================================
 
 #include "scales/scalesSvc/ImxThermalManager/ImxThermalManager.hpp"
-#include <fstream>
-#include <iostream>
+#include <Fw/Types/StringUtils.hpp>
+#include <Os/File.hpp>
 
+namespace {
+  constexpr FwSizeType TEMP_FILE_BUFFER_SIZE = 32;
+}
 
 namespace scalesSvc {
 
@@ -32,27 +35,61 @@ namespace scalesSvc {
   // Handler implementations for commands
   // ----------------------------------------------------------------------
 
-  void ImxThermalManager ::imxCpuTemp_handler(FwIndexType portNum, U32 context) {
+  void ImxThermalManager ::run_handler(FwIndexType portNum, U32 context) {
       this->thermalStateMachine_sendSignal_tick();
 }
 
+bool ImxThermalManager::readTemperatureFile() {
+  Os::File tempFile;
+  Os::File::Status fileStatus = tempFile.open(this->tempPath, Os::File::Mode::OPEN_READ);
+  if (fileStatus != Os::File::Status::OP_OK) {
+    return false;
+  }
+
+  CHAR tempBuffer[TEMP_FILE_BUFFER_SIZE] = {};
+  FwSizeType readSize = sizeof(tempBuffer) - 1;
+  fileStatus = tempFile.read(reinterpret_cast<U8*>(tempBuffer), readSize, Os::File::WaitType::NO_WAIT);
+  tempFile.close();
+  if ((fileStatus != Os::File::Status::OP_OK) || (readSize == 0)) {
+    return false;
+  }
+  tempBuffer[readSize] = '\0';
+
+  I32 tempMilliC = 0;
+  CHAR* parseEnd = nullptr;
+  Fw::StringUtils::StringToNumberStatus parseStatus =
+      Fw::StringUtils::string_to_number(tempBuffer, sizeof(tempBuffer), tempMilliC, &parseEnd, 10);
+  if ((parseStatus != Fw::StringUtils::StringToNumberStatus::SUCCESSFUL_CONVERSION) || (parseEnd == nullptr)) {
+    return false;
+  }
+  while ((*parseEnd == ' ') || (*parseEnd == '\t') || (*parseEnd == '\r') || (*parseEnd == '\n')) {
+    parseEnd++;
+  }
+  if (*parseEnd != '\0') {
+    return false;
+  }
+
+  this->m_tempMilliC = static_cast<F32>(tempMilliC);
+  this->m_tempC = this->m_tempMilliC / 1000.0F;
+  return true;
+}
+
 void ImxThermalManager::scalesSvc_ThermalStateMachine_action_doRead(SmId smId, scalesSvc_ThermalStateMachine::Signal signal) {
-      
-        if (m_justBooted){
+
+      if (m_justBooted){
         m_startTime = this->getTime().getSeconds(); // Record the start time at boot to track uptime in telemetry
         m_justBooted = false;
+        // Gate the saved/default bounds through the same validity check as a
+        // live PRM_SET, and publish the resulting active bounds.
+        this->applyBounds(this->paramGet_IMX_CPU_BOUNDS(m_paramValid));
       }
-      
-      std::ifstream tempFile(tempPath); // Open the temperature file
-      // Rob says to use FPrime OSAL for file reading.
-      if(tempFile){ //if the file opened successfully, read the data
-      tempFile >> this->m_tempMilliC;         // Read the raw temperature value into the variable
-      this->m_tempC = this->m_tempMilliC / 1000.0f; // Convert from millidegrees Celsius to Celsius
+
+      if(this->readTemperatureFile()){ //if the file opened and parsed successfully, read the data
       (this->m_cpu_thermal_read).set_temperature(m_tempC);
       (this->m_cpu_thermal_read).set_sensorId(0);
       (this->m_cpu_thermal_read).set_location(Fw::String("CPU"));
       (this->m_cpu_thermal_read).set_timestamp(this->getTime().getSeconds()- m_startTime);
-      
+
       this->thermalStateMachine_sendSignal_success();
     }
       else {
@@ -62,51 +99,80 @@ void ImxThermalManager::scalesSvc_ThermalStateMachine_action_doRead(SmId smId, s
   }
 
 void ImxThermalManager::scalesSvc_ThermalStateMachine_action_doEvaluate( SmId smId, scalesSvc_ThermalStateMachine::Signal signal){
-  if(paramGet_IMX_CPU_FAULT_LOW(m_paramValid) <= this->m_tempC && this->m_tempC < paramGet_IMX_CPU_WARN_LOW(m_paramValid)){
-    this->m_cpu_thermal_read.set_tempState(scalesSvc::ThermalStates::FAULT); // Set the thermal state to FAULT
-    this->tlmWrite_imx_cpu_temp_read(this->m_cpu_thermal_read); // emit the telemetry with the state
-    
-      this->thermalStateMachine_sendSignal_success();
-  }
-  if(paramGet_IMX_CPU_WARN_LOW(m_paramValid) <= this->m_tempC && this->m_tempC < paramGet_IMX_CPU_IDLE_LOW(m_paramValid)){
-    this->m_cpu_thermal_read.set_tempState(scalesSvc::ThermalStates::WARN); // Set the thermal state to WARN
-    this->tlmWrite_imx_cpu_temp_read(this->m_cpu_thermal_read); // emit the telemetry with the state
+  const F32 faultLow = this->m_activeBounds.get_faultLow();
+  const F32 warnLow = this->m_activeBounds.get_warnLow();
+  const F32 idleLow = this->m_activeBounds.get_idleLow();
+  const F32 idleHigh = this->m_activeBounds.get_idleHigh();
+  const F32 warnHigh = this->m_activeBounds.get_warnHigh();
+  const F32 faultHigh = this->m_activeBounds.get_faultHigh();
 
-      this->thermalStateMachine_sendSignal_success();
+  ThermalStates state;
+  if (this->m_tempC < faultLow || faultHigh <= this->m_tempC ||
+      (faultLow <= this->m_tempC && this->m_tempC < warnLow) ||
+      (warnHigh < this->m_tempC && this->m_tempC < faultHigh)) {
+    state = scalesSvc::ThermalStates::FAULT;
+  } else if ((warnLow <= this->m_tempC && this->m_tempC < idleLow) ||
+             (idleHigh < this->m_tempC && this->m_tempC <= warnHigh)) {
+    state = scalesSvc::ThermalStates::WARN;
+  } else if (idleLow <= this->m_tempC && this->m_tempC <= idleHigh) {
+    state = scalesSvc::ThermalStates::IDLE;
+  } else {
+    // Treat gaps caused by invalid or overlapping parameters as unsafe.
+    state = scalesSvc::ThermalStates::FAULT;
   }
-  if(paramGet_IMX_CPU_IDLE_LOW(m_paramValid) <= this->m_tempC && this->m_tempC < paramGet_IMX_CPU_IDLE_HIGH(m_paramValid)){
-    this->m_cpu_thermal_read.set_tempState(scalesSvc::ThermalStates::IDLE); // Set the thermal state to IDLE
-    this->tlmWrite_imx_cpu_temp_read(this->m_cpu_thermal_read); // emit the telemetry with the state
 
-      this->thermalStateMachine_sendSignal_success();
-  }
-  if(paramGet_IMX_CPU_IDLE_HIGH(m_paramValid) <= this->m_tempC && this->m_tempC < paramGet_IMX_CPU_WARN_HIGH(m_paramValid)){
-    this->m_cpu_thermal_read.set_tempState(scalesSvc::ThermalStates::WARN); // Set the thermal state to WARN
-    this->tlmWrite_imx_cpu_temp_read(this->m_cpu_thermal_read); // emit the telemetry with the state
-
-      this->thermalStateMachine_sendSignal_success();
-  }
-  if(paramGet_IMX_CPU_WARN_HIGH(m_paramValid) <= this->m_tempC && this->m_tempC < paramGet_IMX_CPU_FAULT_HIGH(m_paramValid)){
-    this->m_cpu_thermal_read.set_tempState(scalesSvc::ThermalStates::FAULT); // Set the thermal state to FAULT
-    this->tlmWrite_imx_cpu_temp_read(this->m_cpu_thermal_read); // emit the telemetry with the state
-   
-      this->thermalStateMachine_sendSignal_success();
-  }
+  this->m_cpu_thermal_read.set_tempState(state);
+  this->tlmWrite_imx_cpu_temp_read(this->m_cpu_thermal_read);
+  this->cpuThermalReadOut_out(0, this->m_cpu_thermal_read);
+  // Republish the active bounds every cycle (not just on boot/change) so a
+  // GDS session that connects late still sees them on the next tick instead
+  // of waiting for another PRM_SET.
+  this->tlmWrite_IMX_CPU_BOUNDS(this->m_activeBounds);
+  this->imxThermalReadingOut_out(0, this->m_cpu_thermal_read);
+  this->thermalStateMachine_sendSignal_success();
 }
 
   void ImxThermalManager::scalesSvc_ThermalStateMachine_action_doReadFail(SmId smId, scalesSvc_ThermalStateMachine::Signal signal){
-      
-      std::ifstream tempFile(tempPath); // Open the temperature file
-      if(tempFile){ //if the file opened successfully, read the data
-      tempFile >> this->m_tempMilliC;         // Read the raw temperature value into the variable
-      this->m_tempC = this->m_tempMilliC / 1000.0f; // Convert from millidegrees Celsius to Celsius
+
+      if(this->readTemperatureFile()){ //if the file opened and parsed successfully, read the data
       this->thermalStateMachine_sendSignal_success();
       }
       else{
         this->m_cpu_thermal_read.set_location(Fw::String("FAILED_READ"));
         this->tlmWrite_imx_cpu_temp_read(this->m_cpu_thermal_read);
+        this->log_WARNING_HI_FAIL_TO_READ_TEMP();
         this->thermalStateMachine_sendSignal_fail();
       }
-      
+
     }
+
+  void ImxThermalManager::parameterUpdated(FwPrmIdType id) {
+    switch (id) {
+      case PARAMID_IMX_CPU_BOUNDS:
+        this->applyBounds(this->paramGet_IMX_CPU_BOUNDS(m_paramValid));
+        break;
+      default:
+        break;
+    }
+  }
+
+  bool ImxThermalManager::thresholdsAreOrdered(const scalesSvc::TempBounds& bounds) const {
+    return bounds.get_faultLow() <= bounds.get_warnLow() &&
+           bounds.get_warnLow() <= bounds.get_idleLow() &&
+           bounds.get_idleLow() <= bounds.get_idleHigh() &&
+           bounds.get_idleHigh() <= bounds.get_warnHigh() &&
+           bounds.get_warnHigh() <= bounds.get_faultHigh();
+  }
+
+  void ImxThermalManager::applyBounds(const scalesSvc::TempBounds& candidate) {
+    if (this->thresholdsAreOrdered(candidate)) {
+      this->m_activeBounds = candidate;
+      this->tlmWrite_IMX_CPU_BOUNDS(this->m_activeBounds);
+    } else {
+      this->log_WARNING_HI_THRESHOLDS_MISCONFIGURED(
+          Fw::String("IMX_CPU"), candidate.get_faultLow(), candidate.get_warnLow(),
+          candidate.get_idleLow(), candidate.get_idleHigh(),
+          candidate.get_warnHigh(), candidate.get_faultHigh());
+    }
+  }
 }

@@ -5,80 +5,107 @@ module scalesSvc {
         @ Bind the ThermalStateMachine to McpManager
         state machine instance mcp_thermalStateMachine: ThermalStateMachine
 
+        ###############################################################################
+        #                                 General Ports                               #
+        ###############################################################################
+
         @ Output port allowing to connect to an I2c bus driver for writeRead operations to the mcp9808 temp sensors
         output port mcpWriteRead: Drv.I2cWriteRead
 
         @ Async scheduler input port to poll temp data from the sensors
         async input port run: Svc.Sched
 
+        @ Output to send all of thermal readings to DataProducer
+        output port mcpThermalReadOut: McpThermalReadings
+        
+        @ Complete readings for the i.MX, peripheral, and Jetson-board sensors.
+        output port thermalReadingOut: ThermalReadingPort
+
+        ###############################################################################
+        #                    Telemetry + Parameters, grouped by subsystem             #
+        ###############################################################################
+
         @ Telemetry to log imx_temp data
         telemetry IMX_TEMP: ThermalReading id 0
+
+        @ Currently active i.MX IDLE/WARN/FAULT bounds (rejected updates never
+        @ reach this channel -- see MCP_IMX_BOUNDS parameter).
+        telemetry MCP_IMX_BOUNDS: TempBounds id 0x10
+
+        @ i.MX sensor IDLE/WARN/FAULT temperature bounds
+        param MCP_IMX_BOUNDS: TempBounds \
+            default { faultLow = -40.0, warnLow = -20.0, idleLow = 10.0, idleHigh = 60.0, warnHigh = 80.0, faultHigh = 100.0 } \
+            id 0x00 \
+            set opcode 0x01 \
+            save opcode 0x02
+
 
         @ Telemetry to log periferal temp data
         telemetry PERIPHERAL_TEMP: ThermalReading id 1
 
-        @ Telemetry to log Jetson temp data
-        telemetry JETSON_TEMP: ThermalReading id 2
-    
-        @ IDLE Low temperature threshold
-        param MCP_IDLE_LOW: F32 \
-            default 10 \
-            id 0x00 \ 
-            set opcode 0x01 \
-            save opcode 0x02
+        @ Currently active peripheral IDLE/WARN/FAULT bounds (rejected updates
+        @ never reach this channel -- see MCP_PERIPHERAL_BOUNDS parameter).
+        telemetry MCP_PERIPHERAL_BOUNDS: TempBounds id 0x11
 
-        @ IDLE High temperature threshold
-        param MCP_IDLE_HIGH: F32 \
-            default 60 \
-            id 0x01 \ 
+        @ Peripheral sensor IDLE/WARN/FAULT temperature bounds
+        param MCP_PERIPHERAL_BOUNDS: TempBounds \
+            default { faultLow = -40.0, warnLow = -20.0, idleLow = 10.0, idleHigh = 60.0, warnHigh = 80.0, faultHigh = 100.0 } \
+            id 0x01 \
             set opcode 0x03 \
             save opcode 0x04
-        
-        @ WARNING Low temperature threshold
-        param MCP_WARN_LOW: F32 \
-            default -20 \
-            id 0x02 \ 
+
+
+        @ Telemetry to log Jetson temp data
+        telemetry JETSON_TEMP: ThermalReading id 2
+
+        @ Currently active Jetson-board IDLE/WARN/FAULT bounds (rejected
+        @ updates never reach this channel -- see MCP_JETSON_BOUNDS parameter).
+        telemetry MCP_JETSON_BOUNDS: TempBounds id 0x12
+
+        @ Jetson-board sensor IDLE/WARN/FAULT temperature bounds
+        param MCP_JETSON_BOUNDS: TempBounds \
+            default { faultLow = -40.0, warnLow = -20.0, idleLow = 10.0, idleHigh = 60.0, warnHigh = 80.0, faultHigh = 100.0 } \
+            id 0x02 \
             set opcode 0x05 \
             save opcode 0x06
 
-        @ WARNING High temperature threshold
-        param MCP_WARN_HIGH: F32 \
-            default 80 \   
-            id 0x03 \ 
-            set opcode 0x07 \
-            save opcode 0x08
-        
-        @ FAULT Low temperature threshold
-        param MCP_FAULT_LOW: F32 \
-            default -40 \
-            id 0x04 \ 
-            set opcode 0x09 \
-            save opcode 0x10
-        
-        @ FAULT High temperature threshold
-        param MCP_FAULT_HIGH: F32 \
-            default 100 \
-            id 0x05 \ 
-            set opcode 0x11 \
-            save opcode 0x12
-        
-        @ Telmetry for IDLE state low threshold
-        telemetry MCP_IDLE_LOW: F32 id 0x10
 
-        @ Telmetry for IDLE state high threshold
-        telemetry MCP_IDLE_HIGH: F32 id 0x11
+        ###############################################################################
+        #                                 Events                                      #
+        ###############################################################################
+        event FAIL_TO_READ_TEMP_AT(
+            location: string @< The location of the sensor that failed to read
+        ) \
+            severity warning high \
+            id 0x00 \
+            format "Failed to read temperature from sensor at location: {}"
 
-        @ Telmetry for WARNING state low threshold
-        telemetry MCP_WARN_LOW: F32 id 0x12
+        event FAIL_TO_READ_TEMP(
 
-        @ Telmetry for WARNING state high threshold
-        telemetry MCP_WARN_HIGH: F32 id 0x13
+        ) \
+            severity warning high \
+            id 0x01 \
+            format "Failed to read temperature from one or more sensors"
 
-        @ Telmetry for FAULT state low threshold
-        telemetry MCP_FAULT_LOW: F32 id 0x14
+        @ A sensor's newly-set IDLE/WARN/FAULT bounds are not in a sane
+        @ ascending order (FAULT_LOW <= WARN_LOW <= IDLE_LOW <= IDLE_HIGH <=
+        @ WARN_HIGH <= FAULT_HIGH). The update is rejected and the sensor
+        @ keeps using its last-known-good bounds -- fires on every rejected
+        @ attempt, not just the first, since misconfiguration never actually
+        @ takes effect.
+        event THRESHOLDS_MISCONFIGURED(
+            source: string size 32
+            faultLow: F32
+            warnLow: F32
+            idleLow: F32
+            idleHigh: F32
+            warnHigh: F32
+            faultHigh: F32
+        ) \
+            severity warning high \
+            id 0x02 \
+            format "{} temperature bounds rejected, not in ascending order: FAULT_LOW={} WARN_LOW={} IDLE_LOW={} IDLE_HIGH={} WARN_HIGH={} FAULT_HIGH={}"
 
-        @ Telmetry for FAULT state high threshold
-        telemetry MCP_FAULT_HIGH: F32 id 0x15
 
         ###############################################################################
         # Standard AC Ports: Required for Channels, Events, Commands, and Parameters  #

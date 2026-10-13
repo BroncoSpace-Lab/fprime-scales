@@ -15,7 +15,17 @@ namespace scalesSvc {
     public JetsonPowerModeManagerComponentBase
   {
 
+    friend class JetsonPowerModeManagerTester;
+
     public:
+
+      //! Reads the Jetson's currently active nvpmodel power mode index, or 4
+      //! on any error (matches the real get_nvp_mode()'s error convention).
+      using PowerModeReader = int (*)();
+
+      //! Runs a shell command and returns its exit status, matching
+      //! std::system()'s signature exactly.
+      using ShellCommandRunner = int (*)(const char*);
 
       // ----------------------------------------------------------------------
       // Component construction and destruction
@@ -28,6 +38,19 @@ namespace scalesSvc {
 
       //! Destroy JetsonPowerModeManager object
       ~JetsonPowerModeManager();
+
+      //! Override the nvpmodel-query hook. Defaults to the real
+      //! get_nvp_mode(), which shells out to `nvpmodel -q`. Test-only seam --
+      //! this must never be left pointing at anything that touches real
+      //! hardware/shell state outside a unit test.
+      void configurePowerModeReader(PowerModeReader reader);
+
+      //! Override the shell-command hook used for `nvpmodel -m <mode>` and
+      //! `shutdown -h now`. Defaults to std::system(). Test-only seam -- a
+      //! unit test must always override this before exercising any path that
+      //! calls it, since the default genuinely runs a shell command
+      //! (including a real system shutdown for the OFF path).
+      void configureShellRunner(ShellCommandRunner runner);
 
     private:
 
@@ -102,6 +125,28 @@ namespace scalesSvc {
       //! the new boot also reports automatically.
       bool m_modeReported;
       bool m_powerStateReported; //!< False until we have reported the Jetson power state at least once after boot
+
+      // ----------------------------------------------------------------------
+      // Reboot-in-flight guard
+      //
+      // nvpmodel -m <mode> reboots the Jetson to apply a new mode -- this
+      // process's own systemd service is expected to be torn down and
+      // replaced by a fresh instance as part of that reboot. Between issuing
+      // the nvpmodel call and that reboot actually severing the hub link /
+      // killing this process, this same instance is still running and could
+      // otherwise process a second overlapping mode-change request (hub- or
+      // locally-driven) and double-invoke nvpmodel. Set immediately before
+      // the shell call in powerModeReceive_handler/SET_POWER_MODE_cmdHandler,
+      // checked at the top of both. Only cleared explicitly on a GENUINE
+      // (non-SIGTERM) nvpmodel failure, where no reboot is coming and this
+      // same process instance keeps running -- on success/likely-success it
+      // is intentionally left set, since the process is expected to be
+      // replaced (constructed fresh, defaulting false again) by the reboot.
+      // ----------------------------------------------------------------------
+      bool m_rebootPending;
+
+      PowerModeReader m_powerModeReader; //!< Defaults to the real get_nvp_mode()
+      ShellCommandRunner m_shellRunner;  //!< Defaults to std::system()
 
   };
 

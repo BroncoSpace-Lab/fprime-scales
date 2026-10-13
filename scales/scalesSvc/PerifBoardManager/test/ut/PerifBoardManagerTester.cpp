@@ -24,7 +24,7 @@ namespace scalesSvc {
   PerifBoardManagerTester ::
     ~PerifBoardManagerTester()
   {
-
+    this->component.deinit();
   }
 
   // ----------------------------------------------------------------------
@@ -99,13 +99,87 @@ namespace scalesSvc {
     // New Cycle. When CMD ON is sent, we check that we get a command response
 
     this->clearHistory(); //resets history of ports for new unit test cycle
-    this->invoke_to_run(0, 0);
-    this->sendCmd_powerOn(0, 0, Fw::On::ON); //send command to turn off the board
+    this->sendCmd_powerOn(0, 0, Fw::On::ON); //send command to turn the board back on
     this->component.doDispatch();
     //check inside the if statement
     ASSERT_EVENTS_gpioOn_SIZE(1); //check event was emitted for gpioOn
     ASSERT_EVENTS_gpioOn(0, Fw::On::ON); //check event value is set to ON
     ASSERT_CMD_RESPONSE_SIZE(1); //check command response was emitted
 
+  }
+
+  void PerifBoardManagerTester ::
+    emergencyShutdownLatch()
+  {
+    this->component.loadParameters();
+    this->clearHistory();
+
+    // Board is in its default ON state, gpio held high.
+    this->invoke_to_run(0, 0);
+    this->component.doDispatch();
+    ASSERT_from_gpioSet_SIZE(1);
+    ASSERT_from_gpioSet(0, Fw::Logic::HIGH);
+
+    // FPManager asserts the emergency power-off signal (sync port, no dispatch needed):
+    // GPIO is forced low immediately, independent of the run cycle.
+    this->invoke_to_emergencyPowerOff(0);
+    ASSERT_from_gpioSet_SIZE(2);
+    ASSERT_from_gpioSet(1, Fw::Logic::LOW);
+    ASSERT_TLM_gpioState_SIZE(2);
+    ASSERT_TLM_gpioState(1, Fw::Logic::LOW);
+
+    // The latch holds across further run cycles even though m_powerMode is
+    // still ON underneath -- run_handler short-circuits before the switch.
+    this->invoke_to_run(0, 0);
+    this->component.doDispatch();
+    ASSERT_from_gpioSet_SIZE(3);
+    ASSERT_from_gpioSet(2, Fw::Logic::LOW);
+
+    // A powerOn(ON) command still "succeeds" (event + response), but the
+    // latch is never cleared, so the GPIO stays low regardless.
+    this->sendCmd_powerOn(0, 0, Fw::On::ON);
+    this->component.doDispatch();
+    ASSERT_EVENTS_gpioOn_SIZE(1);
+    ASSERT_CMD_RESPONSE_SIZE(1);
+
+    this->invoke_to_run(0, 0);
+    this->component.doDispatch();
+    ASSERT_from_gpioSet_SIZE(4);
+    ASSERT_from_gpioSet(3, Fw::Logic::LOW);
+  }
+
+  void PerifBoardManagerTester ::
+    configurableOffInterval()
+  {
+    this->clearHistory();
+
+    // Configure a non-default interval (5s instead of the 2s default) in the
+    // tester's mock parameter store, then loadParameters() so the component
+    // pulls it into its cached m_offTimeSec -- paramGet_offTimeSec() reads
+    // that cache, not the port live, so the mock must be set first.
+    this->paramSet_offTimeSec(5, Fw::ParamValid::VALID);
+    this->component.loadParameters();
+
+    this->setTestTime(Fw::Time(0, 0));
+    this->sendCmd_powerOn(0, 0, Fw::On::OFF);
+    this->component.doDispatch();
+    this->invoke_to_run(0, 0);
+    this->component.doDispatch();
+
+    // Before the configured interval elapses, gpio stays low.
+    this->setTestTime(Fw::Time(4, 0));
+    this->invoke_to_run(0, 0);
+    this->component.doDispatch();
+    ASSERT_from_gpioSet(this->fromPortHistory_gpioSet->size() - 1, Fw::Logic::LOW);
+
+    // Once the configured 5s interval elapses, the board returns to ON.
+    this->setTestTime(Fw::Time(5, 0));
+    this->invoke_to_run(0, 0);
+    this->component.doDispatch();
+    ASSERT_from_gpioSet(this->fromPortHistory_gpioSet->size() - 1, Fw::Logic::LOW);
+
+    this->invoke_to_run(0, 0);
+    this->component.doDispatch();
+    ASSERT_from_gpioSet(this->fromPortHistory_gpioSet->size() - 1, Fw::Logic::HIGH);
   }
 }

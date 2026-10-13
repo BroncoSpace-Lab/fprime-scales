@@ -52,6 +52,16 @@ namespace scalesSvc {
       //! Test the PerifBoardManager component
       void testPerifBoardManager();
 
+      //! FPManager's emergencyPowerOff signal latches the board off: GPIO is
+      //! forced LOW immediately and stays LOW on every subsequent run_handler
+      //! cycle, even across a powerOn(ON) command, since the latch is never
+      //! cleared once set.
+      void emergencyShutdownLatch();
+
+      //! offTimeSec is a live parameter, not a compile-time constant -- a
+      //! non-default value must change how long the OFF state is held.
+      void configurableOffInterval();
+
     private:
 
       // ----------------------------------------------------------------------

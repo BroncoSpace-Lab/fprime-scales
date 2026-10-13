@@ -5,7 +5,10 @@
 // ======================================================================
 
 #include "ImxThermalManagerTester.hpp"
-#include "fstream"
+#include <Os/File.hpp>
+#include <cstdio>
+#include <cstring>
+#include <unistd.h>
 
 
 namespace scalesSvc {
@@ -26,179 +29,211 @@ namespace scalesSvc {
   ImxThermalManagerTester ::
     ~ImxThermalManagerTester()
   {
-
+    this->component.deinit();
   }
 
   // ----------------------------------------------------------------------
   // Tests
   // ----------------------------------------------------------------------
+  void ImxThermalManagerTester :: writeTemperatureFile(const char* path, F32 tempC)
+  {
+    CHAR tempText[32];
+    const I32 tempMilliC = static_cast<I32>(tempC * 1000.0F);
+    const int textSize = std::snprintf(tempText, sizeof(tempText), "%d\n", static_cast<int>(tempMilliC));
+    ASSERT_GT(textSize, 0);
+    ASSERT_LT(static_cast<FwSizeType>(textSize), static_cast<FwSizeType>(sizeof(tempText)));
+
+    Os::File tempFile;
+    Os::File::Status status = tempFile.open(path, Os::File::Mode::OPEN_CREATE, Os::File::OverwriteType::OVERWRITE);
+    ASSERT_EQ(Os::File::Status::OP_OK, status);
+
+    FwSizeType writeSize = static_cast<FwSizeType>(textSize);
+    status = tempFile.write(reinterpret_cast<const U8*>(tempText), writeSize, Os::File::WaitType::WAIT);
+    tempFile.close();
+    ASSERT_EQ(Os::File::Status::OP_OK, status);
+    ASSERT_EQ(static_cast<FwSizeType>(textSize), writeSize);
+  }
+
+  void ImxThermalManagerTester :: writeRawTempFile(const char* path, const char* content)
+  {
+    Os::File tempFile;
+    Os::File::Status status = tempFile.open(path, Os::File::Mode::OPEN_CREATE, Os::File::OverwriteType::OVERWRITE);
+    ASSERT_EQ(Os::File::Status::OP_OK, status);
+
+    FwSizeType writeSize = static_cast<FwSizeType>(std::strlen(content));
+    if (writeSize > 0) {
+      status = tempFile.write(reinterpret_cast<const U8*>(content), writeSize, Os::File::WaitType::WAIT);
+      ASSERT_EQ(Os::File::Status::OP_OK, status);
+    }
+    tempFile.close();
+  }
+
+  void ImxThermalManagerTester :: runTickAction()
+  {
+    this->invoke_to_run(0, 0);
+    this->component.doDispatch();
+    this->component.doDispatch();
+  }
+
+  void ImxThermalManagerTester :: readAndEvaluateTemperature()
+  {
+    this->runTickAction();
+    this->component.doDispatch();
+
+    this->runTickAction();
+    this->component.doDispatch();
+  }
+
+  void ImxThermalManagerTester :: assertLatestReading(
+      FwSizeType expectedHistorySize,
+      F32 tempC,
+      scalesSvc::ThermalStates expectedState
+  )
+  {
+    ASSERT_TLM_imx_cpu_temp_read_SIZE(expectedHistorySize);
+    const ThermalReading& read = this->tlmHistory_imx_cpu_temp_read->at(expectedHistorySize - 1).arg;
+    ASSERT_FLOAT_EQ(read.get_temperature(), tempC);
+    ASSERT_STREQ(read.get_location().toChar(), "CPU");
+    ASSERT_EQ(read.get_tempState(), expectedState);
+  }
+
   void ImxThermalManagerTester ::
     ImxThermalManagerTesting()
   {
     this->component.loadParameters();
-    //Cycle 1: Fail Case
-    invoke_to_imxCpuTemp(0,0); //invoked the run handler
-    this->component.doDispatch(); // async port handler, queues tick
-    this->component.doDispatch(); // tick in INIT, runs doRead, queues fail
-    this->component.doDispatch(); // fail signal, enters FAIL
+    CHAR fakeTempPath[128];
+    std::snprintf(fakeTempPath, sizeof(fakeTempPath), "/tmp/imx_cpu_temp_test_%ld", static_cast<long>(::getpid()));
+    this->component.setTempPath(fakeTempPath);
+    static_cast<void>(std::remove(fakeTempPath));
 
-    invoke_to_imxCpuTemp(0,0); // invoked the runhandler
-    this->component.doDispatch(); // async port handler, queues tick
-    this->component.doDispatch(); // tick in FAIL, runs readFail, emits telemetry
+    this->runTickAction();
+    this->component.doDispatch();
+
+    this->runTickAction();
+    this->component.doDispatch();
 
     ASSERT_TLM_imx_cpu_temp_read_SIZE(1);
-    const ThermalReading& failedRead = this->tlmHistory_imx_cpu_temp_read->at(0).arg; //remember & means that ThermalReading is itself of this instance. 
-    ASSERT_STREQ(failedRead.getlocation().toChar(), "FAILED_READ");
+    const ThermalReading& failedRead = this->tlmHistory_imx_cpu_temp_read->at(0).arg;
+    ASSERT_STREQ(failedRead.get_location().toChar(), "FAILED_READ");
+    ASSERT_EVENTS_FAIL_TO_READ_TEMP_SIZE(1);
 
-    // End Fail case test
+    this->writeTemperatureFile(fakeTempPath, 42.0F);
+    this->runTickAction();
+    this->component.doDispatch();
+    this->readAndEvaluateTemperature();
+    this->assertLatestReading(2, 42.0F, scalesSvc::ThermalStates::IDLE);
 
-    // Make fake temp file: 42 C = 42000 milli-C
-    const char* fakeTempPath = "/tmp/imx_cpu_temp_test";
-    F32 tempC = 42.0f;
+    this->writeTemperatureFile(fakeTempPath, 75.0F);
+    this->readAndEvaluateTemperature();
+    this->assertLatestReading(3, 75.0F, scalesSvc::ThermalStates::WARN);
 
-    std::ofstream fakeTempFile(fakeTempPath);
-    fakeTempFile << tempC * 1000.0f << "\n";
-    fakeTempFile.close();
+    this->writeTemperatureFile(fakeTempPath, 80.0F);
+    this->readAndEvaluateTemperature();
+    // Exactly at WARN_HIGH (80): WARN claims its own boundary, matching
+    // WARN_LOW's inclusive boundary on the low side (see determineTempState).
+    this->assertLatestReading(4, 80.0F, scalesSvc::ThermalStates::WARN);
 
-    this->component.setTempPath(fakeTempPath);
+    this->writeTemperatureFile(fakeTempPath, 0.0F);
+    this->readAndEvaluateTemperature();
+    this->assertLatestReading(5, 0.0F, scalesSvc::ThermalStates::WARN);
 
-    // We are currently in FAIL.
-    // This tick runs readFail(), sees the file exists, queues success.
-    invoke_to_imxCpuTemp(0, 0);
-    this->component.doDispatch(); // run handler queues tick
-    this->component.doDispatch(); // tick in FAIL runs readFail, queues success
-    this->component.doDispatch(); // success moves FAIL -> INIT
-
-    // Now in INIT.
-    // This tick runs doRead(), reads fake temp file, queues success.
-    invoke_to_imxCpuTemp(0, 0);
-    this->component.doDispatch(); // run handler queues tick
-    this->component.doDispatch(); // tick in INIT runs doRead, queues success
-    this->component.doDispatch(); // success moves INIT -> EVALUATE
-
-    // Now in EVALUATE.
-    // This tick runs paramEvaluate(), writes telemetry.
-    invoke_to_imxCpuTemp(0, 0);
-    this->component.doDispatch(); // run handler queues tick
-    this->component.doDispatch(); // tick in EVALUATE runs paramEvaluate, writes telemetry
-    this->component.doDispatch(); // success moves EVALUATE -> INIT
-
-    ASSERT_TLM_imx_cpu_temp_read_SIZE(2);
-
-    const ThermalReading& read = this->tlmHistory_imx_cpu_temp_read->at(1).arg;
-
-    ASSERT_FLOAT_EQ(read.gettemperature(), tempC);
-    ASSERT_STREQ(read.getlocation().toChar(), "CPU");
-    ASSERT_EQ(read.gettempState(), scalesSvc::ThermalStates::IDLE);
-
-
-
-
-    // Make fake temp file: 80 C = 80000 milli-C
-    const char* fakeTempPath_2 = "/tmp/imx_cpu_temp_test_2";
-    tempC = 75.0f;
-
-    std::ofstream fakeTempFile_2(fakeTempPath);
-    fakeTempFile_2 << tempC * 1000.0f << "\n";
-    fakeTempFile_2.close();
-
-    // read the 80.0 value
-    invoke_to_imxCpuTemp(0, 0);
-    this->component.doDispatch(); // run handler queues tick
-    this->component.doDispatch(); // tick in Failed runs doRead
-    this->component.doDispatch(); // success
-    
-    invoke_to_imxCpuTemp(0, 0);
-    this->component.doDispatch(); // run handler queues tick
-    this->component.doDispatch(); // tick in INIT runs doRead
-    this->component.doDispatch(); // success moves INIT -> EVALUATE
-
-    ASSERT_TLM_imx_cpu_temp_read_SIZE(3);
-    const ThermalReading& read_2 = this->tlmHistory_imx_cpu_temp_read->at(2).arg;
-    ASSERT_FLOAT_EQ(read_2.gettemperature(), tempC);
-    ASSERT_STREQ(read_2.getlocation().toChar(), "CPU");
-    ASSERT_EQ(read_2.gettempState(), scalesSvc::ThermalStates::WARN);
-
-    // Make fake temp file: 75 C = 75000 milli-C
-tempC = 80.0f;
-
-std::ofstream fakeTempFile_3(fakeTempPath);
-fakeTempFile_3 << tempC * 1000.0f << "\n";
-fakeTempFile_3.close();
-
-// Read the 75.0 value
-invoke_to_imxCpuTemp(0, 0);
-this->component.doDispatch(); // pending success moves EVALUATE -> INIT
-this->component.doDispatch(); // run handler queues tick
-this->component.doDispatch(); // tick in INIT runs doRead, queues success
-
-// Evaluate the 75.0 value
-invoke_to_imxCpuTemp(0, 0);
-this->component.doDispatch(); // success moves INIT -> EVALUATE
-this->component.doDispatch(); // run handler queues tick
-this->component.doDispatch(); // tick in EVALUATE runs paramEvaluate, writes telemetry
-
-ASSERT_TLM_imx_cpu_temp_read_SIZE(4);
-const ThermalReading& read_3 = this->tlmHistory_imx_cpu_temp_read->at(3).arg;
-ASSERT_FLOAT_EQ(read_3.gettemperature(), tempC);
-ASSERT_STREQ(read_3.getlocation().toChar(), "CPU");
-ASSERT_EQ(read_3.gettempState(), scalesSvc::ThermalStates::FAULT);
-
-// Make fake temp file: 0 C = 0 milli-C
-tempC = 0.0f;
-
-std::ofstream fakeTempFile_4(fakeTempPath);
-fakeTempFile_4 << tempC * 1000.0f << "\n";
-fakeTempFile_4.close();
-
-// Read the 0.0 value
-invoke_to_imxCpuTemp(0, 0);
-this->component.doDispatch(); // pending success moves EVALUATE -> INIT
-this->component.doDispatch(); // run handler queues tick
-this->component.doDispatch(); // tick in INIT runs doRead, queues success
-
-// Evaluate the 0.0 value
-invoke_to_imxCpuTemp(0, 0);
-this->component.doDispatch(); // success moves INIT -> EVALUATE
-this->component.doDispatch(); // run handler queues tick
-this->component.doDispatch(); // tick in EVALUATE runs paramEvaluate, writes telemetry
-
-ASSERT_TLM_imx_cpu_temp_read_SIZE(5);
-const ThermalReading& read_4 = this->tlmHistory_imx_cpu_temp_read->at(4).arg;
-ASSERT_FLOAT_EQ(read_4.gettemperature(), tempC);
-ASSERT_STREQ(read_4.getlocation().toChar(), "CPU");
-ASSERT_EQ(read_4.gettempState(), scalesSvc::ThermalStates::WARN);
-
-// Make fake temp file: 30 C = 30000 milli-C
-tempC = -30.0f;
-
-std::ofstream fakeTempFile_5(fakeTempPath);
-fakeTempFile_5 << tempC * 1000.0f << "\n";
-fakeTempFile_5.close();
-
-// Read the 30.0 value
-invoke_to_imxCpuTemp(0, 0);
-this->component.doDispatch(); // pending success moves EVALUATE -> INIT
-this->component.doDispatch(); // run handler queues tick
-this->component.doDispatch(); // tick in INIT runs doRead, queues success
-
-// Evaluate the 30.0 value
-invoke_to_imxCpuTemp(0, 0);
-this->component.doDispatch(); // success moves INIT -> EVALUATE
-this->component.doDispatch(); // run handler queues tick
-this->component.doDispatch(); // tick in EVALUATE runs paramEvaluate, writes telemetry
-
-ASSERT_TLM_imx_cpu_temp_read_SIZE(6);
-const ThermalReading& read_5 = this->tlmHistory_imx_cpu_temp_read->at(5).arg;
-ASSERT_FLOAT_EQ(read_5.gettemperature(), tempC);
-ASSERT_STREQ(read_5.getlocation().toChar(), "CPU");
-ASSERT_EQ(read_5.gettempState(), scalesSvc::ThermalStates::FAULT);
-
-
+    this->writeTemperatureFile(fakeTempPath, -30.0F);
+    this->readAndEvaluateTemperature();
+    this->assertLatestReading(6, -30.0F, scalesSvc::ThermalStates::FAULT);
   }
 
+  void ImxThermalManagerTester :: boundsUpdateGating()
+  {
+    // Friend access to applyBounds() lets this lightweight harness exercise
+    // the real gating logic directly, without needing to drive a real
+    // PRM_SET through cmdIn's active-component message queue/dispatch.
 
+    // A valid, distinct-from-default bounds update is adopted and
+    // republished as telemetry.
+    const scalesSvc::TempBounds goodBounds(-35.0F, -15.0F, 5.0F, 55.0F, 75.0F, 95.0F);
+    this->component.applyBounds(goodBounds);
+    ASSERT_EVENTS_THRESHOLDS_MISCONFIGURED_SIZE(0);
+    ASSERT_TLM_IMX_CPU_BOUNDS_SIZE(1);
+    ASSERT_TLM_IMX_CPU_BOUNDS(0, goodBounds);
 
+    // Mirror the real-world mistake: lower WARN_HIGH without adjusting
+    // IDLE_HIGH to match, inverting the high band. The update must be
+    // rejected -- the component keeps using goodBounds.
+    const scalesSvc::TempBounds badBounds(-35.0F, -15.0F, 5.0F, 55.0F, 30.0F, 95.0F);
+    this->component.applyBounds(badBounds);
+    ASSERT_EVENTS_THRESHOLDS_MISCONFIGURED_SIZE(1);
+    ASSERT_EVENTS_THRESHOLDS_MISCONFIGURED(0, "IMX_CPU", -35.0F, -15.0F, 5.0F, 55.0F, 30.0F, 95.0F);
+    ASSERT_TLM_IMX_CPU_BOUNDS_SIZE(1);
 
+    // Repeating the exact same bad attempt fires again -- every rejection is
+    // its own distinct notice, since misconfiguration never takes effect.
+    this->component.applyBounds(badBounds);
+    ASSERT_EVENTS_THRESHOLDS_MISCONFIGURED_SIZE(2);
+    ASSERT_TLM_IMX_CPU_BOUNDS_SIZE(1);
 
+    // A second valid update is adopted normally.
+    const scalesSvc::TempBounds otherGoodBounds(-40.0F, -20.0F, 10.0F, 60.0F, 80.0F, 100.0F);
+    this->component.applyBounds(otherGoodBounds);
+    ASSERT_EVENTS_THRESHOLDS_MISCONFIGURED_SIZE(2);
+    ASSERT_TLM_IMX_CPU_BOUNDS_SIZE(2);
+    ASSERT_TLM_IMX_CPU_BOUNDS(1, otherGoodBounds);
+  }
+
+  void ImxThermalManagerTester :: highSideFaultGap()
+  {
+    this->component.loadParameters();
+    CHAR fakeTempPath[128];
+    std::snprintf(fakeTempPath, sizeof(fakeTempPath), "/tmp/imx_cpu_temp_test_hsf_%ld", static_cast<long>(::getpid()));
+    this->component.setTempPath(fakeTempPath);
+
+    // Between WARN_HIGH (80) and FAULT_HIGH (100) -- a distinct disjunct in
+    // doEvaluate()'s FAULT condition from the low-side case
+    // ImxThermalManagerTesting() already covers (-30, below FAULT_LOW).
+    this->writeTemperatureFile(fakeTempPath, 90.0F);
+    this->readAndEvaluateTemperature();
+    this->assertLatestReading(1, 90.0F, scalesSvc::ThermalStates::FAULT);
+
+    static_cast<void>(std::remove(fakeTempPath));
+  }
+
+  void ImxThermalManagerTester :: malformedTempFile()
+  {
+    CHAR path[128];
+    std::snprintf(path, sizeof(path), "/tmp/imx_cpu_temp_test_malformed_%ld", static_cast<long>(::getpid()));
+    this->component.setTempPath(path);
+
+    // Empty file.
+    this->writeRawTempFile(path, "");
+    ASSERT_EQ(this->component.readTemperatureFile(), false);
+
+    // Non-numeric content.
+    this->writeRawTempFile(path, "not_a_number\n");
+    ASSERT_EQ(this->component.readTemperatureFile(), false);
+
+    // Trailing garbage after an otherwise-valid number.
+    this->writeRawTempFile(path, "42000garbage");
+    ASSERT_EQ(this->component.readTemperatureFile(), false);
+
+    // Sanity check: a well-formed file still succeeds.
+    this->writeRawTempFile(path, "42000\n");
+    ASSERT_EQ(this->component.readTemperatureFile(), true);
+
+    static_cast<void>(std::remove(path));
+  }
+
+  void ImxThermalManagerTester :: parameterUpdatedCoverage()
+  {
+    this->component.loadParameters();
+    this->clearHistory();
+
+    // PARAMID_IMX_CPU_BOUNDS = 0x0 (ImxThermalManagerComponentAc.hpp).
+    // boundsUpdateGating() calls applyBounds() directly, bypassing this
+    // switch entirely, so it's otherwise never exercised.
+    this->component.parameterUpdated(0x0);
+    ASSERT_EVENTS_THRESHOLDS_MISCONFIGURED_SIZE(0);
+
+    // Unrecognized parameter ID: default case, no-op.
+    this->component.parameterUpdated(0xDEAD);
+    ASSERT_EVENTS_THRESHOLDS_MISCONFIGURED_SIZE(0);
+  }
 }

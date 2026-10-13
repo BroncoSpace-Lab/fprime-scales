@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html class="theme-green">
+
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
+    <title>GCC Code Coverage Report</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <link rel="stylesheet" href="coverage.css"/>
+  </head>
+
+  <body>
+
+    <header>
+      <h1>GCC Code Coverage Report</h1>
+      <hr/>
+      <div class="summary">
+<div>
+  <table class="legend">
+    <tr>
+      <th scope="row">Directory:</th>
+      <td>./</td>
+    </tr>
+    <tr>
+      <th scope="row">Date:</th>
+      <td>2026-10-13 10:59:42</td>
+    </tr>
+  </table>
+</div>
+
+<div>
+  <table class="coverage">
+    <tr>
+      <th></th>
+      <th scope="col">Exec</th>
+      <th scope="col">Total</th>
+      <th scope="col">Coverage</th>
+    </tr>
+    <tr>
+      <th scope="row">Lines:</th>
+      <td>156</td>
+      <td>169</td>
+      <td class="coverage-high">92.3%</td>
+    </tr>
+    <tr>
+      <th scope="row">Functions:</th>
+      <td>12</td>
+      <td>14</td>
+      <td class="coverage-medium">85.7%</td>
+    </tr>
+    <tr>
+      <th scope="row">Branches:</th>
+      <td>138</td>
+      <td>254</td>
+      <td class="coverage-low">54.3%</td>
+    </tr>
+  </table>
+</div>
+      </div>
+      <hr/>
+    </header>
+    <nav>
+    </nav>
+    <main>
+<table class="listOfFunctions">
+  <tr>
+    <th>Function (File:Line)</th>
+    <th>Call count</th>
+    <th>Line coverage</th>
+    <th>Branch coverage</th>
+    <th>Condition coverage</th>
+    <th>Block coverage</th>
+  </tr>
+  <tr><td><a href="coverage.ThermalReadFailureBindingAc.cpp.bb4ec0a5670ad1a782ba50162359dcd6.html#l7">init_scalesSvc_ThermalReadFailure(pybind11::module_&amp;) (build-fprime-automatic-native-ut/scales/scalesSvc/JetsonThermalManager/ThermalReadFailureBindingAc.cpp:7)</a></td><td>not called</td><td>0.0%</td><td>0.0%</td><td>-%</td><td>0.0%</td></tr>
+  <tr><td><a href="coverage.JetsonThermalManager.cpp.a1949d282db54aa7e6969ff0e1a223f8.html#l274">scalesSvc::JetsonThermalManager::applyBounds(scalesSvc::TempBounds const&amp;) (lib/fprime-scales/scales/scalesSvc/JetsonThermalManager/JetsonThermalManager.cpp:274)</a></td><td>called 9 times</td><td>100.0%</td><td>60.0%</td><td>-%</td><td>87.1%</td></tr>
+  <tr><td><a href="coverage.JetsonThermalManager.cpp.a1949d282db54aa7e6969ff0e1a223f8.html#l65">scalesSvc::JetsonThermalManager::run_handler(short, unsigned int) (lib/fprime-scales/scales/scalesSvc/JetsonThermalManager/JetsonThermalManager.cpp:65)</a></td><td>called 16 times</td><td>100.0%</td><td>-%</td><td>-%</td><td>100.0%</td></tr>
+  <tr><td><a href="coverage.JetsonThermalManager.cpp.a1949d282db54aa7e6969ff0e1a223f8.html#l184">scalesSvc::JetsonThermalManager::parameterUpdated(unsigned int) (lib/fprime-scales/scales/scalesSvc/JetsonThermalManager/JetsonThermalManager.cpp:184)</a></td><td>called 2 times</td><td>100.0%</td><td>66.7%</td><td>-%</td><td>82.6%</td></tr>
+  <tr><td><a href="coverage.JetsonThermalManager.cpp.a1949d282db54aa7e6969ff0e1a223f8.html#l243">scalesSvc::JetsonThermalManager::determineTempState(float) (lib/fprime-scales/scales/scalesSvc/JetsonThermalManager/JetsonThermalManager.cpp:243)</a></td><td>called 49 times</td><td>88.2%</td><td>62.5%</td><td>-%</td><td>96.2%</td></tr>
+  <tr><td><a href="coverage.JetsonThermalManager.hpp.5270b77684e597161a396c772b63ecc8.html#l34">scalesSvc::JetsonThermalManager::setTempPathTemplate(char const*) (lib/fprime-scales/scales/scalesSvc/JetsonThermalManager/JetsonThermalManager.hpp:34)</a></td><td>called 4 times</td><td>100.0%</td><td>-%</td><td>-%</td><td>100.0%</td></tr>
+  <tr><td><a href="coverage.JetsonThermalManager.cpp.a1949d282db54aa7e6969ff0e1a223f8.html#l74">scalesSvc::JetsonThermalManager::scalesSvc_ThermalStateMachine_action_doRead(scalesSvc::JetsonThermalManagerComponentBase::SmId, scalesSvc::ThermalStateMachineStateMachineBase::Signal) (lib/fprime-scales/scales/scalesSvc/JetsonThermalManager/JetsonThermalManager.cpp:74)</a></td><td>called 10 times</td><td>100.0%</td><td>58.7%</td><td>-%</td><td>83.1%</td></tr>
+  <tr><td><a href="coverage.JetsonThermalManager.cpp.a1949d282db54aa7e6969ff0e1a223f8.html#l112">scalesSvc::JetsonThermalManager::scalesSvc_ThermalStateMachine_action_doEvaluate(scalesSvc::JetsonThermalManagerComponentBase::SmId, scalesSvc::ThermalStateMachineStateMachineBase::Signal) (lib/fprime-scales/scales/scalesSvc/JetsonThermalManager/JetsonThermalManager.cpp:112)</a></td><td>called 5 times</td><td>100.0%</td><td>60.3%</td><td>-%</td><td>80.3%</td></tr>
+  <tr><td><a href="coverage.JetsonThermalManager.cpp.a1949d282db54aa7e6969ff0e1a223f8.html#l175">scalesSvc::JetsonThermalManager::scalesSvc_ThermalStateMachine_action_doReadFail(scalesSvc::JetsonThermalManagerComponentBase::SmId, scalesSvc::ThermalStateMachineStateMachineBase::Signal) (lib/fprime-scales/scales/scalesSvc/JetsonThermalManager/JetsonThermalManager.cpp:175)</a></td><td>called 1 time</td><td>100.0%</td><td>-%</td><td>-%</td><td>100.0%</td></tr>
+  <tr><td><a href="coverage.JetsonThermalManager.cpp.a1949d282db54aa7e6969ff0e1a223f8.html#l194">scalesSvc::JetsonThermalManager::readTemp(unsigned char, float&amp;) (lib/fprime-scales/scales/scalesSvc/JetsonThermalManager/JetsonThermalManager.cpp:194)</a></td><td>called 54 times</td><td>100.0%</td><td>57.8%</td><td>-%</td><td>73.1%</td></tr>
+  <tr><td><a href="coverage.JetsonThermalManager.cpp.a1949d282db54aa7e6969ff0e1a223f8.html#l48">scalesSvc::JetsonThermalManager::JetsonThermalManager(char const*) (lib/fprime-scales/scales/scalesSvc/JetsonThermalManager/JetsonThermalManager.cpp:48)</a></td><td>called 6 times</td><td>100.0%</td><td>31.2%</td><td>-%</td><td>52.4%</td></tr>
+  <tr><td><a href="coverage.JetsonThermalManager.cpp.a1949d282db54aa7e6969ff0e1a223f8.html#l56">scalesSvc::JetsonThermalManager::~JetsonThermalManager() (lib/fprime-scales/scales/scalesSvc/JetsonThermalManager/JetsonThermalManager.cpp:56)</a></td><td>not called</td><td>100.0%</td><td>75.0%</td><td>-%</td><td>0.0%</td></tr>
+  <tr><td><a href="coverage.JetsonThermalManager.cpp.a1949d282db54aa7e6969ff0e1a223f8.html#l56">scalesSvc::JetsonThermalManager::~JetsonThermalManager() (lib/fprime-scales/scales/scalesSvc/JetsonThermalManager/JetsonThermalManager.cpp:56)</a></td><td>called 6 times</td><td>100%</td><td>-%</td><td>-%</td><td>100.0%</td></tr>
+  <tr><td><a href="coverage.JetsonThermalManager.cpp.a1949d282db54aa7e6969ff0e1a223f8.html#l266">scalesSvc::JetsonThermalManager::thresholdsAreOrdered(scalesSvc::TempBounds const&amp;) const (lib/fprime-scales/scales/scalesSvc/JetsonThermalManager/JetsonThermalManager.cpp:266)</a></td><td>called 9 times</td><td>100.0%</td><td>60.0%</td><td>-%</td><td>100.0%</td></tr>
+</table>
+
+      <hr/>
+    </main>
+    <footer>
+      Generated by: <a href="http://gcovr.com/en/8.2">GCOVR (Version 8.2)</a>
+    </footer>
+  </body>
+</html>

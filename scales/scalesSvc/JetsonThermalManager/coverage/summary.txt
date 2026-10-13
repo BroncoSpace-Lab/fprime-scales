@@ -1,0 +1,15 @@
+------------------------------------------------------------------------------
+                           GCC Code Coverage Report
+Directory: ../../../../..
+------------------------------------------------------------------------------
+File                                       Lines    Exec  Cover   Missing
+------------------------------------------------------------------------------
+build-fprime-automatic-native-ut/scales/scalesSvc/JetsonThermalManager/ThermalReadFailureBindingAc.cpp
+                                              11       0     0%   7,9-10,12-17,19-20
+lib/fprime-scales/scales/scalesSvc/JetsonThermalManager/JetsonThermalManager.cpp
+                                             155     153    98%   253,262
+lib/fprime-scales/scales/scalesSvc/JetsonThermalManager/JetsonThermalManager.hpp
+                                               3       3   100%
+------------------------------------------------------------------------------
+TOTAL                                        169     156    92%
+------------------------------------------------------------------------------
