@@ -63,6 +63,16 @@ namespace scalesSvc {
       //! ID and an unrecognized one (default case).
       void parameterUpdatedCoverage();
 
+      //! A zone whose file is missing, empty or unparseable logs
+      //! FAIL_TO_READ_TEMP_AT with the zone name and the failing stage.
+      void readFailureLogsEventPerZone();
+
+      //! FAIL_TO_READ_TEMP_AT stops at its throttle limit while zones keep failing.
+      void readFailureEventIsThrottled();
+
+      //! The state machine's read-failure action logs FAIL_TO_READ_TEMP.
+      void readFailActionLogsEvent();
+
     private:
 
       // ----------------------------------------------------------------------
@@ -71,6 +81,12 @@ namespace scalesSvc {
 
       //! Write a sysfs-style millidegree Celsius value through the OSAL
       void writeTemperatureFile(U8 index, F32 tempC);
+
+      //! Write arbitrary text to a fake temperature file (empty text leaves an empty file)
+      void writeRawTemperatureFile(U8 index, const char* text);
+
+      //! Point the component at per-process fake temperature files and get it past boot
+      void setUpTemperatureFiles();
 
       //! Remove a fake temperature file so the read path sees an unavailable zone
       void removeTemperatureFile(U8 index);

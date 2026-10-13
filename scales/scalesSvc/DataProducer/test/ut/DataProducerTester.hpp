@@ -34,6 +34,12 @@ class DataProducerTester final : public DataProducerGTestBase {
     void inaReadingBatchesAndSendsAfterRecordCount();
     void containerReinitializesAfterBatchSend();
     void containerGetFailureLeavesContainerInvalid();
+    void containerGetFailureEventIsThrottled();
+    //! failIndex selects which record of the reading runs out of room
+    void mcpSerializeFailureLogsEvent(FwSizeType failIndex);
+    void cpuSerializeFailureLogsEvent();
+    void jetsonSerializeFailureLogsEvent(FwSizeType failIndex);
+    void inaSerializeFailureLogsEvent(FwSizeType failIndex);
 
   private:
     // ----------------------------------------------------------------------
@@ -57,6 +63,18 @@ class DataProducerTester final : public DataProducerGTestBase {
     //! container id on its next call, then reverts to succeeding.
     FwDpIdType m_failNextGetForId;
     bool m_failNextGet;
+
+    //! When true, productGet_handler fails for every container on every call.
+    bool m_failAllGets;
+
+    //! When true, productGet_handler hands back a buffer with room for only
+    //! m_recordCapacity bytes of record data, so serializing past that fails.
+    bool m_limitCapacity;
+    FwSizeType m_recordCapacity;
+
+    //! Enable data products with every container limited to recordBytes of
+    //! record data, and run one tick so all four containers initialize.
+    void enableWithRecordCapacity(FwSizeType recordBytes);
 
     static constexpr FwSizeType BUFFER_SIZE = 65536;
     U8 m_mcpData[BUFFER_SIZE];

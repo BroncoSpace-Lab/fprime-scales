@@ -1,4 +1,11 @@
 module scalesSvc {
+    @ Stage at which reading a Jetson thermal zone file failed
+    enum ThermalReadFailure {
+        OPEN  @< The thermal zone file could not be opened
+        READ  @< The thermal zone file could not be read
+        PARSE @< The thermal zone file contents could not be parsed
+    }
+
     @ Manager to pull temperature zone data from the Jetson to forward to ThermalManager
     active component JetsonThermalManager {
 
@@ -89,6 +96,24 @@ module scalesSvc {
             severity warning high \
             id 0x00 \
             format "{} temperature bounds rejected, not in ascending order: FAULT_LOW={} WARN_LOW={} IDLE_LOW={} IDLE_HIGH={} WARN_HIGH={} FAULT_HIGH={}"
+
+        @ Event for general failure to read temperature from one or more
+        @ Jetson thermal zones
+        event FAIL_TO_READ_TEMP \
+            severity warning high \
+            id 0x01 \
+            format "Failed to read temperature from one or more Jetson thermal zones" \
+            throttle 5
+
+        @ Event for failure to read temperature from a specific Jetson thermal zone
+        event FAIL_TO_READ_TEMP_AT(
+            zone: string size 32 @< The thermal zone that failed
+            reason: ThermalReadFailure @< The stage at which the read failed
+        ) \
+            severity warning high \
+            id 0x02 \
+            format "Failed to read Jetson thermal zone {}: {}" \
+            throttle 10
 
         ###############################################################################
         # Standard AC Ports: Required for Channels, Events, Commands, and Parameters  #

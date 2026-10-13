@@ -65,6 +65,42 @@ TEST(Nominal, ContainerGetFailureLeavesContainerInvalid) {
     tester.containerGetFailureLeavesContainerInvalid();
 }
 
+TEST(OffNominal, ContainerGetFailureEventIsThrottled) {
+    RecordProperty("requirement", "DP-005");
+    scalesSvc::DataProducerTester tester;
+    tester.containerGetFailureEventIsThrottled();
+}
+
+TEST(OffNominal, McpSerializeFailureLogsEvent) {
+    RecordProperty("requirement", "DP-006");
+    for (FwSizeType i = 0; i < 3; i++) {
+        scalesSvc::DataProducerTester tester;
+        tester.mcpSerializeFailureLogsEvent(i);
+    }
+}
+
+TEST(OffNominal, CpuSerializeFailureLogsEvent) {
+    RecordProperty("requirement", "DP-006");
+    scalesSvc::DataProducerTester tester;
+    tester.cpuSerializeFailureLogsEvent();
+}
+
+TEST(OffNominal, JetsonSerializeFailureLogsEvent) {
+    RecordProperty("requirement", "DP-006");
+    for (FwSizeType i = 0; i < 9; i++) {
+        scalesSvc::DataProducerTester tester;
+        tester.jetsonSerializeFailureLogsEvent(i);
+    }
+}
+
+TEST(OffNominal, InaSerializeFailureLogsEvent) {
+    RecordProperty("requirement", "DP-006");
+    for (FwSizeType i = 0; i < 3; i++) {
+        scalesSvc::DataProducerTester tester;
+        tester.inaSerializeFailureLogsEvent(i);
+    }
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

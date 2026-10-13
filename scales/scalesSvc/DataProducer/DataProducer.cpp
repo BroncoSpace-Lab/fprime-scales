@@ -44,6 +44,9 @@ DataProducer ::~DataProducer() {}
 void DataProducer ::ENABLE_DATA_PRODUCTS_cmdHandler(FwOpcodeType opCode, U32 cmdSeq) {
     
     this->m_dpCollectMode = true;
+    // Re-arm the throttled failure events for the new collection session
+    this->log_WARNING_HI_DP_CONTAINER_INIT_FAILED_ThrottleClear();
+    this->log_WARNING_HI_DP_RECORD_SERIALIZE_FAILED_ThrottleClear();
     this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
 }
 
@@ -64,7 +67,7 @@ void DataProducer ::McpThermalReadingIn_handler(FwIndexType portNum,
 
     if(this->m_mcpTempContainerValid && this->m_dpCollectMode){
         if(!this->mcpSerialize_Send(obcThermalReading, perifThermalReading, jetsonThermalReading)){
-            printf("[ERROR] Couldn't serialize and send mcp data products\n");
+            // printf("[ERROR] Couldn't serialize and send mcp data products\n");
         }
     }
 }
@@ -72,7 +75,7 @@ void DataProducer ::McpThermalReadingIn_handler(FwIndexType portNum,
 void DataProducer ::cpuThermalReadIn_handler(FwIndexType portNum, const scalesSvc::ThermalReading& cpuThermalReading) {
     if(this->m_cpuTempContainerValid && this->m_dpCollectMode){
         if(!this->cpuSerialize_Send(cpuThermalReading)){
-            printf("[ERROR] Couldn't serialize and send cpu data products\n");
+            // printf("[ERROR] Couldn't serialize and send cpu data products\n");
         }
     }
 }
@@ -98,7 +101,7 @@ void DataProducer ::jetsonThermalReadIn_handler(FwIndexType portNum,
                                             jetson_soc1ThermalReading,
                                             jetson_soc2ThermalReading,
                                             jetson_tjThermalReading)){
-            printf("[ERROR] Couldn't serialize and send jetson temp zone data products\n");
+            // printf("[ERROR] Couldn't serialize and send jetson temp zone data products\n");
         }
     }
 }
@@ -109,7 +112,7 @@ void DataProducer ::inaPowerReadIn_handler(FwIndexType portNum,
                                            const scalesSvc::PowerReading& jetsonPowerReading) {
     if(this->m_inaPowerContainerValid && this->m_dpCollectMode){
         if(!this->inaSerialize_Send(obcPowerReading, perifPowerReading, jetsonPowerReading)){
-            printf("[ERROR] Couldn't serialize and send ina data products\n");
+            // printf("[ERROR] Couldn't serialize and send ina data products\n");
         }
     }
 }
@@ -120,25 +123,29 @@ void DataProducer ::run_handler(FwIndexType portNum, U32 context) {
 
     if(!this->m_mcpTempContainerValid){
         if(!this->initMcpContainer()){
-            printf("[ERROR] Failed to initialize mcp temp container\n");
+            // printf("[ERROR] Failed to initialize mcp temp container\n");
+            this->log_WARNING_HI_DP_CONTAINER_INIT_FAILED(scalesSvc::DpProduct::MCP_TEMP);
         }
     }
 
     if(!this->m_cpuTempContainerValid){
         if(!this->initCpuContainer()){
-            printf("[ERROR] Failed to initialize cpu temp container\n");
+            // printf("[ERROR] Failed to initialize cpu temp container\n");
+            this->log_WARNING_HI_DP_CONTAINER_INIT_FAILED(scalesSvc::DpProduct::CPU_TEMP);
         }
     }
 
     if(!this->m_jetsonTempContainerValid){
         if(!this->initJetsonTempContainer()){
-            printf("[ERROR] Failed to initialize jetson tmp container\n");
+            // printf("[ERROR] Failed to initialize jetson tmp container\n");
+            this->log_WARNING_HI_DP_CONTAINER_INIT_FAILED(scalesSvc::DpProduct::JETSON_TEMP);
         }
     }
 
     if(!this->m_inaPowerContainerValid){
         if(!this->initInaContainer()){
-            printf("[ERROR] Failed to initialize ina power container\n");
+            // printf("[ERROR] Failed to initialize ina power container\n");
+            this->log_WARNING_HI_DP_CONTAINER_INIT_FAILED(scalesSvc::DpProduct::INA_POWER);
         }
     }
 }
@@ -151,7 +158,7 @@ bool DataProducer ::initMcpContainer(){
     if(this->dpGet_McpTemperatureContainer(MCP_CONTAINER_SIZE, this->m_mcpTempContainer) == Fw::Success::SUCCESS){
         this->m_mcpTempContainerValid = true;
         this->m_mcpTempContainer.setTimeTag(this->getTime());
-        printf("Initialized MCP container successfully\n");
+        // printf("Initialized MCP container successfully\n");
         return true;
     }
     
@@ -167,7 +174,7 @@ bool DataProducer ::initCpuContainer(){
     if(this->dpGet_CpuTemperatureContainer(IMX_CPU_CONTAINER_SIZE, this->m_cpuTempContainer) == Fw::Success::SUCCESS){
         this->m_cpuTempContainerValid = true;
         this->m_cpuTempContainer.setTimeTag(this->getTime());
-        printf("Initialized CPU container successfully\n");
+        // printf("Initialized CPU container successfully\n");
         return true;
     }
 
@@ -183,7 +190,7 @@ bool DataProducer ::initJetsonTempContainer(){
     if(this->dpGet_JetsonTemperatureZoneContainer(JETSON_TEMP_ZONE_CONTAINER_SIZE, this->m_jetsonTempContainer) == Fw::Success::SUCCESS){
         this->m_jetsonTempContainerValid = true;
         this->m_jetsonTempContainer.setTimeTag(this->getTime());
-        printf("Initialized Jetson Temp Zone container successfully\n");
+        // printf("Initialized Jetson Temp Zone container successfully\n");
         return true;
     }
 
@@ -200,7 +207,7 @@ bool DataProducer ::initInaContainer(){
     if(this->dpGet_InaPowerContainer(INA_CONTAINER_SIZE, this->m_inaPowerContainer) == Fw::Success::SUCCESS){
         this->m_inaPowerContainerValid = true;
         this->m_inaPowerContainer.setTimeTag(this->getTime());
-        printf("Initalized INA container successfully\n");
+        // printf("Initalized INA container successfully\n");
         return true;
     }
 
@@ -213,19 +220,22 @@ bool DataProducer ::mcpSerialize_Send(const scalesSvc::ThermalReading& obcTherma
     
     Fw::SerializeStatus status = this->m_mcpTempContainer.serializeRecord_ImxTemperatureRecord(obcThermalReading);
     if (status != Fw::SerializeStatus::FW_SERIALIZE_OK) {
-      printf("Error serializing IMX temperature record: %d\n", status);
+      // printf("Error serializing IMX temperature record: %d\n", status);
+      this->log_WARNING_HI_DP_RECORD_SERIALIZE_FAILED(scalesSvc::DpProduct::MCP_TEMP, Fw::String("ImxTemperatureRecord"), static_cast<I32>(status));
       return false;
     }
 
     status = this->m_mcpTempContainer.serializeRecord_PeripheralTemperatureRecord(perifThermalReading);
     if (status != Fw::SerializeStatus::FW_SERIALIZE_OK) {
-      printf("Error serializing Peripheral temperature record: %d\n", status);
+      // printf("Error serializing Peripheral temperature record: %d\n", status);
+      this->log_WARNING_HI_DP_RECORD_SERIALIZE_FAILED(scalesSvc::DpProduct::MCP_TEMP, Fw::String("PeripheralTemperatureRecord"), static_cast<I32>(status));
       return false;
     }
 
     status = this->m_mcpTempContainer.serializeRecord_JetsonTemperatureRecord(jetsonThermalReading);
     if (status != Fw::SerializeStatus::FW_SERIALIZE_OK) {
-      printf("Error serializing Jetson temperature record: %d\n", status);
+      // printf("Error serializing Jetson temperature record: %d\n", status);
+      this->log_WARNING_HI_DP_RECORD_SERIALIZE_FAILED(scalesSvc::DpProduct::MCP_TEMP, Fw::String("JetsonTemperatureRecord"), static_cast<I32>(status));
       return false;
     }
 
@@ -234,7 +244,8 @@ bool DataProducer ::mcpSerialize_Send(const scalesSvc::ThermalReading& obcTherma
     // If we've reached the record count, send the full product
     if(this->m_mcpRecordCount == RECORD_COUNT){
         this->dpSend(this->m_mcpTempContainer);
-        printf("MCP data product sent\n");
+        // printf("MCP data product sent\n");
+        this->log_DIAGNOSTIC_DP_PRODUCT_SENT(scalesSvc::DpProduct::MCP_TEMP);
         
         // Resets mcp container attributes to be initalizd on next tick
         this->m_mcpRecordCount = 0;
@@ -249,7 +260,8 @@ bool DataProducer ::cpuSerialize_Send(const scalesSvc::ThermalReading& cpuTherma
 
     Fw::SerializeStatus status = this->m_cpuTempContainer.serializeRecord_CpuTemperatureRecord(cpuThermalReading);
     if (status != Fw::SerializeStatus::FW_SERIALIZE_OK) {
-        printf("Error serializing IMX_CPU temperature record: %d\n", status);
+        // printf("Error serializing IMX_CPU temperature record: %d\n", status);
+        this->log_WARNING_HI_DP_RECORD_SERIALIZE_FAILED(scalesSvc::DpProduct::CPU_TEMP, Fw::String("CpuTemperatureRecord"), static_cast<I32>(status));
         return false;
     }
 
@@ -258,7 +270,8 @@ bool DataProducer ::cpuSerialize_Send(const scalesSvc::ThermalReading& cpuTherma
     // If we've reached the record count, send the full product
     if(this->m_cpuRecordCount == RECORD_COUNT){
         this->dpSend(this->m_cpuTempContainer);
-        printf("IMX_CPU data product sent\n");
+        // printf("IMX_CPU data product sent\n");
+        this->log_DIAGNOSTIC_DP_PRODUCT_SENT(scalesSvc::DpProduct::CPU_TEMP);
         
         // Resets cpu container attributes to be initalizd on next tick
         this->m_cpuRecordCount = 0;
@@ -281,54 +294,63 @@ bool DataProducer ::jetsonTempSerialize_Send(const scalesSvc::ThermalReading& je
 
     Fw::SerializeStatus status = this->m_jetsonTempContainer.serializeRecord_Jetson_CpuTemperatureRecord(jetson_cpuThermalReading);
     if (status != Fw::SerializeStatus::FW_SERIALIZE_OK) {
-        printf("Error Serializing JETSON CPU TEMP READING RECORD\n");
+        // printf("Error Serializing JETSON CPU TEMP READING RECORD\n");
+        this->log_WARNING_HI_DP_RECORD_SERIALIZE_FAILED(scalesSvc::DpProduct::JETSON_TEMP, Fw::String("Jetson_CpuTemperatureRecord"), static_cast<I32>(status));
         return false;
     }
 
     status = this->m_jetsonTempContainer.serializeRecord_Jetson_GpuTemperatureRecord(jetson_gpuThermalReading);
     if (status != Fw::SerializeStatus::FW_SERIALIZE_OK) {
-        printf("Error Serializing JETSON GPU TEMP READING RECORD\n");
+        // printf("Error Serializing JETSON GPU TEMP READING RECORD\n");
+        this->log_WARNING_HI_DP_RECORD_SERIALIZE_FAILED(scalesSvc::DpProduct::JETSON_TEMP, Fw::String("Jetson_GpuTemperatureRecord"), static_cast<I32>(status));
         return false;
     }
 
     status = this->m_jetsonTempContainer.serializeRecord_Jetson_Cv0TemperatureRecord(jetson_cv0ThermalReading);
     if (status != Fw::SerializeStatus::FW_SERIALIZE_OK) {
-        printf("Error Serializing JETSON CVO TEMP READING RECORD\n");
+        // printf("Error Serializing JETSON CVO TEMP READING RECORD\n");
+        this->log_WARNING_HI_DP_RECORD_SERIALIZE_FAILED(scalesSvc::DpProduct::JETSON_TEMP, Fw::String("Jetson_Cv0TemperatureRecord"), static_cast<I32>(status));
         return false;
     }
 
     status = this->m_jetsonTempContainer.serializeRecord_Jetson_Cv1TemperatureRecord(jetson_cv1ThermalReading);
     if (status != Fw::SerializeStatus::FW_SERIALIZE_OK) {
-        printf("Error Serializing JETSON CV1 TEMP READING RECORD\n");
+        // printf("Error Serializing JETSON CV1 TEMP READING RECORD\n");
+        this->log_WARNING_HI_DP_RECORD_SERIALIZE_FAILED(scalesSvc::DpProduct::JETSON_TEMP, Fw::String("Jetson_Cv1TemperatureRecord"), static_cast<I32>(status));
         return false;
     }
     status = this->m_jetsonTempContainer.serializeRecord_Jetson_Cv2TemperatureRecord(jetson_cv2ThermalReading);
     if (status != Fw::SerializeStatus::FW_SERIALIZE_OK) {
-        printf("Error Serializing JETSON CV2 TEMP READING RECORD\n");
+        // printf("Error Serializing JETSON CV2 TEMP READING RECORD\n");
+        this->log_WARNING_HI_DP_RECORD_SERIALIZE_FAILED(scalesSvc::DpProduct::JETSON_TEMP, Fw::String("Jetson_Cv2TemperatureRecord"), static_cast<I32>(status));
         return false;
     }
 
     status = this->m_jetsonTempContainer.serializeRecord_Jetson_Soc0TemperatureRecord(jetson_soc0ThermalReading);
     if (status != Fw::SerializeStatus::FW_SERIALIZE_OK) {
-        printf("Error Serializing JETSON SOC0 TEMP READING RECORD\n");
+        // printf("Error Serializing JETSON SOC0 TEMP READING RECORD\n");
+        this->log_WARNING_HI_DP_RECORD_SERIALIZE_FAILED(scalesSvc::DpProduct::JETSON_TEMP, Fw::String("Jetson_Soc0TemperatureRecord"), static_cast<I32>(status));
         return false;
     }
 
     status = this->m_jetsonTempContainer.serializeRecord_Jetson_Soc1TemperatureRecord(jetson_soc1ThermalReading);
     if (status != Fw::SerializeStatus::FW_SERIALIZE_OK) {
-        printf("Error Serializing JETSON SOC1 TEMP READING RECORD\n");
+        // printf("Error Serializing JETSON SOC1 TEMP READING RECORD\n");
+        this->log_WARNING_HI_DP_RECORD_SERIALIZE_FAILED(scalesSvc::DpProduct::JETSON_TEMP, Fw::String("Jetson_Soc1TemperatureRecord"), static_cast<I32>(status));
         return false;
     }
 
     status = this->m_jetsonTempContainer.serializeRecord_Jetson_Soc2TemperatureRecord(jetson_soc2ThermalReading);
     if (status != Fw::SerializeStatus::FW_SERIALIZE_OK) {
-        printf("Error Serializing JETSON SOC2 TEMP READING RECORD\n");
+        // printf("Error Serializing JETSON SOC2 TEMP READING RECORD\n");
+        this->log_WARNING_HI_DP_RECORD_SERIALIZE_FAILED(scalesSvc::DpProduct::JETSON_TEMP, Fw::String("Jetson_Soc2TemperatureRecord"), static_cast<I32>(status));
         return false;
     }
 
     status = this->m_jetsonTempContainer.serializeRecord_Jetson_TjTemperatureRecord(jetson_tjThermalReading);
     if (status != Fw::SerializeStatus::FW_SERIALIZE_OK) {
-        printf("Error Serializing JETSON TJ TEMP READING RECORD\n");
+        // printf("Error Serializing JETSON TJ TEMP READING RECORD\n");
+        this->log_WARNING_HI_DP_RECORD_SERIALIZE_FAILED(scalesSvc::DpProduct::JETSON_TEMP, Fw::String("Jetson_TjTemperatureRecord"), static_cast<I32>(status));
         return false;
     }
 
@@ -337,7 +359,8 @@ bool DataProducer ::jetsonTempSerialize_Send(const scalesSvc::ThermalReading& je
     // If we've reached the record count, send the full product
     if(this->m_jetsonTempRecordCount == RECORD_COUNT){
         this->dpSend(this->m_jetsonTempContainer);   
-        printf("Jetson Temp Zone products sent!\n");
+        // printf("Jetson Temp Zone products sent!\n");
+        this->log_DIAGNOSTIC_DP_PRODUCT_SENT(scalesSvc::DpProduct::JETSON_TEMP);
 
         // Resets jetson temp container to be initalized on next tick
         this->m_jetsonTempContainerValid = false;
@@ -353,19 +376,22 @@ bool DataProducer ::inaSerialize_Send(const scalesSvc::PowerReading& obcPowerRea
 
     Fw::SerializeStatus status = this->m_inaPowerContainer.serializeRecord_ObcPowerRecord(obcPowerReading);
     if (status != Fw::SerializeStatus::FW_SERIALIZE_OK) {
-        printf("Error Serializing OBC POWER READING RECORD\n");
+        // printf("Error Serializing OBC POWER READING RECORD\n");
+        this->log_WARNING_HI_DP_RECORD_SERIALIZE_FAILED(scalesSvc::DpProduct::INA_POWER, Fw::String("ObcPowerRecord"), static_cast<I32>(status));
         return false;
     }
 
     status = this->m_inaPowerContainer.serializeRecord_PerifPowerRecord(perifPowerReading);
     if (status != Fw::SerializeStatus::FW_SERIALIZE_OK){
-        printf("Error Serializing PERIF POWER READING RECORD\n");
+        // printf("Error Serializing PERIF POWER READING RECORD\n");
+        this->log_WARNING_HI_DP_RECORD_SERIALIZE_FAILED(scalesSvc::DpProduct::INA_POWER, Fw::String("PerifPowerRecord"), static_cast<I32>(status));
         return false;
     }
 
     status = this->m_inaPowerContainer.serializeRecord_JetsonPowerRecord(jetsonPowerReading);
     if (status != Fw::SerializeStatus::FW_SERIALIZE_OK){
-        printf("Error Serializing JETSON POWER READING RECORD\n");
+        // printf("Error Serializing JETSON POWER READING RECORD\n");
+        this->log_WARNING_HI_DP_RECORD_SERIALIZE_FAILED(scalesSvc::DpProduct::INA_POWER, Fw::String("JetsonPowerRecord"), static_cast<I32>(status));
         return false;
     }
 
@@ -374,7 +400,8 @@ bool DataProducer ::inaSerialize_Send(const scalesSvc::PowerReading& obcPowerRea
     // If we've reached the record count, send the full product
     if(m_inaRecordCount == RECORD_COUNT){
         this->dpSend(this->m_inaPowerContainer);
-        printf("Power Reading Data Product Sent!\n");
+        // printf("Power Reading Data Product Sent!\n");
+        this->log_DIAGNOSTIC_DP_PRODUCT_SENT(scalesSvc::DpProduct::INA_POWER);
 
         // Resets ina container attributes to be initalizd on next tick
         this->m_inaPowerContainerValid = false;

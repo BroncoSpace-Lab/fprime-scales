@@ -195,6 +195,9 @@ void JetsonManagerTester ::requestJetsonPowerStateOffUnconfirmedFallsBackToDirec
     ASSERT_from_gpioSet(0, Fw::Logic::LOW);
     ASSERT_CMD_RESPONSE_SIZE(1);
     ASSERT_EQ(this->cmdResponseHistory->at(0).response, Fw::CmdResponse::OK);
+    // JETSON_POWER_CUT only reports the cut that follows a shutdown
+    // acknowledgment, not this direct fallback.
+    ASSERT_EVENTS_JETSON_POWER_CUT_SIZE(0);
 }
 
 void JetsonManagerTester ::requestJetsonPowerStateOffDeferredWhileBootingThenAutoFiresGracefulShutdown() {
@@ -244,10 +247,12 @@ void JetsonManagerTester ::requestJetsonPowerStateOffDeferredWhileBootingThenAut
     }
     ASSERT_from_gpioSet_SIZE(1);
     ASSERT_CMD_RESPONSE_SIZE(1);
+    ASSERT_EVENTS_JETSON_POWER_CUT_SIZE(0);
 
     this->invoke_to_schedIn(0, 0);
     ASSERT_from_gpioSet_SIZE(2);
     ASSERT_from_gpioSet(1, Fw::Logic::LOW);
+    ASSERT_EVENTS_JETSON_POWER_CUT_SIZE(1);
     ASSERT_CMD_RESPONSE_SIZE(2);
     ASSERT_EQ(this->cmdResponseHistory->at(1).response, Fw::CmdResponse::OK);
 }
@@ -459,10 +464,12 @@ void JetsonManagerTester ::requestJetsonPowerStateOffConfirmedOnUsesGracefulThen
     }
     ASSERT_from_gpioSet_SIZE(0);
     ASSERT_CMD_RESPONSE_SIZE(0);
+    ASSERT_EVENTS_JETSON_POWER_CUT_SIZE(0);
 
     this->invoke_to_schedIn(0, 0);
     ASSERT_from_gpioSet_SIZE(1);
     ASSERT_from_gpioSet(0, Fw::Logic::LOW);
+    ASSERT_EVENTS_JETSON_POWER_CUT_SIZE(1);
     ASSERT_CMD_RESPONSE_SIZE(1);
     ASSERT_EQ(this->cmdResponseHistory->at(0).response, Fw::CmdResponse::OK);
 }

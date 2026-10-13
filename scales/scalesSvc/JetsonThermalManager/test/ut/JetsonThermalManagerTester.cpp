@@ -7,6 +7,7 @@
 #include "JetsonThermalManagerTester.hpp"
 #include <Os/File.hpp>
 #include <cstdio>
+#include <cstring>
 #include <unistd.h>
 
 namespace scalesSvc {
@@ -61,6 +62,54 @@ namespace scalesSvc {
     tempFile.close();
     ASSERT_EQ(Os::File::Status::OP_OK, status);
     ASSERT_EQ(static_cast<FwSizeType>(textSize), writeSize);
+  }
+
+  void JetsonThermalManagerTester :: writeRawTemperatureFile(U8 index, const char* text)
+  {
+    CHAR path[160];
+    const int pathSize = std::snprintf(
+        path,
+        sizeof(path),
+        this->m_tempPathTemplate,
+        static_cast<unsigned int>(index)
+    );
+    ASSERT_GT(pathSize, 0);
+    ASSERT_LT(static_cast<FwSizeType>(pathSize), static_cast<FwSizeType>(sizeof(path)));
+
+    Os::File tempFile;
+    Os::File::Status status = tempFile.open(path, Os::File::Mode::OPEN_CREATE, Os::File::OverwriteType::OVERWRITE);
+    ASSERT_EQ(Os::File::Status::OP_OK, status);
+
+    FwSizeType writeSize = static_cast<FwSizeType>(std::strlen(text));
+    if (writeSize > 0) {
+      status = tempFile.write(reinterpret_cast<const U8*>(text), writeSize, Os::File::WaitType::WAIT);
+    }
+    tempFile.close();
+    ASSERT_EQ(Os::File::Status::OP_OK, status);
+  }
+
+  void JetsonThermalManagerTester :: setUpTemperatureFiles()
+  {
+    this->paramSet_JETSON_BOUNDS(
+        scalesSvc::TempBounds(-40.0F, -20.0F, 10.0F, 60.0F, 80.0F, 100.0F),
+        Fw::ParamValid::VALID);
+    this->component.loadParameters();
+
+    const int templateSize = std::snprintf(
+        this->m_tempPathTemplate,
+        sizeof(this->m_tempPathTemplate),
+        "/tmp/jetson_thermal_zone_%%u_temp_%ld",
+        static_cast<long>(::getpid())
+    );
+    ASSERT_GT(templateSize, 0);
+    ASSERT_LT(static_cast<FwSizeType>(templateSize), static_cast<FwSizeType>(sizeof(this->m_tempPathTemplate)));
+    this->component.setTempPathTemplate(this->m_tempPathTemplate);
+
+    this->setTestTime(Fw::Time(0, 0));
+
+    // First tick only applies the boot-time bounds, it does not read.
+    this->runTickAction();
+    this->clearHistory();
   }
 
   void JetsonThermalManagerTester :: removeTemperatureFile(U8 index)
@@ -210,6 +259,7 @@ namespace scalesSvc {
     for (U8 i = 0; i < 9; i++) {
       this->assertLatestReading(i, 1, firstTemps[i], locations[i], firstStates[i]);
     }
+    ASSERT_EVENTS_SIZE(0); // every zone read cleanly
 
     for (U8 i = 0; i < 9; i++) {
       if ((i >= 2) && (i <= 4)) {
@@ -222,6 +272,19 @@ namespace scalesSvc {
     ASSERT_TLM_SIZE(21); // + 9 zone readings + 1 bounds republish this cycle
     for (U8 i = 0; i < 9; i++) {
       this->assertLatestReading(i, 2, secondTemps[i], locations[i], secondStates[i]);
+    }
+
+    // The three removed zones each report an open failure; the per-zone
+    // failure does not escalate to the whole-read FAIL_TO_READ_TEMP.
+    ASSERT_EVENTS_SIZE(3);
+    ASSERT_EVENTS_FAIL_TO_READ_TEMP_AT_SIZE(3);
+    ASSERT_EVENTS_FAIL_TO_READ_TEMP_AT(0, "CV0", scalesSvc::ThermalReadFailure::OPEN);
+    ASSERT_EVENTS_FAIL_TO_READ_TEMP_AT(1, "CV1", scalesSvc::ThermalReadFailure::OPEN);
+    ASSERT_EVENTS_FAIL_TO_READ_TEMP_AT(2, "CV2", scalesSvc::ThermalReadFailure::OPEN);
+    ASSERT_EVENTS_FAIL_TO_READ_TEMP_SIZE(0);
+
+    for (U8 i = 0; i < 9; i++) {
+      this->removeTemperatureFile(i);
     }
   }
 
@@ -260,6 +323,76 @@ namespace scalesSvc {
     ASSERT_EVENTS_THRESHOLDS_MISCONFIGURED_SIZE(2);
     ASSERT_TLM_JETSON_BOUNDS_SIZE(2);
     ASSERT_TLM_JETSON_BOUNDS(1, otherGoodBounds);
+  }
+
+  void JetsonThermalManagerTester :: readFailureLogsEventPerZone()
+  {
+    this->setUpTemperatureFiles();
+
+    this->removeTemperatureFile(0);              // CPU: cannot be opened
+    this->writeRawTemperatureFile(1, "");        // GPU: opens but reads nothing
+    this->writeRawTemperatureFile(2, "abc\n");   // CV0: not a number
+    this->writeRawTemperatureFile(3, "42000x\n"); // CV1: number followed by garbage
+    for (U8 i = 4; i < 9; i++) {
+      this->writeTemperatureFile(i, 42.0F);
+    }
+
+    this->readAndEvaluateTemperatures();
+
+    ASSERT_EVENTS_SIZE(4);
+    ASSERT_EVENTS_FAIL_TO_READ_TEMP_AT_SIZE(4);
+    ASSERT_EVENTS_FAIL_TO_READ_TEMP_AT(0, "CPU", scalesSvc::ThermalReadFailure::OPEN);
+    ASSERT_EVENTS_FAIL_TO_READ_TEMP_AT(1, "GPU", scalesSvc::ThermalReadFailure::READ);
+    ASSERT_EVENTS_FAIL_TO_READ_TEMP_AT(2, "CV0", scalesSvc::ThermalReadFailure::PARSE);
+    ASSERT_EVENTS_FAIL_TO_READ_TEMP_AT(3, "CV1", scalesSvc::ThermalReadFailure::PARSE);
+
+    // The failed zones are published as NOT_USED, the rest evaluate normally.
+    this->assertLatestReading(0, 1, 0.0F, "CPU", scalesSvc::ThermalStates::NOT_USED);
+    this->assertLatestReading(3, 1, 0.0F, "CV1", scalesSvc::ThermalStates::NOT_USED);
+    this->assertLatestReading(4, 1, 42.0F, "CV2", scalesSvc::ThermalStates::IDLE);
+
+    for (U8 i = 0; i < 9; i++) {
+      this->removeTemperatureFile(i);
+    }
+  }
+
+  void JetsonThermalManagerTester :: readFailureEventIsThrottled()
+  {
+    this->setUpTemperatureFiles();
+    for (U8 i = 0; i < 9; i++) {
+      this->removeTemperatureFile(i);
+    }
+
+    // First cycle: one event per zone.
+    this->readAndEvaluateTemperatures();
+    ASSERT_EVENTS_FAIL_TO_READ_TEMP_AT_SIZE(9);
+
+    // Second cycle: nine more failures, but the event is throttled at 10.
+    this->readAndEvaluateTemperatures();
+    ASSERT_EVENTS_FAIL_TO_READ_TEMP_AT_SIZE(10);
+    ASSERT_EVENTS_SIZE(10);
+  }
+
+  void JetsonThermalManagerTester :: readFailActionLogsEvent()
+  {
+    this->setUpTemperatureFiles();
+    for (U8 i = 0; i < 9; i++) {
+      this->writeTemperatureFile(i, 42.0F);
+    }
+
+    // doRead currently never clears m_successfulRead (a failed zone is
+    // marked NOT_USED instead), so force the flag to reach the state
+    // machine's read-failure action.
+    this->component.m_successfulRead = false;
+    this->readAndEvaluateTemperatures();
+
+    ASSERT_EVENTS_SIZE(1);
+    ASSERT_EVENTS_FAIL_TO_READ_TEMP_SIZE(1);
+    ASSERT_TRUE(this->component.m_successfulRead);
+
+    for (U8 i = 0; i < 9; i++) {
+      this->removeTemperatureFile(i);
+    }
   }
 
   void JetsonThermalManagerTester :: parameterUpdatedCoverage()

@@ -24,6 +24,24 @@ TEST(Nominal, parameterUpdatedCoverage) {
   tester.parameterUpdatedCoverage();
 }
 
+TEST(OffNominal, readFailureLogsEventPerZone) {
+  RecordProperty("requirement", "JTM-004");
+  scalesSvc::JetsonThermalManagerTester tester;
+  tester.readFailureLogsEventPerZone();
+}
+
+TEST(OffNominal, readFailureEventIsThrottled) {
+  RecordProperty("requirement", "JTM-004");
+  scalesSvc::JetsonThermalManagerTester tester;
+  tester.readFailureEventIsThrottled();
+}
+
+TEST(OffNominal, readFailActionLogsEvent) {
+  RecordProperty("requirement", "JTM-004");
+  scalesSvc::JetsonThermalManagerTester tester;
+  tester.readFailActionLogsEvent();
+}
+
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

@@ -12,6 +12,9 @@ DataProducerTester ::DataProducerTester()
       component("DataProducer"),
       m_failNextGetForId(0),
       m_failNextGet(false),
+      m_failAllGets(false),
+      m_limitCapacity(false),
+      m_recordCapacity(0),
       m_mcpData{},
       m_cpuData{},
       m_jetsonData{},
@@ -33,6 +36,14 @@ Fw::Success::T DataProducerTester ::productGet_handler(FwDpIdType id, FwSizeType
     if (m_failNextGet && localId == m_failNextGetForId) {
         m_failNextGet = false;
         return Fw::Success::FAILURE;
+    }
+
+    if (m_failAllGets) {
+        return Fw::Success::FAILURE;
+    }
+
+    if (m_limitCapacity) {
+        size = Fw::DpContainer::MIN_PACKET_SIZE + m_recordCapacity;
     }
 
     switch (localId) {
@@ -64,6 +75,13 @@ Fw::Success::T DataProducerTester ::productGet_handler(FwDpIdType id, FwSizeType
 void DataProducerTester ::enableAndInitializeAllContainers() {
     this->sendCmd_ENABLE_DATA_PRODUCTS(0, 1);
     this->invoke_to_run(0, 0);
+}
+
+void DataProducerTester ::enableWithRecordCapacity(FwSizeType recordBytes) {
+    m_limitCapacity = true;
+    m_recordCapacity = recordBytes;
+    this->enableAndInitializeAllContainers();
+    this->clearHistory();
 }
 
 ThermalReading DataProducerTester ::reading(U8 sensorId, F32 temperature, const char* location) {
@@ -152,6 +170,9 @@ void DataProducerTester ::mcpReadingBatchesAndSendsAfterRecordCount() {
     this->component.doDispatch();
     ASSERT_PRODUCT_SEND_SIZE(1);
     ASSERT_EQ(this->productSendHistory->at(0).id, ID_BASE + DataProducer::ContainerId::McpTemperatureContainer);
+    ASSERT_EVENTS_SIZE(1);
+    ASSERT_EVENTS_DP_PRODUCT_SENT_SIZE(1);
+    ASSERT_EVENTS_DP_PRODUCT_SENT(0, scalesSvc::DpProduct::MCP_TEMP);
 }
 
 void DataProducerTester ::jetsonZoneReadingBatchesAndSendsAfterRecordCount() {
@@ -173,6 +194,9 @@ void DataProducerTester ::jetsonZoneReadingBatchesAndSendsAfterRecordCount() {
     this->component.doDispatch();
     ASSERT_PRODUCT_SEND_SIZE(1);
     ASSERT_EQ(this->productSendHistory->at(0).id, ID_BASE + DataProducer::ContainerId::JetsonTemperatureZoneContainer);
+    ASSERT_EVENTS_SIZE(1);
+    ASSERT_EVENTS_DP_PRODUCT_SENT_SIZE(1);
+    ASSERT_EVENTS_DP_PRODUCT_SENT(0, scalesSvc::DpProduct::JETSON_TEMP);
 }
 
 void DataProducerTester ::cpuReadingBatchesAndSendsAfterRecordCount() {
@@ -189,6 +213,9 @@ void DataProducerTester ::cpuReadingBatchesAndSendsAfterRecordCount() {
     this->component.doDispatch();
     ASSERT_PRODUCT_SEND_SIZE(1);
     ASSERT_EQ(this->productSendHistory->at(0).id, ID_BASE + DataProducer::ContainerId::CpuTemperatureContainer);
+    ASSERT_EVENTS_SIZE(1);
+    ASSERT_EVENTS_DP_PRODUCT_SENT_SIZE(1);
+    ASSERT_EVENTS_DP_PRODUCT_SENT(0, scalesSvc::DpProduct::CPU_TEMP);
 }
 
 void DataProducerTester ::inaReadingBatchesAndSendsAfterRecordCount() {
@@ -209,6 +236,9 @@ void DataProducerTester ::inaReadingBatchesAndSendsAfterRecordCount() {
     this->component.doDispatch();
     ASSERT_PRODUCT_SEND_SIZE(1);
     ASSERT_EQ(this->productSendHistory->at(0).id, ID_BASE + DataProducer::ContainerId::InaPowerContainer);
+    ASSERT_EVENTS_SIZE(1);
+    ASSERT_EVENTS_DP_PRODUCT_SENT_SIZE(1);
+    ASSERT_EVENTS_DP_PRODUCT_SENT(0, scalesSvc::DpProduct::INA_POWER);
 }
 
 void DataProducerTester ::containerReinitializesAfterBatchSend() {
@@ -244,6 +274,10 @@ void DataProducerTester ::containerGetFailureLeavesContainerInvalid() {
 
     this->sendCmd_ENABLE_DATA_PRODUCTS(0, 1);
     this->invoke_to_run(0, 0);
+    // Only the failed container reports, the other three initialized fine.
+    ASSERT_EVENTS_SIZE(1);
+    ASSERT_EVENTS_DP_CONTAINER_INIT_FAILED_SIZE(1);
+    ASSERT_EVENTS_DP_CONTAINER_INIT_FAILED(0, scalesSvc::DpProduct::CPU_TEMP);
     this->clearHistory();
 
     this->invoke_to_cpuThermalReadIn(0, this->reading(0, 41.0F, "CPU"));
@@ -252,11 +286,117 @@ void DataProducerTester ::containerGetFailureLeavesContainerInvalid() {
 
     // A later tick retries and succeeds this time.
     this->invoke_to_run(0, 0);
+    ASSERT_EVENTS_SIZE(0);
     this->clearHistory();
 
     this->invoke_to_cpuThermalReadIn(0, this->reading(0, 41.0F, "CPU"));
     this->component.doDispatch();
     ASSERT_PRODUCT_SEND_SIZE(0);  // one reading is not a full batch yet, but no error either
+}
+
+void DataProducerTester ::containerGetFailureEventIsThrottled() {
+    m_failAllGets = true;
+
+    // First tick: one DP_CONTAINER_INIT_FAILED per product, in run_handler order.
+    this->sendCmd_ENABLE_DATA_PRODUCTS(0, 1);
+    this->invoke_to_run(0, 0);
+    ASSERT_EVENTS_SIZE(4);
+    ASSERT_EVENTS_DP_CONTAINER_INIT_FAILED_SIZE(4);
+    ASSERT_EVENTS_DP_CONTAINER_INIT_FAILED(0, scalesSvc::DpProduct::MCP_TEMP);
+    ASSERT_EVENTS_DP_CONTAINER_INIT_FAILED(1, scalesSvc::DpProduct::CPU_TEMP);
+    ASSERT_EVENTS_DP_CONTAINER_INIT_FAILED(2, scalesSvc::DpProduct::JETSON_TEMP);
+    ASSERT_EVENTS_DP_CONTAINER_INIT_FAILED(3, scalesSvc::DpProduct::INA_POWER);
+
+    // The event is throttled at 5, so persistent failure adds only one more.
+    for (U32 i = 0; i < 3; i++) {
+        this->invoke_to_run(0, 0);
+    }
+    ASSERT_EVENTS_DP_CONTAINER_INIT_FAILED_SIZE(5);
+    ASSERT_PRODUCT_GET_SIZE(16);  // every tick still retries all four containers
+
+    // Re-enabling collection re-arms the throttle.
+    this->clearHistory();
+    this->sendCmd_ENABLE_DATA_PRODUCTS(0, 2);
+    this->invoke_to_run(0, 0);
+    ASSERT_EVENTS_DP_CONTAINER_INIT_FAILED_SIZE(4);
+}
+
+void DataProducerTester ::mcpSerializeFailureLogsEvent(FwSizeType failIndex) {
+    static const char* const RECORDS[] = {"ImxTemperatureRecord", "PeripheralTemperatureRecord",
+                                          "JetsonTemperatureRecord"};
+    FW_ASSERT(failIndex < FW_NUM_ARRAY_ELEMENTS(RECORDS), static_cast<FwAssertArgType>(failIndex));
+    const ThermalReading r[] = {this->reading(1, 20.0F, "OBC"), this->reading(2, 21.0F, "PERIPHERAL"),
+                                this->reading(0, 22.0F, "JETSON")};
+    // Room for exactly failIndex records, so record number failIndex fails.
+    // Records hold a string, so their size on the wire is dynamic.
+    FwSizeType capacity = 0;
+    for (FwSizeType i = 0; i < failIndex; i++) {
+        capacity += sizeof(FwDpIdType) + r[i].serializedSize();
+    }
+    this->enableWithRecordCapacity(capacity);
+
+    this->invoke_to_McpThermalReadingIn(0, r[0], r[1], r[2]);
+    this->component.doDispatch();
+
+    ASSERT_PRODUCT_SEND_SIZE(0);
+    ASSERT_EVENTS_SIZE(1);
+    ASSERT_EVENTS_DP_RECORD_SERIALIZE_FAILED_SIZE(1);
+    ASSERT_EVENTS_DP_RECORD_SERIALIZE_FAILED(0, scalesSvc::DpProduct::MCP_TEMP, RECORDS[failIndex],
+                                             static_cast<I32>(Fw::FW_SERIALIZE_NO_ROOM_LEFT));
+}
+
+void DataProducerTester ::cpuSerializeFailureLogsEvent() {
+    this->enableWithRecordCapacity(0);
+
+    this->invoke_to_cpuThermalReadIn(0, this->reading(0, 41.0F, "CPU"));
+    this->component.doDispatch();
+
+    ASSERT_PRODUCT_SEND_SIZE(0);
+    ASSERT_EVENTS_SIZE(1);
+    ASSERT_EVENTS_DP_RECORD_SERIALIZE_FAILED_SIZE(1);
+    ASSERT_EVENTS_DP_RECORD_SERIALIZE_FAILED(0, scalesSvc::DpProduct::CPU_TEMP, "CpuTemperatureRecord",
+                                             static_cast<I32>(Fw::FW_SERIALIZE_NO_ROOM_LEFT));
+}
+
+void DataProducerTester ::jetsonSerializeFailureLogsEvent(FwSizeType failIndex) {
+    static const char* const RECORDS[] = {
+        "Jetson_CpuTemperatureRecord",  "Jetson_GpuTemperatureRecord",  "Jetson_Cv0TemperatureRecord",
+        "Jetson_Cv1TemperatureRecord",  "Jetson_Cv2TemperatureRecord",  "Jetson_Soc0TemperatureRecord",
+        "Jetson_Soc1TemperatureRecord", "Jetson_Soc2TemperatureRecord", "Jetson_TjTemperatureRecord"};
+    FW_ASSERT(failIndex < FW_NUM_ARRAY_ELEMENTS(RECORDS), static_cast<FwAssertArgType>(failIndex));
+    const ThermalReading z = this->reading(0, 30.0F, "ZONE");
+    this->enableWithRecordCapacity(failIndex * (sizeof(FwDpIdType) + z.serializedSize()));
+
+    this->invoke_to_jetsonThermalReadIn(0, z, z, z, z, z, z, z, z, z);
+    this->component.doDispatch();
+
+    ASSERT_PRODUCT_SEND_SIZE(0);
+    ASSERT_EVENTS_SIZE(1);
+    ASSERT_EVENTS_DP_RECORD_SERIALIZE_FAILED_SIZE(1);
+    ASSERT_EVENTS_DP_RECORD_SERIALIZE_FAILED(0, scalesSvc::DpProduct::JETSON_TEMP, RECORDS[failIndex],
+                                             static_cast<I32>(Fw::FW_SERIALIZE_NO_ROOM_LEFT));
+}
+
+void DataProducerTester ::inaSerializeFailureLogsEvent(FwSizeType failIndex) {
+    static const char* const RECORDS[] = {"ObcPowerRecord", "PerifPowerRecord", "JetsonPowerRecord"};
+    FW_ASSERT(failIndex < FW_NUM_ARRAY_ELEMENTS(RECORDS), static_cast<FwAssertArgType>(failIndex));
+    const PowerReading r[] = {this->powerReading(0x41, 5.0F, 0.1F, 0.5F, "OBC"),
+                              this->powerReading(0x45, 5.0F, 0.2F, 1.0F, "PERIPHERAL"),
+                              this->powerReading(0x40, 5.0F, 0.3F, 1.5F, "JETSON")};
+    FwSizeType capacity = 0;
+    for (FwSizeType i = 0; i < failIndex; i++) {
+        capacity += sizeof(FwDpIdType) + r[i].serializedSize();
+    }
+    this->enableWithRecordCapacity(capacity);
+
+    this->invoke_to_inaPowerReadIn(0, r[0], r[1], r[2]);
+    this->component.doDispatch();
+
+    ASSERT_PRODUCT_SEND_SIZE(0);
+    ASSERT_EVENTS_SIZE(1);
+    ASSERT_EVENTS_DP_RECORD_SERIALIZE_FAILED_SIZE(1);
+    ASSERT_EVENTS_DP_RECORD_SERIALIZE_FAILED(0, scalesSvc::DpProduct::INA_POWER, RECORDS[failIndex],
+                                             static_cast<I32>(Fw::FW_SERIALIZE_NO_ROOM_LEFT));
 }
 
 // connectPorts()/initComponents() are auto-generated into

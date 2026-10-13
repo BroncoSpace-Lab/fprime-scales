@@ -71,7 +71,7 @@ namespace scalesSvc {
     if (m_justBooted) {
       m_justBooted = false;
       m_startTime = this->getTime().getSeconds(); // Record the start time at boot to track uptime in telemetry
-      printf("Device just booted. Setting up parameters...\n");
+      // printf("Device just booted. Setting up parameters...\n");
       // Gate each sensor's saved/default bounds through the same validity
       // check as a live PRM_SET, and publish the resulting active bounds.
       this->applyBounds("IMX", OBC, this->paramGet_MCP_IMX_BOUNDS(m_paramIsValid));
@@ -122,7 +122,7 @@ namespace scalesSvc {
           this->tlmWrite_JETSON_TEMP(m_thermalReadings[JETSON]);
           break;
           default:
-          printf("Warning: Unrecognized sensor index %d. No telemetry was logged for this sensor.\n", i);
+          // printf("Warning: Unrecognized sensor index %d. No telemetry was logged for this sensor.\n", i);
           break;
       }
       // Republish this sensor's active bounds every cycle (not just on
@@ -145,7 +145,7 @@ namespace scalesSvc {
 
   void McpManager :: scalesSvc_ThermalStateMachine_action_doReadFail(SmId smId, scalesSvc_ThermalStateMachine::Signal signal)
   {
-    printf("Failed to read from sensor. Logging failure event...\n");
+    // printf("Failed to read from sensor. Logging failure event...\n");
     this->log_WARNING_HI_FAIL_TO_READ_TEMP(); // Log event for read failure
     m_successfulRead = true; // Reset successful read flag to true to try reading again on next tick
     for (int i = 0; i < NUM_SENSORS; i++){
@@ -160,7 +160,7 @@ namespace scalesSvc {
   // ----------------------------------------------------------------------
 
   void McpManager :: parameterUpdated(FwPrmIdType id){
-    printf("Parameter with ID 0x%X has been updated. Re-validating bounds...\n", id);
+    // printf("Parameter with ID 0x%X has been updated. Re-validating bounds...\n", id);
 
     switch(id){
       case PARAMID_MCP_IMX_BOUNDS:
@@ -174,7 +174,7 @@ namespace scalesSvc {
         break;
       default:
         // Handle unexpected parameter ID
-        printf("Warning: Received update for unrecognized parameter ID 0x%X. No bounds were updated.\n", id);
+        // printf("Warning: Received update for unrecognized parameter ID 0x%X. No bounds were updated.\n", id);
         break;
     }
   }
@@ -214,7 +214,7 @@ namespace scalesSvc {
       return true;
     }
 
-    printf("Error reading from I2C device at location: %s\n", location.c_str());
+    // printf("Error reading from I2C device at location: %s\n", location.c_str());
     this->log_WARNING_HI_FAIL_TO_READ_TEMP_AT(Fw::String(location.c_str())); // Log event for read failure
     temperature = 0.0f;
     return false; // Return false if the device address is unrecognized

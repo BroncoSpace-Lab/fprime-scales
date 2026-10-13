@@ -104,7 +104,7 @@ namespace scalesSvc {
     }
 
     if (!m_hasPendingPowerCmd) {
-      printf("Not waiting for any power command\n");
+      // printf("Not waiting for any power command\n");
       return; // Not waiting for a power state change confirmation, ignore
     }
 
@@ -268,10 +268,11 @@ namespace scalesSvc {
     // Delay before physically cutting Jetson power after shutdown acknowledgment
     if (m_waitingToCutJetsonPower) {
       m_powerOffDelayTicks++;
-      printf("JetsonManager: Waiting to cut Jetson power, tick %d\n", m_powerOffDelayTicks);
+      // printf("JetsonManager: Waiting to cut Jetson power, tick %d\n", m_powerOffDelayTicks);
 
       if (m_powerOffDelayTicks >= this->paramGet_JETSON_POWER_OFF_DELAY_TICKS(m_paramIsValid)) {
-        printf("JetsonManager: Cutting Jetson power after shutdown acknowledgment\n");
+        // printf("JetsonManager: Cutting Jetson power after shutdown acknowledgment\n");
+        this->log_ACTIVITY_HI_JETSON_POWER_CUT();
         this->gpioSet_out(0, JETSON_POWER_GPIO_OFF);
         m_currentJetsonPowerState = JetsonPowerStateID::OFF;
         m_jetsonPowerStateKnown = true;
@@ -414,7 +415,7 @@ namespace scalesSvc {
         // Jetson is possibly off, so it cannot receive a port call.
         // Power it on directly from the IMX GPIO and wait for the Jetson app
         // to boot and report ON through currentJetsonPwrState_handler.
-        printf("Requesting Jetson power state change to ON\n");
+        // printf("Requesting Jetson power state change to ON\n");
         this->gpioSet_out(0, JETSON_POWER_GPIO_ON);
         // Driving GPIO high is not confirmation the Jetson is actually up --
         // m_jetsonPowerStateKnown/m_currentJetsonPowerState (and, downstream,
@@ -444,7 +445,7 @@ namespace scalesSvc {
         this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
 
       } else if (jetsonState.e == JetsonPowerStateID::OFF) {
-        printf("Requesting Jetson power state change to OFF\n");
+        // printf("Requesting Jetson power state change to OFF\n");
         // beginJetsonOffSequence() decides for itself whether this needs to
         // be deferred (boot in progress, or a mode-change reboot in
         // flight) or can execute now -- the command stays open either way

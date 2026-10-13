@@ -29,7 +29,8 @@ Each pipeline follows the same lifecycle:
    invalid *and* `m_dpCollectMode` is true, it calls `dpGet_<Container>(size, container)`
    to allocate a fresh container from the `DataProducts` subtopology and
    marks it valid on success. A failed allocation leaves the flag false and
-   is retried on the next tick -- there is no backoff or failure event.
+   is retried on the next tick -- there is no backoff; each failed attempt
+   logs `DP_CONTAINER_INIT_FAILED` (throttled).
 2. Every time the corresponding reading port fires *while the container is
    valid*, the handler serializes one record of each type into the container
    and increments that pipeline's record counter. If the container is
@@ -80,7 +81,9 @@ valid flag back to true while `m_dpCollectMode` is false (since only
 ## Events
 | Name | Description |
 |---|---|
-| None | `DataProducer` has no events. Container-allocation and serialization failures are logged only via `printf` (visible in `journalctl`, not in GDS) -- see the Change Log for why this is flagged rather than fixed in this pass. |
+| `DP_CONTAINER_INIT_FAILED` | Warning high, throttle 5. A `dpGet` for the named product's container failed on a `run` tick. The throttle is re-armed by `ENABLE_DATA_PRODUCTS`. |
+| `DP_RECORD_SERIALIZE_FAILED` | Warning high, throttle 10. A record could not be serialized into its container; reports the product, the record name and the `Fw::SerializeStatus`. The throttle is re-armed by `ENABLE_DATA_PRODUCTS`. |
+| `DP_PRODUCT_SENT` | Diagnostic. A full batch of `RECORD_COUNT` records for the named product was handed to `dpSend()`. |
 
 ## Telemetry
 | Name | Description |
@@ -118,6 +121,12 @@ test depends on a real `DataProducts` subtopology.
 | `InaReadingBatchesAndSendsAfterRecordCount` | Same for the three-argument INA power path. | DP-003 |
 | `ContainerReinitializesAfterBatchSend` | After the CPU pipeline's batch completes, confirms the next `run` tick re-requests only that pipeline's container (the other three are still mid-batch and stay valid). | DP-004 |
 | `ContainerGetFailureLeavesContainerInvalid` | Mocks a `dpGet` failure for one container; confirms a reading during that window is dropped, then confirms a later successful `run` tick allows the pipeline to resume. | DP-005 |
+| DP-006 | A record that cannot be serialized into its container shall be reported with a `DP_RECORD_SERIALIZE_FAILED` event naming the product and record, and shall not cause a partial product to be sent. | `McpSerializeFailureLogsEvent`, `CpuSerializeFailureLogsEvent`, `JetsonSerializeFailureLogsEvent`, `InaSerializeFailureLogsEvent` |
+| `ContainerGetFailureEventIsThrottled` | Fails every `dpGet`; confirms one `DP_CONTAINER_INIT_FAILED` per product on the first tick, that the event stops at its throttle of 5 while the containers are still retried, and that `ENABLE_DATA_PRODUCTS` re-arms it. | DP-005 |
+| `McpSerializeFailureLogsEvent` | For each of the three MCP records, hands back a container with room for only the records before it; confirms `DP_RECORD_SERIALIZE_FAILED` names that record and no product is sent. | DP-006 |
+| `CpuSerializeFailureLogsEvent` | Same for the single i.MX CPU record. | DP-006 |
+| `JetsonSerializeFailureLogsEvent` | Same for each of the nine Jetson zone records. | DP-006 |
+| `InaSerializeFailureLogsEvent` | Same for each of the three INA power records. | DP-006 |
 
 ## Requirements
 | Name | Description | Verified By |
@@ -132,3 +141,4 @@ test depends on a real `DataProducts` subtopology.
 | Date | Description |
 |---|---|
 | 2026-07-28 | First real SDD for this component (previously a bare requirements-template stub) and first unit test suite (previously zero tests, `register_fprime_ut`/CMake UT block commented out). Found and fixed a real compile-breaking typo in `initJetsonTempContainer()`: `this-dpGet_JetsonTemperatureZoneContainer(...)` (missing `>`, parses as pointer-minus-return-value, not a call through `this`) instead of `this->dpGet_JetsonTemperatureZoneContainer(...) == Fw::Success::SUCCESS` -- this would have failed to compile for any real (imx8x/aarch64) target, silently undetected because nothing on the native Linux UT toolchain used before this audit ever compiled this file (`ImxDeployment`/`JetsonDeployment` are excluded on the native platform, and this library had no UT target of its own). Documented the on/off gating design (`m_dpCollectMode`, defaulting to disabled) that a separate ongoing effort added to fix an earlier bug where data products were collected unconditionally from boot. Flagged, but did not change, that allocation/serialization failures are only logged via `printf` (invisible in GDS) -- adding real events is a product decision outside this audit's scope. `run` is a *synchronous* port (unlike the four `async` reading ports), so the test harness never calls `doDispatch()` after `invoke_to_run()` -- doing so once during development hung the test binary indefinitely, since `doDispatch()` blocks rather than returning "empty" when nothing is queued (the same landmine documented in this session's WatchdogManager/McpManager work). Measured 77.9% line, 100% function, 44.3% branch coverage. | Luca Lanzillotta |
+| 2026-10-13 | Replaced the `printf` logging with events ahead of the `lucadev` merge: added `DP_CONTAINER_INIT_FAILED` (throttle 5), `DP_RECORD_SERIALIZE_FAILED` (throttle 10) and the diagnostic `DP_PRODUCT_SENT`, plus the `DpProduct` enum they report. All 32 `printf` calls are commented out, not deleted. `ENABLE_DATA_PRODUCTS` now clears both throttles so a new collection session reports failures again. Added requirement DP-006 and five off-nominal tests (`ContainerGetFailureEventIsThrottled` and one serialize-failure test per product); existing batch tests now assert `DP_PRODUCT_SENT`. Measured 100% line coverage on `DataProducer.cpp` (93% for the module including the generated `DpProduct` Python binding, which the UT does not exercise). |

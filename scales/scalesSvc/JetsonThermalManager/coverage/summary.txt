@@ -4,10 +4,12 @@ Directory: ../../../../..
 ------------------------------------------------------------------------------
 File                                       Lines    Exec  Cover   Missing
 ------------------------------------------------------------------------------
+build-fprime-automatic-native-ut/scales/scalesSvc/JetsonThermalManager/ThermalReadFailureBindingAc.cpp
+                                              11       0     0%   7,9-10,12-17,19-20
 lib/fprime-scales/scales/scalesSvc/JetsonThermalManager/JetsonThermalManager.cpp
-                                             156     139    89%   107,175,177,179-181,210-212,221-223,229-231,248,257
+                                             155     153    98%   253,262
 lib/fprime-scales/scales/scalesSvc/JetsonThermalManager/JetsonThermalManager.hpp
                                                3       3   100%
 ------------------------------------------------------------------------------
-TOTAL                                        159     142    89%
+TOTAL                                        169     156    92%
 ------------------------------------------------------------------------------

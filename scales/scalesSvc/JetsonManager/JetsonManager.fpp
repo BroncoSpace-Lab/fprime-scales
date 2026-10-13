@@ -162,6 +162,11 @@ module scalesSvc {
         event JETSON_HUB_LINK_RECONNECTED severity activity high id 14 \
             format "imx<->Jetson hub TCP link reconnected"
 
+        @ Event indicating JetsonManager physically cut Jetson power over
+        @ GPIO, once the post-shutdown-acknowledgment delay elapsed.
+        event JETSON_POWER_CUT severity activity high id 15 \
+            format "Jetson power cut via GPIO after shutdown acknowledgment"
+
         ###############################################################################
         #                                 Telemetry                                   #
         ###############################################################################

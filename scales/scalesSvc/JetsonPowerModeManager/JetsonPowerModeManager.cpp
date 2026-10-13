@@ -103,7 +103,7 @@ SelfDisruptingCommandOutcome classifySelfDisruptingCommandStatus(int status) {
     // If this line appears but POWER_MODE_REQUEST_RECEIVED does NOT appear in the GDS,
     // the issue is a stale GDS dictionary (re-run merger.py with the updated Jetson dict).
     // If this line does NOT appear, the port call from the IMX is not arriving.
-    printf("JetsonPowerModeManager: Received power mode request %d on port %d\n", static_cast<int>(modeReq.e), portNum); //added by kelly for debugging PowerManager issue
+    // printf("JetsonPowerModeManager: Received power mode request %d on port %d\n", static_cast<int>(modeReq.e), portNum); //added by kelly for debugging PowerManager issue
     // This event fires as soon as the hub port call is received from the IMX.
     // If you do NOT see this in the GDS after sending REQUEST_POWER_MODE,
     // the hub is not delivering the port call — check TCP connectivity and
@@ -176,11 +176,11 @@ SelfDisruptingCommandOutcome classifySelfDisruptingCommandStatus(int status) {
       )
     {
       // Line for debugging 
-      printf(
-          "JetsonPowerModeManager: Received jetson power state request %d on port %d\n",
-          static_cast<int>(stateReq.e),
-          portNum
-      );
+      // printf(
+      //     "JetsonPowerModeManager: Received jetson power state request %d on port %d\n",
+      //     static_cast<int>(stateReq.e),
+      //     portNum
+      // );
 
       this->log_ACTIVITY_HI_JETSON_POWER_STATE_REQUEST_RECEIVED(stateReq);
 
